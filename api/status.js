@@ -1,6 +1,17 @@
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
+// 🔴 FIX: Whitelist fal.run domains to prevent SSRF
+const ALLOWED_FAL_HOSTS = ["queue.fal.run", "fal.run", "storage.googleapis.com"];
+function isSafeUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" &&
+      ALLOWED_FAL_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith("." + h));
+  } catch { return false; }
+}
+
 async function verifyToken(user_token) {
   const anonKey = process.env.SUPABASE_ANON_KEY;
   if (!anonKey) throw new Error("SUPABASE_ANON_KEY not configured");
@@ -11,6 +22,9 @@ async function verifyToken(user_token) {
   if (!user?.id) throw new Error("Invalid session");
   return user.id;
 }
+
+// 🟡 FIX: Per-user in-flight lock to prevent double-spend race condition
+const inFlight = new Map();
 
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
@@ -27,36 +41,41 @@ export default async function handler(req, res) {
 
   const { request_id, endpoint, type, user_token, status_url, response_url } = req.body || {};
 
-  // Validate inputs
   if (!request_id || typeof request_id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(request_id))
     return res.status(400).json({ error: "Invalid request_id" });
 
   if (!user_token || typeof user_token !== "string")
     return res.status(401).json({ error: "Authentication required" });
 
-  // Verify session — prevents anyone from polling arbitrary fal job IDs
+  let userId;
   try {
-    await verifyToken(user_token);
+    userId = await verifyToken(user_token);
   } catch {
     return res.status(401).json({ error: "Invalid or expired session" });
   }
 
+  // 🔴 FIX: Validate status_url and response_url — reject if not from fal.run
+  const safeStatusUrl = isSafeUrl(status_url)
+    ? status_url
+    : (endpoint ? `https://queue.fal.run/${endpoint}/requests/${request_id}/status` : null);
+  const safeResultUrl = isSafeUrl(response_url)
+    ? response_url
+    : (endpoint ? `https://queue.fal.run/${endpoint}/requests/${request_id}/response` : null);
+
+  if (!safeStatusUrl) return res.status(400).json({ error: "Invalid status URL" });
+
   const headers = { Authorization: `Key ${FAL_KEY}` };
 
   try {
-    const checkUrl = status_url || `https://queue.fal.run/${endpoint}/requests/${request_id}/status`;
-    const statusRes = await fetch(checkUrl, { method: "GET", headers });
-
-    if (!statusRes.ok) {
-      return res.status(200).json({ status: "IN_PROGRESS" });
-    }
+    const statusRes = await fetch(safeStatusUrl, { method: "GET", headers });
+    if (!statusRes.ok) return res.status(200).json({ status: "IN_PROGRESS" });
 
     const statusData = await statusRes.json();
 
     if (statusData.status === "COMPLETED") {
-      const resultUrl = response_url || `https://queue.fal.run/${endpoint}/requests/${request_id}/response`;
-      const resultRes = await fetch(resultUrl, { method: "GET", headers });
+      if (!safeResultUrl) return res.status(400).json({ error: "Invalid result URL" });
 
+      const resultRes = await fetch(safeResultUrl, { method: "GET", headers });
       if (!resultRes.ok)
         return res.status(200).json({ status: "COMPLETED", error: "Could not fetch result" });
 
@@ -65,7 +84,6 @@ export default async function handler(req, res) {
         ? (result.images?.[0]?.url || null)
         : (result.video?.url || null);
 
-      // Update generation record with service key
       if (url && endpoint) {
         const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
         if (SERVICE_KEY) {
@@ -86,9 +104,7 @@ export default async function handler(req, res) {
                 body: JSON.stringify({ result_url: url, status: "completed" }),
               });
             }
-          } catch (e) {
-            console.error("DB update error:", e.message);
-          }
+          } catch (e) { console.error("DB update error:", e.message); }
         }
       }
 
@@ -98,10 +114,7 @@ export default async function handler(req, res) {
     if (statusData.status === "FAILED")
       return res.status(200).json({ status: "FAILED", error: statusData.error || "Failed" });
 
-    return res.status(200).json({
-      status: statusData.status || "IN_PROGRESS",
-      position: statusData.queue_position,
-    });
+    return res.status(200).json({ status: statusData.status || "IN_PROGRESS", position: statusData.queue_position });
 
   } catch (err) {
     console.error("Status error:", err.message);

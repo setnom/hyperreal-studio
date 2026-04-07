@@ -120,17 +120,28 @@ export default async function handler(req, res) {
   if (isVid && videosRemaining <= 0)
     return res.status(403).json({ error: "No video credits remaining." });
 
-  // Deduct credit with SERVICE KEY — user token cannot touch this
+  // 🟡 FIX: Atomic credit deduction — only deduct if current value matches what we read
+  // This prevents double-spend race conditions from concurrent requests
   try {
     const newImages = !isVid ? imagesRemaining - 1 : imagesRemaining;
     const newVideos =  isVid ? videosRemaining  - 1 : videosRemaining;
-    const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+    // Use conditional filter: only update if credits haven't changed since we read them
+    const atomicFilter = !isVid
+      ? `id=eq.${userId}&images_remaining=eq.${imagesRemaining}`
+      : `id=eq.${userId}&videos_remaining=eq.${videosRemaining}`;
+    const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?${atomicFilter}`, {
       method: "PATCH",
       headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
       body: JSON.stringify({ images_remaining: newImages, videos_remaining: newVideos }),
     });
     if (!deductRes.ok) throw new Error("Credit deduction failed");
+    const deducted = await deductRes.json();
+    // If no rows updated, another request beat us to it — reject this one
+    if (!Array.isArray(deducted) || deducted.length === 0) {
+      return res.status(409).json({ error: "Credit already used. Please try again." });
+    }
   } catch (err) {
+    if (err.message === "Credit deduction failed") throw err;
     console.error("Credit deduction error:", err.message);
     return res.status(500).json({ error: "Failed to deduct credit. Please try again." });
   }
