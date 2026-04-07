@@ -550,6 +550,7 @@ export default function App() {
         const mapped = g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url }));
         setGens(mapped);
       }
+      loadFavorites(s.access_token);
       setPage(p.plan === "none" || (!p.images_remaining && !p.videos_remaining) ? P.PLANS : P.DASH); } } } catch {} };
   const handleAuth = async () => {
     setAuthErr(""); setAuthLoad(true);
@@ -558,20 +559,47 @@ export default function App() {
       if (res.access_token) { try { sessionStorage.setItem("hrs_s", JSON.stringify(res)); } catch {} setSession(res); await loadProfile(res); }
       else if (authMode === "signup") { setAuthErr("✓ Revisa tu email para confirmar"); }
     } catch { setAuthErr("Error de conexión"); } finally { setAuthLoad(false); } };
-  const logout = () => { setSession(null); setProfile(null); setGens([]); try { sessionStorage.removeItem("hrs_s"); } catch {} setPage(P.LAND); };
+  const logout = () => { setSession(null); setProfile(null); setGens([]); setFavorites({}); try { sessionStorage.removeItem("hrs_s"); } catch {} setPage(P.LAND); };
   const [genResult, setGenResult] = useState(null);
   const [genError, setGenError] = useState("");
   const [audioOn, setAudioOn] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
   const [previewIndex, setPreviewIndex] = useState(null);
-  const [favorites, setFavorites] = useState(() => { try { return JSON.parse(localStorage.getItem("nb_favs") || "{}"); } catch { return {}; } });
+  const [favorites, setFavorites] = useState({});
   const [paymentFailedModal, setPaymentFailedModal] = useState(false);
+
+  // Load favorites from server after login
+  const loadFavorites = async (token) => {
+    try {
+      const res = await fetch(`/api/favorites?user_token=${encodeURIComponent(token)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setFavorites(data.favorites || {});
+      }
+    } catch {}
+  };
+
+  // Debounced save to server
+  let _favSaveTimer = null;
+  const saveFavoritesToServer = (favs, token) => {
+    if (!token) return;
+    clearTimeout(_favSaveTimer);
+    _favSaveTimer = setTimeout(async () => {
+      try {
+        await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ favorites: favs, user_token: token }),
+        });
+      } catch {}
+    }, 800);
+  };
 
   const toggleFav = (id) => {
     setFavorites(prev => {
       const next = { ...prev, [id]: !prev[id] };
       if (!next[id]) delete next[id];
-      try { localStorage.setItem("nb_favs", JSON.stringify(next)); } catch {}
+      saveFavoritesToServer(next, session?.access_token);
       return next;
     });
   };
