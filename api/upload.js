@@ -2,85 +2,110 @@ export const config = {
   api: { bodyParser: { sizeLimit: '10mb' } },
 };
 
+const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
+const ALLOWED_MIME   = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+const MAX_B64_SIZE   = 8 * 1024 * 1024; // 8MB decoded
+
+async function verifyToken(user_token) {
+  const anonKey = process.env.SUPABASE_ANON_KEY;
+  if (!anonKey) throw new Error("SUPABASE_ANON_KEY not configured");
+  const res = await fetch(`${SB_URL}/auth/v1/user`, {
+    headers: { apikey: anonKey, Authorization: `Bearer ${user_token}` },
+  });
+  const user = await res.json();
+  if (!user?.id) throw new Error("Invalid session");
+  return user.id;
+}
+
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin || "";
+  const allowed = origin === ALLOWED_ORIGIN || origin.endsWith(".vercel.app");
+  res.setHeader("Access-Control-Allow-Origin", allowed ? origin : ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Vary", "Origin");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const FAL_KEY = process.env.FAL_KEY;
-  if (!FAL_KEY) return res.status(500).json({ error: "FAL_KEY not configured" });
+  if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
-  const { data_url } = req.body;
-  if (!data_url) return res.status(400).json({ error: "data_url required" });
+  const { data_url, user_token } = req.body || {};
+
+  // Require authentication — prevents anonymous upload abuse
+  if (!user_token || typeof user_token !== "string")
+    return res.status(401).json({ error: "Authentication required" });
 
   try {
-    // Extract mime type and base64 data
-    const matches = data_url.match(/^data:([^;]+);base64,(.+)$/);
-    if (!matches) return res.status(400).json({ error: "Invalid data URL format" });
+    await verifyToken(user_token);
+  } catch {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
 
-    const mimeType = matches[1];
-    const base64Data = matches[2];
-    const buffer = Buffer.from(base64Data, 'base64');
-    const ext = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : "jpg";
+  if (!data_url || typeof data_url !== "string")
+    return res.status(400).json({ error: "data_url required" });
 
-    // Method 1: fal.ai storage upload via initiateUpload
-    try {
-      const initRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
-        method: "POST",
-        headers: {
-          Authorization: `Key ${FAL_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          content_type: mimeType,
-          file_name: `ref_${Date.now()}.${ext}`,
-        }),
-      });
+  // Validate data URL format and MIME type
+  const matches = data_url.match(/^data:([^;]+);base64,(.+)$/);
+  if (!matches) return res.status(400).json({ error: "Invalid data URL format" });
 
-      if (initRes.ok) {
-        const { upload_url, file_url } = await initRes.json();
-        const putRes = await fetch(upload_url, {
-          method: "PUT",
-          headers: { "Content-Type": mimeType },
-          body: buffer,
-        });
-        if (putRes.ok) {
-          return res.status(200).json({ success: true, url: file_url });
-        }
-      }
-    } catch (e) {
-      console.error("Method 1 failed:", e.message);
-    }
+  const mimeType = matches[1].toLowerCase();
+  if (!ALLOWED_MIME.includes(mimeType))
+    return res.status(400).json({ error: "Only image files are allowed (jpeg, png, webp, gif)" });
 
-    // Method 2: Direct fal CDN upload
-    try {
-      const cdnRes = await fetch("https://fal.run/fal-ai/any/upload", {
-        method: "POST",
-        headers: {
-          Authorization: `Key ${FAL_KEY}`,
-          "Content-Type": mimeType,
-        },
+  const base64Data = matches[2];
+  if (base64Data.length > MAX_B64_SIZE)
+    return res.status(400).json({ error: "Image too large. Max 8MB." });
+
+  let buffer;
+  try {
+    buffer = Buffer.from(base64Data, "base64");
+  } catch {
+    return res.status(400).json({ error: "Invalid base64 data" });
+  }
+
+  const ext = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : mimeType.includes("gif") ? "gif" : "jpg";
+
+  // Method 1: fal.ai storage
+  try {
+    const initRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
+      method: "POST",
+      headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content_type: mimeType, file_name: `ref_${Date.now()}.${ext}` }),
+    });
+    if (initRes.ok) {
+      const { upload_url, file_url } = await initRes.json();
+      const putRes = await fetch(upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": mimeType },
         body: buffer,
       });
-      if (cdnRes.ok) {
-        const cdnData = await cdnRes.json();
-        if (cdnData.url) return res.status(200).json({ success: true, url: cdnData.url });
-      }
-    } catch (e) {
-      console.error("Method 2 failed:", e.message);
+      if (putRes.ok) return res.status(200).json({ success: true, url: file_url });
     }
-
-    // Method 3: Use data URL directly (works for smaller images)
-    // Truncate if too large
-    if (data_url.length < 5000000) {
-      return res.status(200).json({ success: true, url: data_url });
-    }
-
-    return res.status(500).json({ error: "Failed to upload image. Try a smaller image." });
-
-  } catch (err) {
-    return res.status(500).json({ error: "Upload failed", message: err.message });
+  } catch (e) {
+    console.error("Upload method 1 failed:", e.message);
   }
+
+  // Method 2: Direct fal CDN
+  try {
+    const cdnRes = await fetch("https://fal.run/fal-ai/any/upload", {
+      method: "POST",
+      headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": mimeType },
+      body: buffer,
+    });
+    if (cdnRes.ok) {
+      const cdnData = await cdnRes.json();
+      if (cdnData.url) return res.status(200).json({ success: true, url: cdnData.url });
+    }
+  } catch (e) {
+    console.error("Upload method 2 failed:", e.message);
+  }
+
+  // Method 3: Data URL fallback (small images only)
+  if (buffer.length < 2 * 1024 * 1024) {
+    return res.status(200).json({ success: true, url: data_url });
+  }
+
+  return res.status(500).json({ error: "Failed to upload image. Try a smaller image." });
 }

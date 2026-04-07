@@ -17,7 +17,7 @@ const sb = {
   signIn: (e, p) => fetch(`${SB_URL}/auth/v1/token?grant_type=password`, { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json()),
   getUser: (t) => fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${t}` } }).then(r => r.json()),
   getProfile: (id, t) => fetch(`${SB_URL}/rest/v1/profiles?id=eq.${id}&select=*`, { headers: hdr(t) }).then(r => r.json()).then(d => d?.[0]),
-  updateProfile: (id, data, t) => fetch(`${SB_URL}/rest/v1/profiles?id=eq.${id}`, { method: "PATCH", headers: { ...hdr(t), Prefer: "return=representation" }, body: JSON.stringify(data) }).then(r => r.json()),
+  // NOTE: updateProfile intentionally removed — plan/credits can only be modified by backend API
   addGen: (uid, type, prompt, style, t) => fetch(`${SB_URL}/rest/v1/generations`, { method: "POST", headers: { ...hdr(t), Prefer: "return=representation" }, body: JSON.stringify({ user_id: uid, type, prompt, style, status: "completed" }) }).then(r => r.json()),
   getGens: (uid, t) => fetch(`${SB_URL}/rest/v1/generations?user_id=eq.${uid}&select=*&order=created_at.desc&limit=20`, { headers: hdr(t) }).then(r => r.json()),
   googleSignIn: () => {
@@ -150,7 +150,7 @@ const TEXTS = {
     // TyC
     terms: "Términos y Condiciones",
     privacy: "Privacidad",
-    styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", pixar: "Pixar 3D", ads: "Anuncio Ads" },
+    styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", pixar: "Pixar 3D", ads: "Anuncio Ads", neutral: "Neutro" },
   },
   en: {
     hero_badge: "Nano Banana 2 + Kling 3.0",
@@ -266,7 +266,7 @@ const TEXTS = {
     // TyC
     terms: "Terms & Conditions",
     privacy: "Privacy",
-    styles: { photorealistic: "Photorealistic", cinematic: "Cinematic", product: "Product", portrait: "Portrait", pixar: "Pixar 3D", ads: "Ad Creative" },
+    styles: { photorealistic: "Photorealistic", cinematic: "Cinematic", product: "Product", portrait: "Portrait", pixar: "Pixar 3D", ads: "Ad Creative", neutral: "Neutral" },
   },
 };
 
@@ -302,10 +302,15 @@ const STYLE_PROMPTS = {
     prefix: "high-converting advertising visual, ",
     suffix: "bold punchy composition, eye-catching hero product placement, strong visual hierarchy, vibrant contrast colors that stop the scroll, clear focal point with negative space for text overlay, professional retouching, aspirational lifestyle feel, optimized for mobile feed 9:16 and square 1:1, Meta Ads and TikTok Ads ready, emotional trigger lighting, premium brand aesthetic, photorealistic commercial quality",
   },
+  neutral: {
+    prefix: "",
+    suffix: "",
+  },
 };
 
 function buildStyledPrompt(userPrompt, styleId) {
   const s = STYLE_PROMPTS[styleId] || STYLE_PROMPTS.photorealistic;
+  if (!s.prefix && !s.suffix) return userPrompt.trim(); // neutral — no modification
   const base = userPrompt.trim().replace(/[.,]+$/, "");
   return `${s.prefix}${base}, ${s.suffix}`;
 }
@@ -330,6 +335,7 @@ const STYLES = [
   { id: "portrait", label: "Retrato", icon: "👤" },
   { id: "pixar", label: "Pixar 3D", icon: "🎭" },
   { id: "ads", label: "Anuncio Ads", icon: "🚀" },
+  { id: "neutral", label: "Neutro", icon: "⚪" },
 ];
 const RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 const SAMPLE = ["Luxury perfume bottle on black marble, volumetric lighting, 8K", "Latin woman CEO in modern office, golden hour, shallow DOF", "Gourmet burger floating, ingredients exploding, dark bg, studio light", "Futuristic car in neon-lit Tokyo street, rain reflections, cinematic"];
@@ -509,8 +515,22 @@ export default function App() {
   }, []);
 
   const activatePlan = async (s, plan) => {
-    try { const u = await sb.getUser(s.access_token); if (u?.id) { await sb.updateProfile(u.id, { plan, images_remaining: PRICES[plan].images, videos_remaining: PRICES[plan].videos }, s.access_token);
-      const p = await sb.getProfile(u.id, s.access_token); if (p) { setProfile({ ...p, userId: u.id }); const g = await sb.getGens(u.id, s.access_token); if (Array.isArray(g)) setGens(g); setPage(P.DASH); setPayMsg("✓ Plan activado"); setTimeout(() => setPayMsg(""), 3000); } } } catch {} };
+    // Plan activation is handled by Stripe webhook — just reload profile
+    try {
+      const u = await sb.getUser(s.access_token);
+      if (u?.id) {
+        const p = await sb.getProfile(u.id, s.access_token);
+        if (p) {
+          setProfile({ ...p, userId: u.id });
+          const g = await sb.getGens(u.id, s.access_token);
+          if (Array.isArray(g)) setGens(g);
+          setPage(P.DASH);
+          setPayMsg("✓ Plan activado");
+          setTimeout(() => setPayMsg(""), 3000);
+        }
+      }
+    } catch {}
+  };
   const loadProfile = async (s) => {
     try { const u = await sb.getUser(s.access_token); if (u?.id) { const p = await sb.getProfile(u.id, s.access_token); if (p) { setProfile({ ...p, userId: u.id });
       const g = await sb.getGens(u.id, s.access_token);
@@ -1080,14 +1100,8 @@ export default function App() {
 
   // ═══ PLAN SELECTION ═══
   const manualActivate = async (planId) => {
-    if (!session || !profile) return;
-    setActivating(true);
-    try {
-      const credits = PRICES[planId];
-      await sb.updateProfile(profile.userId, { plan: planId, images_remaining: credits.images, videos_remaining: credits.videos }, session.access_token);
-      const p = await sb.getProfile(profile.userId, session.access_token);
-      if (p) { setProfile({ ...p, userId: profile.userId }); setPage(P.DASH); setPayMsg("✓ Plan activado"); setTimeout(() => setPayMsg(""), 3000); }
-    } catch {} finally { setActivating(false); }
+    // Redirect to Stripe checkout — webhook handles plan activation
+    openCheckout(planId);
   };
 
   if (page === P.PLANS) return wrap(
