@@ -23,7 +23,7 @@ const PLAN_CREDITS = {
 
 // 🔴 FIX: Added "test" plan price ID
 const PRICE_TO_PLAN = {
-  "price_test_placeholder":          "test",    // ← Replace with your real Stripe TEST price ID
+  "price_1TJYG2EkbBokZiaivYSd44qP":  "test",
   "price_1TJGutEkbBokZiaidisQbR4y": "basic",
   "price_1TJGvwEkbBokZiaisvzBQCeV": "pro",
   "price_1TJGwtEkbBokZiaiFpc24OZG": "creator",
