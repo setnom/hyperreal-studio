@@ -135,6 +135,21 @@ const TEXTS = {
     processing: "Procesando pago... Refresca en unos segundos.",
     logout: "Salir",
     per_month: "/mes",
+    // User panel
+    my_plan: "Mi Plan",
+    next_billing: "Próxima facturación",
+    no_billing: "Sin facturación activa",
+    cancel_sub: "Cancelar suscripción",
+    cancel_confirm_title: "¿Cancelar suscripción?",
+    cancel_confirm_body: "Si cancelas, conservas tu precio actual para siempre. Si los precios suben, tú mantienes la tarifa a la que te registraste. Puedes reactivar cuando quieras.",
+    cancel_confirm_yes: "Sí, cancelar",
+    cancel_confirm_no: "No, mantener",
+    cancel_done: "Suscripción cancelada. Tus créditos siguen activos hasta fin de ciclo.",
+    img_credits: "Imágenes restantes",
+    vid_credits: "Videos restantes",
+    // TyC
+    terms: "Términos y Condiciones",
+    privacy: "Privacidad",
     styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", architecture: "Arquitectura", food: "Gastronomía" },
   },
   en: {
@@ -236,6 +251,21 @@ const TEXTS = {
     processing: "Processing payment... Refresh in a few seconds.",
     logout: "Log out",
     per_month: "/mo",
+    // User panel
+    my_plan: "My Plan",
+    next_billing: "Next billing",
+    no_billing: "No active billing",
+    cancel_sub: "Cancel subscription",
+    cancel_confirm_title: "Cancel subscription?",
+    cancel_confirm_body: "If you cancel, you keep your current price forever. If prices go up, you stay at the rate you signed up for. You can reactivate anytime.",
+    cancel_confirm_yes: "Yes, cancel",
+    cancel_confirm_no: "No, keep it",
+    cancel_done: "Subscription cancelled. Your credits remain active until end of cycle.",
+    img_credits: "Images remaining",
+    vid_credits: "Videos remaining",
+    // TyC
+    terms: "Terms & Conditions",
+    privacy: "Privacy",
     styles: { photorealistic: "Photorealistic", cinematic: "Cinematic", product: "Product", portrait: "Portrait", architecture: "Architecture", food: "Food" },
   },
 };
@@ -379,6 +409,9 @@ export default function App() {
   const [endFrame, setEndFrame] = useState(null);
   const [multishot, setMultishot] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [userPanelOpen, setUserPanelOpen] = useState(false);
+  const [cancelModal, setCancelModal] = useState(false);
+  const [showTyC, setShowTyC] = useState(false);
 
   useEffect(() => {
     if (!langOpen) return;
@@ -386,6 +419,13 @@ export default function App() {
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, [langOpen]);
+
+  useEffect(() => {
+    if (!userPanelOpen) return;
+    const close = () => setUserPanelOpen(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [userPanelOpen]);
 
   useEffect(() => {
     const hash = window.location.hash;
@@ -650,6 +690,28 @@ export default function App() {
     setGenning(false);
   };
 
+  const cancelSubscription = async () => {
+    if (!session || !profile) return;
+    try {
+      await sb.updateProfile(profile.userId, { plan: "none", subscription_status: "cancelled" }, session.access_token);
+      setProfile(p => ({ ...p, plan: "none", subscription_status: "cancelled" }));
+      setCancelModal(false);
+      setUserPanelOpen(false);
+      setPayMsg(t("cancel_done"));
+      setTimeout(() => setPayMsg(""), 5000);
+    } catch {}
+  };
+
+  // Compute next billing date (30 days from subscription_start or today)
+  const getNextBilling = () => {
+    const start = profile?.subscription_start || profile?.created_at;
+    if (!start) return null;
+    const d = new Date(start);
+    const now = new Date();
+    while (d < now) d.setMonth(d.getMonth() + 1);
+    return d.toLocaleDateString(lang === "es" ? "es-ES" : "en-US", { day: "numeric", month: "long", year: "numeric" });
+  };
+
   const inp = { width: "100%", padding: "12px 14px", fontSize: 14, color: "#e0e0f0", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)", borderRadius: 10, fontFamily: "inherit" };
   const maxW = page === P.DASH ? (isDesk ? 900 : 520) : (isDesk ? 1000 : 520);
 
@@ -662,6 +724,180 @@ export default function App() {
         {ch}
       </div>
       <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a50}button:active{transform:scale(.97)!important}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.3)!important}::selection{background:rgba(0,240,255,.2)}`}</style>
+    </div>
+  );
+
+  // ─── TyC PAGE ───
+  if (showTyC) return wrap(
+    <div style={{ maxWidth: 720, margin: "0 auto", animation: "fadeUp .4s ease" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
+        <button onClick={() => setShowTyC(false)} style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, color: "#e0e0f0", padding: "8px 14px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← {t("back")}</button>
+        <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>{t("terms")}</h1>
+      </div>
+      {[
+        { title: lang === "es" ? "1. Política de No Reembolso" : "1. No-Refund Policy",
+          body: lang === "es"
+            ? "NanoBanano Studio es un servicio de generación de contenido basado en créditos. Los créditos se asignan al inicio de cada ciclo de facturación y se consumen con cada generación completada. Los créditos no utilizados al final del ciclo NO se transfieren al siguiente período y se consideran consumidos. No se emiten reembolsos una vez que el pago ha sido procesado, independientemente del uso real de los créditos. Al suscribirte, aceptas que el servicio tiene valor en la disponibilidad de los créditos, no solo en su uso."
+            : "NanoBanano Studio is a credit-based content generation service. Credits are assigned at the start of each billing cycle and are consumed with each completed generation. Unused credits at the end of the cycle are NOT carried over and are considered consumed. No refunds are issued once payment has been processed, regardless of actual credit usage. By subscribing, you agree that the service has value in the availability of credits, not only in their use." },
+        { title: lang === "es" ? "2. Protección de Precio para Suscriptores Activos" : "2. Price Lock for Active Subscribers",
+          body: lang === "es"
+            ? "Los suscriptores activos conservan el precio al que se registraron indefinidamente, incluso si NanoBanano Studio actualiza sus precios para nuevos clientes. Esta garantía aplica únicamente mientras la suscripción permanezca activa. Si cancelas tu suscripción, perderás la protección de precio y al reactivar se aplicará la tarifa vigente en ese momento."
+            : "Active subscribers keep the price they signed up for indefinitely, even if NanoBanano Studio updates pricing for new customers. This guarantee only applies while the subscription remains active. If you cancel, you lose price protection and the current rate applies upon reactivation." },
+        { title: lang === "es" ? "3. Uso Aceptable" : "3. Acceptable Use",
+          body: lang === "es"
+            ? "Queda estrictamente prohibido usar NanoBanano Studio para generar contenido ilegal, difamatorio, que viole derechos de terceros, contenido sexual explícito no consensuado, material que represente menores en situaciones inapropiadas, o contenido que promueva violencia o discriminación. NanoBanano Studio se reserva el derecho de suspender cuentas que violen estas normas sin previo aviso ni reembolso."
+            : "It is strictly prohibited to use NanoBanano Studio to generate illegal, defamatory content, content that violates third-party rights, non-consensual explicit sexual content, material depicting minors in inappropriate situations, or content promoting violence or discrimination. NanoBanano Studio reserves the right to suspend accounts violating these terms without notice or refund." },
+        { title: lang === "es" ? "4. Propiedad del Contenido Generado" : "4. Ownership of Generated Content",
+          body: lang === "es"
+            ? "El contenido generado mediante NanoBanano Studio es de uso personal y comercial del usuario. NanoBanano Studio no reclama derechos de propiedad sobre el contenido generado. Sin embargo, el usuario es responsable de verificar que el contenido generado no infringe derechos de terceros en su jurisdicción."
+            : "Content generated through NanoBanano Studio is for personal and commercial use by the user. NanoBanano Studio does not claim ownership rights over generated content. However, the user is responsible for verifying that generated content does not infringe third-party rights in their jurisdiction." },
+        { title: lang === "es" ? "5. Disponibilidad del Servicio" : "5. Service Availability",
+          body: lang === "es"
+            ? "NanoBanano Studio no garantiza disponibilidad ininterrumpida del servicio. Mantenimientos programados, fallos técnicos o interrupciones de servicios de terceros (Nano Banana 2, Kling 3.0) pueden afectar temporalmente el servicio. Estos casos no dan derecho a reembolso, pero podrán resultar en compensación de créditos a discreción del equipo."
+            : "NanoBanano Studio does not guarantee uninterrupted service availability. Scheduled maintenance, technical failures, or third-party service interruptions (Nano Banana 2, Kling 3.0) may temporarily affect the service. These cases do not entitle users to refunds but may result in credit compensation at the team's discretion." },
+        { title: lang === "es" ? "6. Privacidad y Datos" : "6. Privacy and Data",
+          body: lang === "es"
+            ? "NanoBanano Studio almacena únicamente los datos necesarios para operar el servicio: email, historial de generaciones y estado de suscripción. No vendemos datos a terceros. Los datos de pago son procesados exclusivamente por Stripe y no son almacenados por NanoBanano Studio. Puedes solicitar la eliminación de tu cuenta y datos en cualquier momento contactando a soporte."
+            : "NanoBanano Studio stores only the data necessary to operate the service: email, generation history, and subscription status. We do not sell data to third parties. Payment data is processed exclusively by Stripe and is not stored by NanoBanano Studio. You can request deletion of your account and data at any time by contacting support." },
+        { title: lang === "es" ? "7. Cancelación y Ciclos de Facturación" : "7. Cancellation and Billing Cycles",
+          body: lang === "es"
+            ? "Puedes cancelar tu suscripción en cualquier momento desde tu panel de usuario. La cancelación entra en efecto al final del ciclo de facturación actual. Los créditos del ciclo en curso permanecen disponibles hasta la fecha de renovación. No se realizan cargos adicionales tras la cancelación."
+            : "You can cancel your subscription at any time from your user panel. Cancellation takes effect at the end of the current billing cycle. Credits for the current cycle remain available until the renewal date. No additional charges are made after cancellation." },
+      ].map((section, i) => (
+        <div key={i} style={{ marginBottom: 28, padding: "20px 24px", borderRadius: 14, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.04)" }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px", color: "#00f0ff" }}>{section.title}</h3>
+          <p style={{ fontSize: 13, color: "#7a7a90", lineHeight: 1.7, margin: 0 }}>{section.body}</p>
+        </div>
+      ))}
+      <p style={{ textAlign: "center", fontSize: 10, color: "#2a2a3a", marginTop: 16, fontFamily: "'JetBrains Mono',monospace" }}>
+        {lang === "es" ? "Última actualización: Abril 2026 · NanoBanano Studio" : "Last updated: April 2026 · NanoBanano Studio"}
+      </p>
+    </div>
+  );
+
+  // ─── BACK BUTTON ───
+  const BackBtn = ({ to, label }) => (
+    <button onClick={() => { if (to !== undefined) setPage(to); else window.history.back(); }}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", fontSize: 12, fontWeight: 600, color: "#8a8a9e", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", marginBottom: 20 }}>
+      ← {label || t("back")}
+    </button>
+  );
+
+  // ─── USER PANEL (dropdown) ───
+  const hasPlanForPanel = profile?.plan && profile.plan !== "none";
+  const planDataForPanel = PLANS.find(p => p.id === profile?.plan) || PLANS[0];
+  const imgTotal = PRICES[profile?.plan]?.images || 0;
+  const vidTotal = PRICES[profile?.plan]?.videos || 0;
+  const imgRemain = profile?.images_remaining ?? 0;
+  const vidRemain = profile?.videos_remaining ?? 0;
+  const imgPct = imgTotal > 0 ? Math.round((imgRemain / imgTotal) * 100) : 0;
+  const vidPct = vidTotal > 0 ? Math.round((vidRemain / vidTotal) * 100) : 0;
+  const nextBill = getNextBilling();
+
+  const UserPanel = () => (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setUserPanelOpen(o => !o); }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, height: 34, borderRadius: "50%", background: hasPlanForPanel ? `${planDataForPanel.color}22` : "rgba(255,255,255,.06)", border: `1.5px solid ${hasPlanForPanel ? planDataForPanel.color + "60" : "rgba(255,255,255,.12)"}`, cursor: "pointer", fontSize: 15, transition: "all .2s" }}
+        title={t("my_plan")}
+      >
+        👤
+      </button>
+      {userPanelOpen && (
+        <div onClick={e => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 260, background: "#0e0e1a", border: "1px solid rgba(255,255,255,.1)", borderRadius: 14, zIndex: 1000, boxShadow: "0 16px 48px rgba(0,0,0,.6)", overflow: "hidden" }}>
+          {/* Plan header */}
+          <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <span style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1, textTransform: "uppercase" }}>{t("my_plan")}</span>
+              {hasPlanForPanel && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: `${planDataForPanel.color}20`, color: planDataForPanel.color, fontWeight: 700, textTransform: "uppercase" }}>{lang === "en" ? planDataForPanel.nameEn : planDataForPanel.name}</span>}
+            </div>
+            <p style={{ fontSize: 11, color: "#5a5a70", margin: 0 }}>{profile?.email}</p>
+          </div>
+          {/* Credits bars */}
+          {hasPlanForPanel && (
+            <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
+              {/* Images bar */}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, color: "#8a8a9e" }}>🖼️ {t("img_credits")}</span>
+                  <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#00f0ff" }}>{imgRemain}<span style={{ color: "#3a3a50" }}>/{imgTotal}</span></span>
+                </div>
+                <div style={{ height: 5, background: "rgba(255,255,255,.06)", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${imgPct}%`, background: "linear-gradient(90deg, #00f0ff, #00c8ff)", borderRadius: 3, transition: "width .4s ease" }} />
+                </div>
+              </div>
+              {/* Videos bar */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, color: "#8a8a9e" }}>🎬 {t("vid_credits")}</span>
+                  <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#b44aff" }}>{vidRemain}<span style={{ color: "#3a3a50" }}>/{vidTotal}</span></span>
+                </div>
+                <div style={{ height: 5, background: "rgba(255,255,255,.06)", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${vidPct}%`, background: "linear-gradient(90deg, #b44aff, #8a2be2)", borderRadius: 3, transition: "width .4s ease" }} />
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Billing */}
+          <div style={{ padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
+            <span style={{ fontSize: 9, color: "#3a3a50", letterSpacing: 1, textTransform: "uppercase" }}>{t("next_billing")}</span>
+            <p style={{ fontSize: 11, color: "#5a5a70", margin: "3px 0 0" }}>{nextBill || t("no_billing")}</p>
+          </div>
+          {/* Actions */}
+          <div style={{ padding: "10px 16px" }}>
+            {hasPlanForPanel && (
+              <button onClick={() => { setUserPanelOpen(false); setPage(P.PLANS); }}
+                style={{ display: "block", width: "100%", padding: "8px", fontSize: 11, fontWeight: 600, color: "#e0e0f0", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", marginBottom: 6, textAlign: "center" }}>
+                {t("change_plan")}
+              </button>
+            )}
+            <button onClick={() => { setUserPanelOpen(false); logout(); }}
+              style={{ display: "block", width: "100%", padding: "8px", fontSize: 11, fontWeight: 600, color: "#ff4d6a", background: "rgba(255,77,106,.04)", border: "1px solid rgba(255,77,106,.15)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", marginBottom: hasPlanForPanel ? 8 : 0, textAlign: "center" }}>
+              {t("logout")}
+            </button>
+            {hasPlanForPanel && (
+              <button onClick={() => { setUserPanelOpen(false); setCancelModal(true); }}
+                style={{ display: "block", width: "100%", padding: "6px", fontSize: 10, color: "#3a3a50", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "center", textDecoration: "underline" }}>
+                {t("cancel_sub")}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ─── CANCEL MODAL ───
+  const CancelModal = () => !cancelModal ? null : (
+    <div onClick={() => setCancelModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)" }}>
+      <div onClick={e => e.stopPropagation()} style={{ maxWidth: 420, width: "100%", background: "#0e0e1a", border: "1px solid rgba(255,255,255,.1)", borderRadius: 20, padding: 28, animation: "fadeUp .3s ease" }}>
+        <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }}>⚠️</div>
+        <h3 style={{ fontSize: 18, fontWeight: 800, textAlign: "center", margin: "0 0 12px" }}>{t("cancel_confirm_title")}</h3>
+        <p style={{ fontSize: 13, color: "#7a7a90", lineHeight: 1.7, textAlign: "center", margin: "0 0 24px" }}>{t("cancel_confirm_body")}</p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={() => setCancelModal(false)}
+            style={{ flex: 1, padding: "12px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}>
+            {t("cancel_confirm_no")}
+          </button>
+          <button onClick={cancelSubscription}
+            style={{ flex: 1, padding: "12px", fontSize: 13, fontWeight: 600, color: "#ff4d6a", background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.2)", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}>
+            {t("cancel_confirm_yes")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ─── FOOTER ───
+  const Footer = () => (
+    <div style={{ textAlign: "center", marginTop: 40, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,.03)" }}>
+      <p style={{ fontSize: 9, color: "#2a2a3a", fontFamily: "'JetBrains Mono',monospace", margin: "0 0 6px" }}>
+        © 2026 NanoBanano Studio · Powered by HyperReal AI Lab
+      </p>
+      <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+        <button onClick={() => setShowTyC(true)} style={{ fontSize: 9, color: "#3a3a50", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>{t("terms")}</button>
+        <button onClick={() => setShowTyC(true)} style={{ fontSize: 9, color: "#3a3a50", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>{t("privacy")}</button>
+      </div>
     </div>
   );
 
@@ -710,7 +946,7 @@ export default function App() {
         {logo(isDesk ? 32 : 28)}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <LangSelector />
-          <button onClick={() => setPage(P.AUTH)} style={{ padding: isDesk ? "10px 24px" : "8px 18px", fontSize: isDesk ? 13 : 12, fontWeight: 600, color: "#06060e", background: "#00f0ff", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("start")}</button>
+          {session ? <UserPanel /> : <button onClick={() => setPage(P.AUTH)} style={{ padding: isDesk ? "10px 24px" : "8px 18px", fontSize: isDesk ? 13 : 12, fontWeight: 600, color: "#06060e", background: "#00f0ff", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("start")}</button>}
         </div>
       </div>
 
@@ -769,12 +1005,18 @@ export default function App() {
       </div>
 
       <p style={{ textAlign: "center", fontSize: 9, color: "#2a2a3a", marginTop: 32, fontFamily: "'JetBrains Mono',monospace" }}>© 2026 NanoBanano Studio · Powered by HyperReal AI Lab</p>
+      <Footer />
+      <CancelModal />
     </>
   );
 
   // ═══ AUTH ═══
   if (page === P.AUTH) return wrap(
-    <div style={{ paddingTop: isDesk ? 80 : 50, maxWidth: 400, margin: "0 auto", animation: "fadeUp .5s ease" }}>
+    <div style={{ paddingTop: isDesk ? 60 : 30, maxWidth: 400, margin: "0 auto", animation: "fadeUp .5s ease" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
+        <BackBtn to={P.LAND} />
+        <LangSelector />
+      </div>
       <div style={{ textAlign: "center", marginBottom: 32 }}>
         {logo(isDesk ? 34 : 30)}
         <h2 style={{ fontSize: isDesk ? 24 : 20, fontWeight: 700, marginTop: 20 }}>{authMode === "login" ? t("login_title") : t("signup_title")}</h2>
@@ -788,8 +1030,12 @@ export default function App() {
         {authErr && <p style={{ fontSize: 12, color: authErr.includes("✓") ? "#00f0ff" : "#ff4d6a", textAlign: "center" }}>{authErr}</p>}
         <button onClick={handleAuth} disabled={authLoad || !email || pw.length < 6} style={{ padding: "13px", fontSize: 14, fontWeight: 700, color: "#06060e", background: authLoad ? "rgba(0,240,255,.3)" : "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 10, cursor: authLoad ? "wait" : "pointer", fontFamily: "inherit", marginTop: 2 }}>{authLoad ? t("loading") : authMode === "login" ? t("login_btn") : t("signup_btn")}</button>
         <p style={{ fontSize: 12, color: "#5a5a70", textAlign: "center", marginTop: 6 }}>{authMode === "login" ? t("no_account") : t("has_account")}<button onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthErr(""); }} style={{ background: "none", border: "none", color: "#00f0ff", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600 }}>{authMode === "login" ? t("register") : t("signin")}</button></p>
-        <button onClick={() => setPage(P.LAND)} style={{ background: "none", border: "none", color: "#3a3a50", cursor: "pointer", fontFamily: "inherit", fontSize: 11, marginTop: 10 }}>{t("back")}</button>
+        <p style={{ fontSize: 10, color: "#3a3a50", textAlign: "center", marginTop: 8 }}>
+          {lang === "es" ? "Al registrarte aceptas nuestros " : "By signing up you agree to our "}
+          <button onClick={() => setShowTyC(true)} style={{ background: "none", border: "none", color: "#5a5a70", cursor: "pointer", fontFamily: "inherit", fontSize: 10, textDecoration: "underline" }}>{t("terms")}</button>
+        </p>
       </div>
+      <Footer />
     </div>
   );
 
@@ -808,8 +1054,14 @@ export default function App() {
   if (page === P.PLANS) return wrap(
     <div style={{ animation: "fadeUp .5s ease" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
-        {logo(isDesk ? 28 : 24)}
-        <button onClick={logout} style={{ fontSize: 10, color: "#ff4d6a", background: "none", border: "1px solid rgba(255,77,106,.2)", borderRadius: 5, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit" }}>{t("logout")}</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {logo(isDesk ? 28 : 24)}
+          <BackBtn to={P.DASH} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <LangSelector />
+          <UserPanel />
+        </div>
       </div>
       <div style={{ textAlign: "center", marginBottom: isDesk ? 36 : 24 }}>
         <h2 style={{ fontSize: isDesk ? 28 : 22, fontWeight: 800, marginBottom: 6 }}>{t("choose_plan")}</h2>
@@ -818,6 +1070,8 @@ export default function App() {
       <div style={{ display: "flex", flexDirection: isDesk ? "row" : "column", gap: isDesk ? 16 : 10, alignItems: isDesk ? "stretch" : "unset" }}>
         {PLANS.map(pl => <PlanCard key={pl.id} pl={pl} onAction={() => openCheckout(pl.id)} actionLabel={`${t("subscribe")} → $${pl.price}${t("per_month")}`} isDesk={isDesk} lang={lang} features={planFeatures(pl)} />)}
       </div>
+      <Footer />
+      <CancelModal />
     </div>
   );
 
@@ -829,11 +1083,13 @@ export default function App() {
     <>
       {/* Nav */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: isDesk ? 24 : 16 }}>
-        {logo(isDesk ? 26 : 22)}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {logo(isDesk ? 26 : 22)}
+          <button onClick={() => setPage(P.LAND)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 11, color: "#5a5a70", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>← {lang === "en" ? "Home" : "Inicio"}</button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <LangSelector />
-          <span style={{ fontSize: isDesk ? 11 : 9, color: "#5a5a70", maxWidth: isDesk ? 200 : 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.email}</span>
-          <button onClick={logout} style={{ fontSize: 10, color: "#ff4d6a", background: "none", border: "1px solid rgba(255,77,106,.2)", borderRadius: 5, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit" }}>{t("logout")}</button>
+          <UserPanel />
         </div>
       </div>
 
@@ -1151,12 +1407,15 @@ export default function App() {
                 {previewItem.url && (
                   <button onClick={() => downloadFile(previewItem.url, `nanobanano-${previewItem.type}-${Date.now()}.${previewItem.type === "image" ? "png" : "mp4"}`)} style={{ flex: 1, padding: "10px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>↓ Descargar</button>
                 )}
-                <button onClick={() => setPreviewItem(null)} style={{ padding: "10px 16px", fontSize: 12, fontWeight: 600, color: "#5a5a70", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>Cerrar</button>
+                <button onClick={() => setPreviewItem(null)} style={{ padding: "10px 16px", fontSize: 12, fontWeight: 600, color: "#5a5a70", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("close")}</button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      <Footer />
+      <CancelModal />
     </>
   );
 }
