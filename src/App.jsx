@@ -275,7 +275,40 @@ function detectLang() {
   return nav.startsWith("es") ? "es" : "en";
 }
 
-// ─── DATA ───
+// ─── STYLE PROMPT ENGINEERING ───
+// Each style injects targeted technical parameters to genuinely influence generation
+const STYLE_PROMPTS = {
+  photorealistic: {
+    prefix: "",
+    suffix: "photorealistic, shot on Sony A7R V, 85mm f/1.4 lens, natural lighting, ultra-detailed skin texture, shallow depth of field, RAW photo quality, 8K resolution, true-to-life colors, hyper-realistic rendering",
+  },
+  cinematic: {
+    prefix: "cinematic still frame, ",
+    suffix: "anamorphic lens flare, cinematic color grading, dramatic chiaroscuro lighting, film grain texture, widescreen 2.39:1 aspect, Hollywood blockbuster aesthetic, volumetric fog, golden ratio composition, shot on ARRI Alexa, LUT-graded",
+  },
+  product: {
+    prefix: "",
+    suffix: "professional product photography, studio lighting setup, clean white or gradient background, macro detail, crisp sharp edges, commercial advertising quality, reflection on surface, isolated subject, brand campaign style, 4K studio shot",
+  },
+  portrait: {
+    prefix: "",
+    suffix: "portrait photography, Rembrandt lighting, catchlight in eyes, soft bokeh background, skin retouching, high-end fashion editorial, sharp facial features, professional studio backdrop, 85mm portrait lens, magazine cover quality",
+  },
+  architecture: {
+    prefix: "",
+    suffix: "architectural photography, wide angle rectilinear lens, golden hour lighting, dramatic sky, perfect geometric symmetry, HDR tonal range, sharp from foreground to background, professional architectural visualization, luxury real estate quality",
+  },
+  food: {
+    prefix: "",
+    suffix: "professional food photography, overhead flat lay or 45-degree angle, natural side lighting, appetizing color saturation, macro texture detail, fresh ingredients, styled plating, shallow depth of field, Michelin-star restaurant quality, editorial food magazine style",
+  },
+};
+
+function buildStyledPrompt(userPrompt, styleId) {
+  const s = STYLE_PROMPTS[styleId] || STYLE_PROMPTS.photorealistic;
+  const base = userPrompt.trim().replace(/[.,]+$/, "");
+  return `${s.prefix}${base}, ${s.suffix}`;
+}
 const PLANS = [
   { id: "test", name: "Test", nameEn: "Test", price: 9.99, oldPrice: 29.99, images: 20, videos: 2, maxDuration: [5], resolution: "1K",
     features: { es: ["20 imágenes Nano Banana 2/mes", "2 videos Kling 3.0 (5s)/mes", "Calidad de imagen 1K", "Soporte por email"], en: ["20 Nano Banana 2 images/mo", "2 Kling 3.0 videos (5s)/mo", "1K image quality", "Email support"] },
@@ -600,7 +633,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: isVid ? "video" : "image",
-          prompt: style !== "photorealistic" ? `${prompt}, ${style} style` : prompt,
+          prompt: buildStyledPrompt(prompt, tab === T.IMG ? style : "cinematic"),
           aspect_ratio: isVid ? vidRatio : ratio,
           plan: profile.plan || "basic",
           duration: isVid ? vidDur : undefined,
@@ -1182,14 +1215,25 @@ export default function App() {
 
               {tab === T.IMG && (
                 <>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>Estilo</p>
-                  <div style={{ display: "grid", gridTemplateColumns: isDesk ? "repeat(6,1fr)" : "repeat(3,1fr)", gap: 5, marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{t("style_label")}</p>
+                  <div style={{ display: "grid", gridTemplateColumns: isDesk ? "repeat(6,1fr)" : "repeat(3,1fr)", gap: 5, marginBottom: 8 }}>
                     {STYLES.map(s => (
                       <button key={s.id} onClick={() => setStyle(s.id)} style={{ padding: "9px 4px", fontSize: 10, fontWeight: style === s.id ? 600 : 400, color: style === s.id ? "#fff" : "#6a6a80", background: style === s.id ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: style === s.id ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.04)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                        <span style={{ display: "block", fontSize: 15, marginBottom: 2 }}>{s.icon}</span>{s.label}
+                        <span style={{ display: "block", fontSize: 15, marginBottom: 2 }}>{s.icon}</span>{lang === "en" ? t("styles")?.[s.id] : s.label}
                       </button>
                     ))}
                   </div>
+                  {/* Style influence preview */}
+                  {prompt.trim() && (
+                    <div style={{ marginBottom: 12, padding: "8px 10px", borderRadius: 8, background: "rgba(0,240,255,.03)", border: "1px solid rgba(0,240,255,.08)" }}>
+                      <p style={{ fontSize: 8, color: "#3a3a60", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 4px" }}>
+                        {lang === "en" ? "✦ prompt that will be sent" : "✦ prompt que se enviará"}
+                      </p>
+                      <p style={{ fontSize: 10, color: "#5a5a70", margin: 0, lineHeight: 1.5, fontFamily: "'JetBrains Mono',monospace", wordBreak: "break-word" }}>
+                        {buildStyledPrompt(prompt, style)}
+                      </p>
+                    </div>
+                  )}
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>Proporción</p>
                   <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
                     {RATIOS.map(r => (
