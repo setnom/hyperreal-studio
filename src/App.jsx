@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ─── CONFIG ───
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
@@ -365,29 +365,53 @@ function useW() {
 // ─── COMPONENTS ───
 const GIcon = () => <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>;
 
-function Generating({ type, duration, lang }) {
+function Generating({ type, duration, lang, genStatus }) {
   const [d, setD] = useState("");
   const [p, setP] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const a = setInterval(() => setD(x => x.length >= 3 ? "" : x + "."), 400);
-    const b = setInterval(() => setP(v => Math.min(v + Math.random() * 3, 95)), 800);
-    const c = setInterval(() => setElapsed(e => e + 1), 1000);
-    return () => { clearInterval(a); clearInterval(b); clearInterval(c); };
-  }, []);
-  const formatTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+    const b = setInterval(() => {
+      setP(v => {
+        if (genStatus?.phase === "queued") return Math.min(v + 0.5, 15);
+        if (genStatus?.phase === "generating") return Math.min(v + Math.random() * 3, 95);
+        if (genStatus?.phase === "done") return 100;
+        return Math.min(v + 1, 95);
+      });
+    }, 800);
+    return () => { clearInterval(a); clearInterval(b); };
+  }, [genStatus?.phase]);
+
+  const formatTime = (s) => s >= 60 ? `${Math.floor(s/60)}:${(s%60).toString().padStart(2,"0")}` : `${s}s`;
+  const isEn = lang === "en";
+  const phase = genStatus?.phase || "generating";
+  const pos = genStatus?.position;
+  const elapsed = genStatus?.elapsed || 0;
   const estMin = type === T.VID ? (duration === 10 ? "2" : duration === 8 ? "1:30" : "1") : "0:15";
   const estMax = type === T.VID ? (duration === 10 ? "4" : duration === 8 ? "3" : "2") : "1";
-  const isEn = lang === "en";
+
+  const phaseColor = phase === "queued" ? "#ffb800" : phase === "done" ? "#00ff88" : "#00f0ff";
+  const phaseLabel = phase === "queued"
+    ? (pos ? (isEn ? `In queue · position ${pos}` : `En cola · posición ${pos}`) : (isEn ? "In queue…" : "En cola…"))
+    : phase === "done"
+    ? (isEn ? "✓ Ready!" : "✓ ¡Listo!")
+    : (isEn ? (type === T.VID ? "Generating video" : "Generating image") : (type === T.VID ? "Generando video" : "Generando imagen"));
+
   return (
     <div style={{ position: "absolute", inset: 0, background: "rgba(6,6,14,.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 10, borderRadius: 14, backdropFilter: "blur(8px)" }}>
-      <div style={{ width: 40, height: 40, border: "3px solid rgba(0,240,255,.12)", borderTop: "3px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 12 }} />
-      <p style={{ color: "#e0e0f0", fontSize: 14, fontWeight: 600, margin: "0 0 3px" }}>{isEn ? (type === T.VID ? "Generating video" : "Generating image") : (type === T.VID ? "Generando video" : "Generando imagen")}{d}</p>
+      <div style={{ width: 40, height: 40, border: `3px solid rgba(0,240,255,.12)`, borderTop: `3px solid ${phaseColor}`, borderRadius: "50%", animation: phase === "done" ? "none" : "spin .8s linear infinite", marginBottom: 12 }} />
+      <p style={{ color: "#e0e0f0", fontSize: 14, fontWeight: 600, margin: "0 0 3px" }}>{phaseLabel}{phase !== "done" && d}</p>
       <p style={{ color: "#5a5a70", fontSize: 11, margin: "0 0 4px" }}>Powered by {type === T.VID ? "Kling 3.0" : "Nano Banana 2"}</p>
       <p style={{ color: "#3a3a50", fontSize: 10, margin: "0 0 10px", fontFamily: "'JetBrains Mono',monospace" }}>
-        {formatTime(elapsed)} — {isEn ? `may take ${estMin} to ${estMax} min` : `puede tardar de ${estMin} a ${estMax} min`}
+        {elapsed > 0 ? formatTime(elapsed) : "—"} {phase === "generating" ? (isEn ? `· may take ${estMin}–${estMax} min` : `· puede tardar ${estMin}–${estMax} min`) : ""}
       </p>
-      <div style={{ width: 150, height: 3, background: "rgba(255,255,255,.06)", borderRadius: 2, overflow: "hidden" }}><div style={{ height: "100%", width: `${p}%`, background: "linear-gradient(90deg, #00f0ff, #b44aff)", borderRadius: 2, transition: "width .3s" }} /></div>
+      <div style={{ width: 150, height: 3, background: "rgba(255,255,255,.06)", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${p}%`, background: phase === "queued" ? "linear-gradient(90deg,#ffb800,#ff8c00)" : phase === "done" ? "#00ff88" : "linear-gradient(90deg,#00f0ff,#b44aff)", borderRadius: 2, transition: "width .5s" }} />
+      </div>
+      {phase === "queued" && pos && (
+        <p style={{ color: "#ffb800", fontSize: 9, margin: "8px 0 0", fontFamily: "'JetBrains Mono',monospace" }}>
+          {isEn ? `~${pos * 15}s wait` : `~${pos * 15}s de espera`}
+        </p>
+      )}
     </div>
   );
 }
@@ -451,7 +475,21 @@ export default function App() {
   const [vidDur, setVidDur] = useState(5);
   const [vidRatio, setVidRatio] = useState("16:9");
   const [genning, setGenning] = useState(false);
+  const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
+  const [visibleCount, setVisibleCount] = useState(20);
+  const gallerysentinel = useRef(null);
+
+  // Infinite scroll — load 20 more when sentinel enters viewport
+  useEffect(() => {
+    const el = gallerysentinel.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) setVisibleCount(v => v + 20);
+    }, { rootMargin: "200px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [gallerysentinel.current, gens.length]);
   const [payMsg, setPayMsg] = useState("");
   const [activating, setActivating] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -549,8 +587,10 @@ export default function App() {
       if (Array.isArray(g)) {
         const mapped = g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url }));
         setGens(mapped);
+        setVisibleCount(20);
       }
       loadFavorites(s.access_token);
+      if (Notification.permission === "default") Notification.requestPermission().catch(() => {});
       setPage(p.plan === "none" || (!p.images_remaining && !p.videos_remaining) ? P.PLANS : P.DASH); } } } catch {} };
   const handleAuth = async () => {
     setAuthErr(""); setAuthLoad(true);
@@ -741,6 +781,25 @@ export default function App() {
     throw new Error(data.error || "Upload returned no URL");
   };
 
+  const playDoneSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const notes = [523, 659, 784, 1047]; // C5 E5 G5 C6 — acorde mayor
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const t = ctx.currentTime + i * 0.12;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.18, t + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        osc.start(t); osc.stop(t + 0.5);
+      });
+    } catch {}
+  };
+
   const handleGen = async () => {
     if ((!prompt.trim() && style !== "restore") || !profile || !session) return;
     const isVid = tab === T.VID;
@@ -754,6 +813,7 @@ export default function App() {
     setGenning(true);
     setGenResult(null);
     setGenError("");
+    setGenStatus({ phase: "queued", position: null, elapsed: 0 });
 
     try {
       // Upload reference images via server
@@ -822,12 +882,15 @@ export default function App() {
       // Step 2: Poll for result every 3 seconds
       const { request_id, endpoint, type: genType, status_url, response_url } = submitData;
       let attempts = 0;
-      const maxAttempts = 200; // 10 minutes max for videos
+      const maxAttempts = 200;
+      setGenStatus({ phase: "queued", position: null, elapsed: 0 });
+      const pollStart = Date.now();
 
       const poll = async () => {
         if (attempts >= maxAttempts) {
           setGenError("La generación tardó demasiado. Contacta soporte.");
           setGenning(false);
+          setGenStatus({ phase: "idle", position: null, elapsed: 0 });
           return;
         }
         attempts++;
@@ -839,8 +902,18 @@ export default function App() {
             body: JSON.stringify({ request_id, endpoint, type: genType, user_token: session.access_token, status_url, response_url }),
           });
           const statusData = await statusRes.json();
+          const elapsed = Math.round((Date.now() - pollStart) / 1000);
 
           if (statusData.status === "COMPLETED" && statusData.url) {
+            setGenStatus({ phase: "done", position: null, elapsed });
+            playDoneSound();
+            // Browser notification if tab not focused
+            if (document.hidden && Notification.permission === "granted") {
+              new Notification("NanoBanano Studio", {
+                body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista",
+                icon: "/favicon.png",
+              });
+            }
             await saveGenResult(isVid, { ...submitData, url: statusData.url });
             return;
           }
@@ -848,17 +921,24 @@ export default function App() {
           if (statusData.status === "FAILED") {
             setGenError("La generación falló. Intenta con otro prompt.");
             setGenning(false);
+            setGenStatus({ phase: "idle", position: null, elapsed: 0 });
             return;
           }
 
-          // Still processing, poll again in 3 seconds
+          // Update phase based on queue position
+          const pos = statusData.position;
+          if (pos > 0) {
+            setGenStatus({ phase: "queued", position: pos, elapsed });
+          } else {
+            setGenStatus({ phase: "generating", position: null, elapsed });
+          }
+
           setTimeout(poll, 3000);
         } catch {
           setTimeout(poll, 5000);
         }
       };
 
-      // Start polling
       setTimeout(poll, 3000);
 
     } catch (err) {
@@ -880,6 +960,7 @@ export default function App() {
     setGens(prev => [{ id: Date.now(), type: isVid ? "video" : "image", prompt, style: tab === T.IMG ? style : "cinematic", created_at: new Date().toISOString(), url: data.url }, ...prev]);
     setGenResult({ type: isVid ? "video" : "image", url: data.url, resolution: data.resolution, audio: data.audio });
     setGenning(false);
+    setTimeout(() => setGenStatus({ phase: "idle", position: null, elapsed: 0 }), 3000);
   };
 
   const STRIPE_PORTAL = "https://billing.stripe.com/p/login/14AdR90eK7q1eCjbQbeME00";
@@ -1401,26 +1482,31 @@ export default function App() {
             <div style={{ marginBottom: 16 }}>
               <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8, fontWeight: 600 }}>Biblioteca</p>
               {gens.length === 0 ? <p style={{ fontSize: 11, color: "#3a3a50" }}>Sin generaciones aún</p> : (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, maxHeight: 350, overflow: "auto" }}>
-                  {gens.map((g, i) => (
-                    <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "border-color .2s", position: "relative" }}
-                      onMouseEnter={e => e.currentTarget.style.borderColor = g.type === "image" ? "rgba(0,240,255,.3)" : "rgba(180,74,255,.3)"}
-                      onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"}>
-                      {g.url ? (
-                        g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: 80, objectFit: "cover", display: "block" }} />
-                        : <video src={g.url} muted style={{ width: "100%", height: 80, objectFit: "cover", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
-                      ) : (
-                        <div style={{ width: "100%", height: 80, background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{g.type === "image" ? "🖼️" : "🎬"}</div>
-                      )}
-                      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 4px 3px", background: "linear-gradient(transparent, rgba(0,0,0,.7))" }}>
-                        <span style={{ fontSize: 7, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, maxHeight: 350, overflow: "auto" }}>
+                    {gens.slice(0, visibleCount).map((g, i) => (
+                      <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "border-color .2s", position: "relative" }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = g.type === "image" ? "rgba(0,240,255,.3)" : "rgba(180,74,255,.3)"}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"}>
+                        {g.url ? (
+                          g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: 80, objectFit: "cover", display: "block" }} />
+                          : <video src={g.url} muted style={{ width: "100%", height: 80, objectFit: "cover", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
+                        ) : (
+                          <div style={{ width: "100%", height: 80, background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{g.type === "image" ? "🖼️" : "🎬"}</div>
+                        )}
+                        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 4px 3px", background: "linear-gradient(transparent, rgba(0,0,0,.7))" }}>
+                          <span style={{ fontSize: 7, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
+                        </div>
+                        {favorites[g.id] && (
+                          <div style={{ position: "absolute", top: 4, right: 4, fontSize: 11, lineHeight: 1 }}>❤️</div>
+                        )}
                       </div>
-                      {favorites[g.id] && (
-                        <div style={{ position: "absolute", top: 4, right: 4, fontSize: 11, lineHeight: 1 }}>❤️</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                  {visibleCount < gens.length && (
+                    <div ref={gallerysentinel} style={{ height: 20 }} />
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1618,7 +1704,7 @@ export default function App() {
               <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genning || (!prompt.trim() && style !== "restore") || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genning && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
                 {!hasPlan ? t("plan_for_gen") : genning ? (t("loading")) : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
               </button>
-              {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={tab} duration={vidDur} lang={lang} /></div>}
+              {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={tab} duration={vidDur} lang={lang} genStatus={genStatus} /></div>}
 
               {/* Error */}
               {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>{genError}</div>}
@@ -1650,24 +1736,31 @@ export default function App() {
               {gens.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "36px 18px" }}><p style={{ fontSize: 28, marginBottom: 6 }}>📁</p><p style={{ color: "#5a5a70", fontSize: 12 }}>Sin generaciones aún</p></div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                  {gens.map((g, i) => (
-                    <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", position: "relative", aspectRatio: "1" }}>
-                      {g.url ? (
-                        g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                        : <video src={g.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                      ) : (
-                        <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{g.type === "image" ? "🖼️" : "🎬"}</div>
-                      )}
-                      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "14px 6px 4px", background: "linear-gradient(transparent, rgba(0,0,0,.8))" }}>
-                        <span style={{ fontSize: 8, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                    {gens.slice(0, visibleCount).map((g, i) => (
+                      <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", position: "relative", aspectRatio: "1" }}>
+                        {g.url ? (
+                          g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          : <video src={g.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        ) : (
+                          <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{g.type === "image" ? "🖼️" : "🎬"}</div>
+                        )}
+                        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "14px 6px 4px", background: "linear-gradient(transparent, rgba(0,0,0,.8))" }}>
+                          <span style={{ fontSize: 8, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
+                        </div>
+                        {favorites[g.id] && (
+                          <div style={{ position: "absolute", top: 4, right: 4, fontSize: 12, lineHeight: 1 }}>❤️</div>
+                        )}
                       </div>
-                      {favorites[g.id] && (
-                        <div style={{ position: "absolute", top: 4, right: 4, fontSize: 12, lineHeight: 1 }}>❤️</div>
-                      )}
+                    ))}
+                  </div>
+                  {visibleCount < gens.length && (
+                    <div ref={gallerysentinel} style={{ height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <div style={{ width: 20, height: 20, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
           )}
