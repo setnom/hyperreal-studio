@@ -609,8 +609,7 @@ export default function App() {
       if (Notification.permission === "default") Notification.requestPermission().catch(() => {});
 
       const noPlan = !p.plan || p.plan === "none";
-      const noCredits = !p.images_remaining && !p.videos_remaining;
-      setPage(noPlan || noCredits ? P.PLANS : P.DASH);
+      setPage(noPlan ? P.PLANS : P.DASH);
 
     } catch (err) {
       console.error("loadProfile error:", err);
