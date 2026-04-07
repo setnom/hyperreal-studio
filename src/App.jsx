@@ -1448,17 +1448,21 @@ export default function App() {
       {/* Preview Modal */}
       {previewItem && (
         <div onClick={() => setPreviewItem(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)", animation: "fadeUp .3s ease" }}>
-          <div onClick={e => e.stopPropagation()} style={{ maxWidth: 600, width: "100%", borderRadius: 16, overflow: "hidden", background: "#0a0a14", border: "1px solid rgba(255,255,255,.08)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ maxWidth: 600, width: "100%", maxHeight: "90vh", borderRadius: 16, overflow: "hidden", background: "#0a0a14", border: "1px solid rgba(255,255,255,.08)", display: "flex", flexDirection: "column" }}>
+            {/* Media — fixed, doesn't scroll */}
+            <div style={{ flexShrink: 0 }}>
             {previewItem.url ? (
               previewItem.type === "image" ? (
-                <img src={previewItem.url} alt="" style={{ width: "100%", display: "block" }} />
+                <img src={previewItem.url} alt="" style={{ width: "100%", display: "block", maxHeight: "55vh", objectFit: "contain", background: "#06060e" }} />
               ) : (
-                <video src={previewItem.url} controls autoPlay style={{ width: "100%", display: "block" }} />
+                <video src={previewItem.url} controls autoPlay style={{ width: "100%", display: "block", maxHeight: "55vh" }} />
               )
             ) : (
-              <div style={{ width: "100%", height: 250, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,.02)", fontSize: 40 }}>{previewItem.type === "image" ? "🖼️" : "🎬"}</div>
+              <div style={{ width: "100%", height: 200, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,.02)", fontSize: 40 }}>{previewItem.type === "image" ? "🖼️" : "🎬"}</div>
             )}
-            <div style={{ padding: "14px 16px" }}>
+            </div>
+            {/* Info — scrollable */}
+            <div style={{ padding: "14px 16px", overflowY: "auto", flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 10, color: previewItem.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600, textTransform: "uppercase" }}>{previewItem.type === "image" ? t("tab_image") : t("tab_video")}</span>
@@ -1466,7 +1470,26 @@ export default function App() {
                 </div>
                 <button onClick={() => setPreviewItem(null)} style={{ background: "none", border: "none", color: "#5a5a70", fontSize: 18, cursor: "pointer" }}>✕</button>
               </div>
-              <p style={{ fontSize: 12, color: "#8a8a9e", margin: "0 0 12px", lineHeight: 1.5 }}>"{previewItem.prompt}"</p>
+              {/* Prompt box — 3 lines max, copy button */}
+              {previewItem.prompt && (
+                <div style={{ marginBottom: 12, borderRadius: 8, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)", overflow: "hidden" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                    <span style={{ fontSize: 9, color: "#3a3a50", letterSpacing: 1, textTransform: "uppercase" }}>Prompt</span>
+                    <button
+                      onClick={e => {
+                        navigator.clipboard?.writeText(previewItem.prompt).catch(() => {});
+                        e.target.textContent = "✓";
+                        setTimeout(() => { e.target.textContent = lang === "en" ? "Copy" : "Copiar"; }, 1500);
+                      }}
+                      style={{ fontSize: 10, color: "#00f0ff", background: "rgba(0,240,255,.06)", border: "1px solid rgba(0,240,255,.15)", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                      {lang === "en" ? "Copy" : "Copiar"}
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 11, color: "#6a6a80", margin: 0, padding: "8px 10px", lineHeight: 1.55, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden", fontFamily: "'JetBrains Mono',monospace", wordBreak: "break-word" }}>
+                    {previewItem.prompt}
+                  </p>
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8 }}>
                 {previewItem.url && (
                   <button onClick={() => downloadFile(previewItem.url, `nanobanano-${previewItem.type}-${Date.now()}.${previewItem.type === "image" ? "png" : "mp4"}`)} style={{ flex: 1, padding: "10px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>↓ Descargar</button>
