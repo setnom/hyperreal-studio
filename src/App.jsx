@@ -551,36 +551,106 @@ export default function App() {
   const [genError, setGenError] = useState("");
   const [audioOn, setAudioOn] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
+  const [previewIndex, setPreviewIndex] = useState(null);
+  const [favorites, setFavorites] = useState(() => { try { return JSON.parse(localStorage.getItem("nb_favs") || "{}"); } catch { return {}; } });
+  const [paymentFailedModal, setPaymentFailedModal] = useState(false);
+
+  const toggleFav = (id) => {
+    setFavorites(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      if (!next[id]) delete next[id];
+      try { localStorage.setItem("nb_favs", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const openPreview = (g, idx) => { setPreviewItem(g); setPreviewIndex(idx ?? null); };
+
+  useEffect(() => {
+    if (!previewItem) return;
+    const handle = (e) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        const idx = previewIndex ?? gens.findIndex(g => g.id === previewItem.id);
+        const next = idx + 1 < gens.length ? idx + 1 : 0;
+        setPreviewItem(gens[next]); setPreviewIndex(next);
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        const idx = previewIndex ?? gens.findIndex(g => g.id === previewItem.id);
+        const prev = idx - 1 >= 0 ? idx - 1 : gens.length - 1;
+        setPreviewItem(gens[prev]); setPreviewIndex(prev);
+      } else if (e.key === "Escape") {
+        setPreviewItem(null); setPreviewIndex(null);
+      }
+    };
+    window.addEventListener("keydown", handle);
+    return () => window.removeEventListener("keydown", handle);
+  }, [previewItem, previewIndex, gens]);
 
   // Direct download without opening new tab
   const downloadFile = async (url, filename) => {
+    // Show loading state on all download buttons
+    const btns = document.querySelectorAll("[data-download-btn]");
+    btns.forEach(b => { b.textContent = "⏳"; b.disabled = true; });
+
+    const done = () => btns.forEach(b => { b.textContent = "↓ " + (lang === "en" ? "Download" : "Descargar"); b.disabled = false; });
+
     try {
-      // Use backend proxy to bypass CORS and force download
-      const res = await fetch("/api/download", {
+      // Try backend proxy first (bypasses CORS headers on fal CDN)
+      const proxyRes = await fetch("/api/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, filename, user_token: session?.access_token }),
       });
-      if (!res.ok) throw new Error("Proxy failed");
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename || "nanobanano-" + Date.now();
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    } catch {
-      // Fallback: direct link with download attribute
+
+      if (proxyRes.ok) {
+        const blob = await proxyRes.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename || "nanobanano-" + Date.now();
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        done();
+        return;
+      }
+    } catch (e) {
+      console.warn("Proxy download failed, trying direct fetch:", e.message);
+    }
+
+    try {
+      // Direct fetch with no-cors mode — works for same-origin or permissive CORS
+      const directRes = await fetch(url, { mode: "cors" });
+      if (directRes.ok) {
+        const blob = await directRes.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename || "nanobanano-" + Date.now();
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        done();
+        return;
+      }
+    } catch (e) {
+      console.warn("Direct fetch failed:", e.message);
+    }
+
+    // Last resort: force download via hidden iframe trick
+    try {
       const a = document.createElement("a");
       a.href = url;
       a.download = filename || "nanobanano-" + Date.now();
-      a.target = "_blank";
-      a.rel = "noopener";
+      a.style.display = "none";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-    }
+    } catch {}
+    done();
   };
 
   // Max file size before compression: 20MB (browser handles it, canvas compresses)
@@ -636,6 +706,11 @@ export default function App() {
     const isVid = tab === T.VID;
     if (isVid && profile.videos_remaining <= 0) return;
     if (!isVid && profile.images_remaining <= 0) return;
+    // Block if payment failed
+    if (profile.subscription_status === "payment_failed") {
+      setPaymentFailedModal(true);
+      return;
+    }
     setGenning(true);
     setGenResult(null);
     setGenError("");
@@ -970,7 +1045,30 @@ export default function App() {
     </div>
   );
 
-  // ─── FOOTER ───
+  // ─── PAYMENT FAILED MODAL ───
+  const PaymentFailedModal = () => !paymentFailedModal ? null : (
+    <div onClick={() => setPaymentFailedModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)" }}>
+      <div onClick={e => e.stopPropagation()} style={{ maxWidth: 400, width: "100%", background: "#0e0e1a", border: "1px solid rgba(255,77,106,.25)", borderRadius: 20, padding: 28, animation: "fadeUp .3s ease", textAlign: "center" }}>
+        <div style={{ fontSize: 42, marginBottom: 12 }}>💳</div>
+        <h3 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 10px", color: "#ff4d6a" }}>
+          {lang === "en" ? "Payment issue" : "Problema de pago"}
+        </h3>
+        <p style={{ fontSize: 13, color: "#7a7a90", lineHeight: 1.7, margin: "0 0 24px" }}>
+          {lang === "en"
+            ? "We couldn't process your last payment. Please update your payment method to continue generating."
+            : "No pudimos procesar tu último pago. Actualiza tu método de pago para continuar generando."}
+        </p>
+        <button
+          onClick={() => { window.open(`${STRIPE_PORTAL}?prefilled_email=${encodeURIComponent(profile?.email || "")}`, "_blank"); setPaymentFailedModal(false); }}
+          style={{ width: "100%", padding: "13px", fontSize: 14, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg, #ff4d6a, #ff6b2b)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", marginBottom: 10 }}>
+          {lang === "en" ? "Update payment method →" : "Actualizar método de pago →"}
+        </button>
+        <button onClick={() => setPaymentFailedModal(false)} style={{ background: "none", border: "none", color: "#3a3a50", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          {lang === "en" ? "Close" : "Cerrar"}
+        </button>
+      </div>
+    </div>
+  );
   const Footer = () => (
     <div style={{ textAlign: "center", marginTop: 40, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,.03)" }}>
       <p style={{ fontSize: 9, color: "#2a2a3a", fontFamily: "'JetBrains Mono',monospace", margin: "0 0 6px" }}>
@@ -1264,7 +1362,7 @@ export default function App() {
               {gens.length === 0 ? <p style={{ fontSize: 11, color: "#3a3a50" }}>Sin generaciones aún</p> : (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, maxHeight: 350, overflow: "auto" }}>
                   {gens.slice(0, 12).map((g, i) => (
-                    <div key={g.id || i} onClick={() => setPreviewItem(g)} style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "border-color .2s", position: "relative" }}
+                    <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "border-color .2s", position: "relative" }}
                       onMouseEnter={e => e.currentTarget.style.borderColor = g.type === "image" ? "rgba(0,240,255,.3)" : "rgba(180,74,255,.3)"}
                       onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"}>
                       {g.url ? (
@@ -1276,6 +1374,9 @@ export default function App() {
                       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 4px 3px", background: "linear-gradient(transparent, rgba(0,0,0,.7))" }}>
                         <span style={{ fontSize: 7, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
                       </div>
+                      {favorites[g.id] && (
+                        <div style={{ position: "absolute", top: 4, right: 4, fontSize: 11, lineHeight: 1 }}>❤️</div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1493,7 +1594,7 @@ export default function App() {
                       {genResult.resolution && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: "rgba(0,240,255,.1)", color: "#00f0ff", fontWeight: 600 }}>{genResult.resolution}</span>}
                       {genResult.audio && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: "rgba(180,74,255,.1)", color: "#b44aff", fontWeight: 600 }}>🔊 Audio</span>}
                     </div>
-                    <button onClick={() => downloadFile(genResult.url, `nanobanano-${genResult.type === "image" ? "img" : "vid"}-${Date.now()}.${genResult.type === "image" ? "png" : "mp4"}`)} style={{ fontSize: 11, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.15)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ Descargar</button>
+                    <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-${genResult.type === "image" ? "img" : "vid"}-${Date.now()}.${genResult.type === "image" ? "png" : "mp4"}`)} style={{ fontSize: 11, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.15)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {t("download")}</button>
                   </div>
                 </div>
               )}
@@ -1508,7 +1609,7 @@ export default function App() {
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                   {gens.map((g, i) => (
-                    <div key={g.id || i} onClick={() => setPreviewItem(g)} style={{ borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", position: "relative", aspectRatio: "1" }}>
+                    <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", position: "relative", aspectRatio: "1" }}>
                       {g.url ? (
                         g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         : <video src={g.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -1518,6 +1619,9 @@ export default function App() {
                       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "14px 6px 4px", background: "linear-gradient(transparent, rgba(0,0,0,.8))" }}>
                         <span style={{ fontSize: 8, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
                       </div>
+                      {favorites[g.id] && (
+                        <div style={{ position: "absolute", top: 4, right: 4, fontSize: 12, lineHeight: 1 }}>❤️</div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1537,19 +1641,42 @@ export default function App() {
 
       {/* Preview Modal */}
       {previewItem && (
-        <div onClick={() => setPreviewItem(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)", animation: "fadeUp .3s ease" }}>
+        <div onClick={() => { setPreviewItem(null); setPreviewIndex(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)", animation: "fadeUp .3s ease" }}>
+          {/* Prev arrow */}
+          {gens.length > 1 && (
+            <button onClick={e => { e.stopPropagation(); const idx = previewIndex ?? gens.findIndex(g => g.id === previewItem.id); const p = idx - 1 >= 0 ? idx - 1 : gens.length - 1; setPreviewItem(gens[p]); setPreviewIndex(p); }}
+              style={{ position: "fixed", left: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: "50%", width: 40, height: 40, color: "#e0e0f0", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1001 }}>‹</button>
+          )}
+          {/* Next arrow */}
+          {gens.length > 1 && (
+            <button onClick={e => { e.stopPropagation(); const idx = previewIndex ?? gens.findIndex(g => g.id === previewItem.id); const n = idx + 1 < gens.length ? idx + 1 : 0; setPreviewItem(gens[n]); setPreviewIndex(n); }}
+              style={{ position: "fixed", right: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: "50%", width: 40, height: 40, color: "#e0e0f0", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1001 }}>›</button>
+          )}
           <div onClick={e => e.stopPropagation()} style={{ maxWidth: 600, width: "100%", maxHeight: "90vh", borderRadius: 16, overflow: "hidden", background: "#0a0a14", border: "1px solid rgba(255,255,255,.08)", display: "flex", flexDirection: "column" }}>
             {/* Media — fixed, doesn't scroll */}
-            <div style={{ flexShrink: 0 }}>
-            {previewItem.url ? (
-              previewItem.type === "image" ? (
-                <img src={previewItem.url} alt="" style={{ width: "100%", display: "block", maxHeight: "55vh", objectFit: "contain", background: "#06060e" }} />
+            <div style={{ flexShrink: 0, position: "relative" }}>
+              {previewItem.url ? (
+                previewItem.type === "image" ? (
+                  <img src={previewItem.url} alt="" style={{ width: "100%", display: "block", maxHeight: "55vh", objectFit: "contain", background: "#06060e" }} />
+                ) : (
+                  <video src={previewItem.url} controls autoPlay style={{ width: "100%", display: "block", maxHeight: "55vh" }} />
+                )
               ) : (
-                <video src={previewItem.url} controls autoPlay style={{ width: "100%", display: "block", maxHeight: "55vh" }} />
-              )
-            ) : (
-              <div style={{ width: "100%", height: 200, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,.02)", fontSize: 40 }}>{previewItem.type === "image" ? "🖼️" : "🎬"}</div>
-            )}
+                <div style={{ width: "100%", height: 200, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,.02)", fontSize: 40 }}>{previewItem.type === "image" ? "🖼️" : "🎬"}</div>
+              )}
+              {/* Heart button over image */}
+              <button
+                onClick={e => { e.stopPropagation(); toggleFav(previewItem.id); }}
+                style={{ position: "absolute", top: 10, right: 10, background: favorites[previewItem.id] ? "rgba(255,60,90,.85)" : "rgba(0,0,0,.5)", border: favorites[previewItem.id] ? "1px solid rgba(255,60,90,.4)" : "1px solid rgba(255,255,255,.15)", borderRadius: "50%", width: 34, height: 34, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all .2s", backdropFilter: "blur(4px)" }}
+                title={favorites[previewItem.id] ? (lang === "en" ? "Remove from favorites" : "Quitar de favoritos") : (lang === "en" ? "Add to favorites" : "Agregar a favoritos")}>
+                {favorites[previewItem.id] ? "❤️" : "🤍"}
+              </button>
+              {/* Counter */}
+              {gens.length > 1 && (
+                <div style={{ position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,.6)", borderRadius: 20, padding: "3px 10px", fontSize: 10, color: "#8a8a9e", fontFamily: "'JetBrains Mono',monospace", backdropFilter: "blur(4px)" }}>
+                  {(previewIndex ?? gens.findIndex(g => g.id === previewItem.id)) + 1} / {gens.length}
+                </div>
+              )}
             </div>
             {/* Info — scrollable */}
             <div style={{ padding: "14px 16px", overflowY: "auto", flex: 1 }}>
@@ -1557,8 +1684,9 @@ export default function App() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 10, color: previewItem.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600, textTransform: "uppercase" }}>{previewItem.type === "image" ? t("tab_image") : t("tab_video")}</span>
                   <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>{new Date(previewItem.created_at).toLocaleDateString()}</span>
+                  {isDesk && <span style={{ fontSize: 9, color: "#2a2a3a" }}>← →</span>}
                 </div>
-                <button onClick={() => setPreviewItem(null)} style={{ background: "none", border: "none", color: "#5a5a70", fontSize: 18, cursor: "pointer" }}>✕</button>
+                <button onClick={() => { setPreviewItem(null); setPreviewIndex(null); }} style={{ background: "none", border: "none", color: "#5a5a70", fontSize: 18, cursor: "pointer" }}>✕</button>
               </div>
               {/* Prompt box — max 3 lines, copy button */}
               {previewItem.prompt && (
@@ -1586,7 +1714,7 @@ export default function App() {
               )}
               <div style={{ display: "flex", gap: 8 }}>
                 {previewItem.url && (
-                  <button onClick={() => downloadFile(previewItem.url, `nanobanano-${previewItem.type}-${Date.now()}.${previewItem.type === "image" ? "png" : "mp4"}`)} style={{ flex: 1, padding: "10px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>↓ Descargar</button>
+                  <button data-download-btn onClick={() => downloadFile(previewItem.url, `nanobanano-${previewItem.type}-${Date.now()}.${previewItem.type === "image" ? "png" : "mp4"}`)} style={{ flex: 1, padding: "10px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>↓ {t("download")}</button>
                 )}
                 <button onClick={() => setPreviewItem(null)} style={{ padding: "10px 16px", fontSize: 12, fontWeight: 600, color: "#5a5a70", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("close")}</button>
               </div>
@@ -1597,6 +1725,7 @@ export default function App() {
 
       <Footer />
       <CancelModal />
+      <PaymentFailedModal />
     </>
   );
 }

@@ -21,7 +21,6 @@ const PLAN_CREDITS = {
   creator: { images: 200, videos: 30 },
 };
 
-// 🔴 FIX: Added "test" plan price ID
 const PRICE_TO_PLAN = {
   "price_1TJYG2EkbBokZiaivYSd44qP":  "test",
   "price_1TJGutEkbBokZiaidisQbR4y": "basic",
@@ -29,7 +28,6 @@ const PRICE_TO_PLAN = {
   "price_1TJGwtEkbBokZiaiFpc24OZG": "creator",
 };
 
-// Also check client_reference_id — Stripe Payment Links pass plan name here
 const VALID_PLANS = ["test", "basic", "pro", "creator"];
 
 function sbHeaders(key) {
@@ -43,15 +41,43 @@ function sbHeaders(key) {
 
 async function findUserByEmail(email, serviceKey) {
   const res = await fetch(
-    `${SB_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=id&limit=1`,
+    `${SB_URL}/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=id,images_remaining,videos_remaining,plan&limit=1`,
     { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
   );
   const data = await res.json();
-  return data?.[0]?.id || null;
+  return data?.[0] || null;
 }
 
-async function activatePlan(userId, plan, serviceKey) {
+async function findUserById(userId, serviceKey) {
+  const res = await fetch(
+    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=id,images_remaining,videos_remaining,plan&limit=1`,
+    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+  );
+  const data = await res.json();
+  return data?.[0] || null;
+}
+
+// First activation only — sets full credits, does NOT accumulate
+async function activateNewPlan(userId, plan, serviceKey) {
   const credits = PLAN_CREDITS[plan];
+  await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+    method: "PATCH",
+    headers: sbHeaders(serviceKey),
+    body: JSON.stringify({
+      plan,
+      images_remaining: credits.images,
+      videos_remaining: credits.videos,
+      subscription_status: "active",
+      subscription_start: new Date().toISOString(),
+    }),
+  });
+}
+
+// Monthly renewal — resets to full plan credits (no accumulation)
+// Credits reset each billing cycle, they don't roll over
+async function renewPlanCredits(userId, plan, serviceKey) {
+  const credits = PLAN_CREDITS[plan];
+  console.log(`Renewing ${plan} credits for user ${userId}: ${credits.images} images, ${credits.videos} videos`);
   await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
     method: "PATCH",
     headers: sbHeaders(serviceKey),
@@ -102,17 +128,16 @@ export default async function handler(req, res) {
 
   console.log("Stripe event:", event.type);
 
-  // ─── checkout.session.completed → activate plan ───
+  // ─── checkout.session.completed → FIRST activation only ───
+  // Fires once when customer subscribes for the first time
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const email = session.customer_email || session.customer_details?.email;
 
-    // Determine plan: try client_reference_id first (most reliable with Payment Links)
     let plan = VALID_PLANS.includes(session.client_reference_id)
       ? session.client_reference_id
       : null;
 
-    // Fallback: look up by subscription price ID
     if (!plan && session.subscription) {
       try {
         const sub = await stripe.subscriptions.retrieve(session.subscription);
@@ -122,15 +147,15 @@ export default async function handler(req, res) {
     }
 
     if (!email || !plan) {
-      console.error("Missing email or plan:", { email, plan, ref: session.client_reference_id });
+      console.error("Missing email or plan:", { email, plan });
       return res.status(200).json({ received: true });
     }
 
     try {
-      const userId = await findUserByEmail(email, SERVICE_KEY);
-      if (userId) {
-        await activatePlan(userId, plan, SERVICE_KEY);
-        console.log(`✓ Activated ${plan} for ${email}`);
+      const user = await findUserByEmail(email, SERVICE_KEY);
+      if (user) {
+        await activateNewPlan(user.id, plan, SERVICE_KEY);
+        console.log(`✓ First activation: ${plan} for ${email}`);
       } else {
         console.error(`User not found for email: ${email}`);
       }
@@ -139,48 +164,90 @@ export default async function handler(req, res) {
     }
   }
 
-  // ─── customer.subscription.updated → handle plan changes ───
-  if (event.type === "customer.subscription.updated") {
-    const sub = event.data.object;
-    // Only process if subscription is now active
-    if (sub.status === "active") {
+  // ─── invoice.payment_succeeded → MONTHLY RENEWAL ───
+  // This is the correct event for recurring billing — fires every month
+  if (event.type === "invoice.payment_succeeded") {
+    const invoice = event.data.object;
+
+    // Only process subscription renewals, not the first payment (handled by checkout.session.completed)
+    if (invoice.billing_reason === "subscription_cycle") {
       try {
-        const customer = await stripe.customers.retrieve(sub.customer);
+        const customer = await stripe.customers.retrieve(invoice.customer);
         const email = customer.email;
-        const priceId = sub.items?.data?.[0]?.price?.id;
+        const priceId = invoice.lines?.data?.[0]?.price?.id;
         const plan = PRICE_TO_PLAN[priceId];
+
         if (email && plan) {
-          const userId = await findUserByEmail(email, SERVICE_KEY);
-          if (userId) {
-            await activatePlan(userId, plan, SERVICE_KEY);
-            console.log(`✓ Updated plan to ${plan} for ${email}`);
+          const user = await findUserByEmail(email, SERVICE_KEY);
+          if (user) {
+            await renewPlanCredits(user.id, plan, SERVICE_KEY);
+            console.log(`✓ Monthly renewal: ${plan} credits reset for ${email}`);
           }
         }
-      } catch (e) { console.error("Update error:", e.message); }
+      } catch (e) { console.error("Renewal error:", e.message); }
     }
   }
 
-  // ─── customer.subscription.deleted → deactivate plan ───
+  // ─── customer.subscription.updated → plan CHANGE only ───
+  // Only fires when customer upgrades/downgrades plan, NOT on monthly renewal
+  if (event.type === "customer.subscription.updated") {
+    const sub = event.data.object;
+    const prevPriceId = sub.items?.data?.[0]?.price?.id;
+    const newPriceId  = sub.items?.data?.[0]?.price?.id;
+
+    // Only process actual plan changes, not status updates
+    if (sub.status === "active" && sub.cancel_at_period_end === false) {
+      try {
+        const customer = await stripe.customers.retrieve(sub.customer);
+        const email = customer.email;
+        const plan = PRICE_TO_PLAN[newPriceId];
+
+        if (email && plan) {
+          const user = await findUserByEmail(email, SERVICE_KEY);
+          if (user && user.plan !== plan) {
+            // Plan actually changed — reset credits to new plan
+            await activateNewPlan(user.id, plan, SERVICE_KEY);
+            console.log(`✓ Plan changed to ${plan} for ${email}`);
+          }
+        }
+      } catch (e) { console.error("Plan change error:", e.message); }
+    }
+  }
+
+  // ─── customer.subscription.deleted → deactivate ───
   if (event.type === "customer.subscription.deleted") {
     const sub = event.data.object;
     try {
       const customer = await stripe.customers.retrieve(sub.customer);
       const email = customer.email;
       if (email) {
-        const userId = await findUserByEmail(email, SERVICE_KEY);
-        if (userId) {
-          await deactivatePlan(userId, SERVICE_KEY);
+        const user = await findUserByEmail(email, SERVICE_KEY);
+        if (user) {
+          await deactivatePlan(user.id, SERVICE_KEY);
           console.log(`✓ Deactivated plan for ${email}`);
         }
       }
     } catch (e) { console.error("Deactivation error:", e.message); }
   }
 
-  // ─── invoice.payment_failed → notify but keep plan active until Stripe retries ───
+  // ─── invoice.payment_failed → mark user, block generation ───
   if (event.type === "invoice.payment_failed") {
     const invoice = event.data.object;
-    console.warn(`Payment failed for customer: ${invoice.customer_email || invoice.customer}`);
-    // Stripe handles retries automatically — don't deactivate yet
+    try {
+      const customer = await stripe.customers.retrieve(invoice.customer);
+      const email = customer.email;
+      if (email) {
+        const user = await findUserByEmail(email, SERVICE_KEY);
+        if (user) {
+          await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+            method: "PATCH",
+            headers: sbHeaders(SERVICE_KEY),
+            body: JSON.stringify({ subscription_status: "payment_failed" }),
+          });
+          console.warn(`Payment failed — blocked generation for ${email}`);
+        }
+      }
+    } catch (e) { console.error("payment_failed handler error:", e.message); }
   }
 
   res.status(200).json({ received: true });
