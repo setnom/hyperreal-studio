@@ -582,16 +582,42 @@ export default function App() {
     } catch {}
   };
   const loadProfile = async (s) => {
-    try { const u = await sb.getUser(s.access_token); if (u?.id) { const p = await sb.getProfile(u.id, s.access_token); if (p) { setProfile({ ...p, userId: u.id });
+    try {
+      const u = await sb.getUser(s.access_token);
+      if (!u?.id) { console.error("loadProfile: no user id"); return; }
+
+      const p = await sb.getProfile(u.id, s.access_token);
+      console.log("loadProfile: profile =", p);
+
+      if (!p) {
+        // Profile missing — create a basic one and go to plans
+        console.warn("loadProfile: profile not found, redirecting to plans");
+        setPage(P.PLANS);
+        return;
+      }
+
+      setProfile({ ...p, userId: u.id });
+
       const g = await sb.getGens(u.id, s.access_token);
       if (Array.isArray(g)) {
         const mapped = g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url }));
         setGens(mapped);
         setVisibleCount(20);
       }
+
       loadFavorites(s.access_token);
       if (Notification.permission === "default") Notification.requestPermission().catch(() => {});
-      setPage(p.plan === "none" || (!p.images_remaining && !p.videos_remaining) ? P.PLANS : P.DASH); } } } catch {} };
+
+      const noPlan = !p.plan || p.plan === "none";
+      const noCredits = !p.images_remaining && !p.videos_remaining;
+      setPage(noPlan || noCredits ? P.PLANS : P.DASH);
+
+    } catch (err) {
+      console.error("loadProfile error:", err);
+      // Don't leave user stuck on landing — go to plans as fallback
+      setPage(P.PLANS);
+    }
+  };
   const handleAuth = async () => {
     setAuthErr(""); setAuthLoad(true);
     try { const res = authMode === "signup" ? await sb.signUp(email, pw) : await sb.signIn(email, pw);
