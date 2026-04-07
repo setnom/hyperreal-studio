@@ -150,7 +150,7 @@ const TEXTS = {
     // TyC
     terms: "Términos y Condiciones",
     privacy: "Privacidad",
-    styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", architecture: "Arquitectura", food: "Gastronomía" },
+    styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", pixar: "Pixar 3D", ads: "Anuncio Ads" },
   },
   en: {
     hero_badge: "Nano Banana 2 + Kling 3.0",
@@ -266,7 +266,7 @@ const TEXTS = {
     // TyC
     terms: "Terms & Conditions",
     privacy: "Privacy",
-    styles: { photorealistic: "Photorealistic", cinematic: "Cinematic", product: "Product", portrait: "Portrait", architecture: "Architecture", food: "Food" },
+    styles: { photorealistic: "Photorealistic", cinematic: "Cinematic", product: "Product", portrait: "Portrait", pixar: "Pixar 3D", ads: "Ad Creative" },
   },
 };
 
@@ -294,13 +294,13 @@ const STYLE_PROMPTS = {
     prefix: "",
     suffix: "portrait photography, Rembrandt lighting, catchlight in eyes, soft bokeh background, skin retouching, high-end fashion editorial, sharp facial features, professional studio backdrop, 85mm portrait lens, magazine cover quality",
   },
-  architecture: {
-    prefix: "",
-    suffix: "architectural photography, wide angle rectilinear lens, golden hour lighting, dramatic sky, perfect geometric symmetry, HDR tonal range, sharp from foreground to background, professional architectural visualization, luxury real estate quality",
+  pixar: {
+    prefix: "Pixar 3D animation style, ",
+    suffix: "rendered in Pixar RenderMan, subsurface scattering on skin, expressive oversized eyes, smooth rounded character design, vibrant saturated color palette, soft global illumination, cinematic depth of field, detailed hair simulation, whimsical stylized realism, Disney-Pixar aesthetic, high-end CGI quality, studio lighting rig, 8K render",
   },
-  food: {
-    prefix: "",
-    suffix: "professional food photography, overhead flat lay or 45-degree angle, natural side lighting, appetizing color saturation, macro texture detail, fresh ingredients, styled plating, shallow depth of field, Michelin-star restaurant quality, editorial food magazine style",
+  ads: {
+    prefix: "high-converting advertising visual, ",
+    suffix: "bold punchy composition, eye-catching hero product placement, strong visual hierarchy, vibrant contrast colors that stop the scroll, clear focal point with negative space for text overlay, professional retouching, aspirational lifestyle feel, optimized for mobile feed 9:16 and square 1:1, Meta Ads and TikTok Ads ready, emotional trigger lighting, premium brand aesthetic, photorealistic commercial quality",
   },
 };
 
@@ -328,8 +328,8 @@ const STYLES = [
   { id: "cinematic", label: "Cinemático", icon: "🎬" },
   { id: "product", label: "Producto", icon: "🛍️" },
   { id: "portrait", label: "Retrato", icon: "👤" },
-  { id: "architecture", label: "Arquitectura", icon: "🏛️" },
-  { id: "food", label: "Gastronomía", icon: "🍽️" },
+  { id: "pixar", label: "Pixar 3D", icon: "🎭" },
+  { id: "ads", label: "Anuncio Ads", icon: "🚀" },
 ];
 const RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 const SAMPLE = ["Luxury perfume bottle on black marble, volumetric lighting, 8K", "Latin woman CEO in modern office, golden hour, shallow DOF", "Gourmet burger floating, ingredients exploding, dark bg, studio light", "Futuristic car in neon-lit Tokyo street, rain reflections, cinematic"];
