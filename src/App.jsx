@@ -569,8 +569,11 @@ export default function App() {
     }
   };
 
-  // Compress image to small size for upload (max 800px, JPEG quality 0.5)
-  const compressImage = (file, maxSize = 800) => new Promise((resolve, reject) => {
+  // Max file size before compression: 20MB (browser handles it, canvas compresses)
+  const MAX_FILE_MB = 20;
+
+  // Compress image to max 1200px, JPEG quality 0.7 — better quality for AI reference
+  const compressImage = (file, maxSize = 1200) => new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       try {
@@ -583,7 +586,7 @@ export default function App() {
         canvas.width = Math.round(w);
         canvas.height = Math.round(h);
         canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.5));
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
       } catch (e) { reject(e); }
     };
     img.onerror = () => reject(new Error("Failed to load image"));
@@ -592,12 +595,16 @@ export default function App() {
 
   // Upload file via our server API
   const uploadFile = async (file) => {
+    // Validate size before trying
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      throw new Error(`Image too large. Max ${MAX_FILE_MB}MB per image.`);
+    }
     const dataUrl = await compressImage(file);
     console.log("Uploading image, size:", Math.round(dataUrl.length / 1024), "KB");
     const res = await fetch("/api/upload", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data_url: dataUrl }),
+      body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }),
     });
     if (!res.ok) {
       const errText = await res.text();
@@ -629,7 +636,9 @@ export default function App() {
             imageUrls.push(url);
           }
         } catch (uploadErr) {
-          setGenError("Error al subir imagen de referencia. Intenta con una imagen más pequeña.");
+          setGenError(lang === "en"
+            ? `Error uploading reference image: ${uploadErr.message}. Max ${MAX_FILE_MB}MB per image (jpg, png, webp).`
+            : `Error al subir imagen de referencia: ${uploadErr.message}. Máx ${MAX_FILE_MB}MB por imagen (jpg, png, webp).`);
           setGenning(false);
           return;
         }
@@ -1317,22 +1326,31 @@ export default function App() {
                   <div style={{ marginBottom: 14, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.04)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                       <div>
-                        <p style={{ fontSize: 11, color: "#e0e0f0", margin: 0, fontWeight: 500 }}>📎 Imágenes de referencia</p>
-                        <p style={{ fontSize: 9, color: "#5a5a70", margin: "2px 0 0" }}>Opcional · Hasta 14 imágenes para guiar la generación</p>
+                        <p style={{ fontSize: 11, color: "#e0e0f0", margin: 0, fontWeight: 500 }}>📎 {t("ref_images")}</p>
+                        <p style={{ fontSize: 9, color: "#5a5a70", margin: "2px 0 0" }}>
+                          {lang === "en"
+                            ? `Optional · Up to 14 images · Max ${MAX_FILE_MB}MB each · jpg, png, webp`
+                            : `Opcional · Hasta 14 imágenes · Máx ${MAX_FILE_MB}MB cada una · jpg, png, webp`}
+                        </p>
                       </div>
                       <span style={{ fontSize: 9, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace" }}>{refImages.length}/14</span>
                     </div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                       {refImages.map((file, i) => (
-                        <div key={i} style={{ position: "relative", width: 48, height: 48, borderRadius: 6, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)" }}>
+                        <div key={i} style={{ position: "relative", width: 48, height: 48, borderRadius: 6, overflow: "hidden", border: `1px solid ${file.size > MAX_FILE_MB * 1024 * 1024 ? "rgba(255,77,106,.4)" : "rgba(0,240,255,.15)"}` }}>
                           <img src={URL.createObjectURL(file)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          {file.size > MAX_FILE_MB * 1024 * 1024 && (
+                            <div style={{ position: "absolute", inset: 0, background: "rgba(255,77,106,.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <span style={{ fontSize: 8, color: "#fff", fontWeight: 700 }}>+{MAX_FILE_MB}MB</span>
+                            </div>
+                          )}
                           <button onClick={() => setRefImages(prev => prev.filter((_, idx) => idx !== i))} style={{ position: "absolute", top: -2, right: -2, width: 16, height: 16, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 9, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>×</button>
                         </div>
                       ))}
                       {refImages.length < 14 && (
                         <label style={{ width: 48, height: 48, borderRadius: 6, border: "1px dashed rgba(0,240,255,.2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, color: "#5a5a70", background: "rgba(0,240,255,.03)" }}>
                           +
-                          <input type="file" accept="image/*" multiple hidden onChange={(e) => {
+                          <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" multiple hidden onChange={(e) => {
                             const files = Array.from(e.target.files || []);
                             setRefImages(prev => [...prev, ...files].slice(0, 14));
                             e.target.value = "";
