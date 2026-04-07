@@ -19,7 +19,7 @@ const sb = {
   getProfile: (id, t) => fetch(`${SB_URL}/rest/v1/profiles?id=eq.${id}&select=*`, { headers: hdr(t) }).then(r => r.json()).then(d => d?.[0]),
   // NOTE: updateProfile intentionally removed — plan/credits can only be modified by backend API
   addGen: (uid, type, prompt, style, t) => fetch(`${SB_URL}/rest/v1/generations`, { method: "POST", headers: { ...hdr(t), Prefer: "return=representation" }, body: JSON.stringify({ user_id: uid, type, prompt, style, status: "completed" }) }).then(r => r.json()),
-  getGens: (uid, t) => fetch(`${SB_URL}/rest/v1/generations?user_id=eq.${uid}&select=*&order=created_at.desc&limit=20`, { headers: hdr(t) }).then(r => r.json()),
+  getGens: (uid, t) => fetch(`${SB_URL}/rest/v1/generations?user_id=eq.${uid}&select=*&order=created_at.desc&limit=1000`, { headers: hdr(t) }).then(r => r.json()),
   googleSignIn: () => {
     window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(window.location.origin)}`;
   },
@@ -1402,7 +1402,7 @@ export default function App() {
               <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8, fontWeight: 600 }}>Biblioteca</p>
               {gens.length === 0 ? <p style={{ fontSize: 11, color: "#3a3a50" }}>Sin generaciones aún</p> : (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, maxHeight: 350, overflow: "auto" }}>
-                  {gens.slice(0, 12).map((g, i) => (
+                  {gens.map((g, i) => (
                     <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "border-color .2s", position: "relative" }}
                       onMouseEnter={e => e.currentTarget.style.borderColor = g.type === "image" ? "rgba(0,240,255,.3)" : "rgba(180,74,255,.3)"}
                       onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"}>
@@ -1727,14 +1727,19 @@ export default function App() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 10, color: previewItem.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600, textTransform: "uppercase" }}>{previewItem.type === "image" ? t("tab_image") : t("tab_video")}</span>
                   <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>{new Date(previewItem.created_at).toLocaleDateString()}</span>
-                  {previewItem.style && previewItem.style !== "photorealistic" || previewItem.style ? (
-                    <span style={{ fontSize: 9, color: "#8a6aff", background: "rgba(138,106,255,.08)", border: "1px solid rgba(138,106,255,.15)", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>
-                      {(() => {
-                        const styleMap = { photorealistic: lang === "en" ? "📸 Photorealistic" : "📸 Fotorrealista", cinematic: lang === "en" ? "🎬 Cinematic" : "🎬 Cinemático", product: lang === "en" ? "🛍️ Product" : "🛍️ Producto", portrait: lang === "en" ? "👤 Portrait" : "👤 Retrato", pixar: "🎭 Pixar 3D", ads: lang === "en" ? "🚀 Ad Creative" : "🚀 Anuncio Ads", neutral: lang === "en" ? "⚪ Neutral" : "⚪ Neutro", restore: lang === "en" ? "🔧 Restore" : "🔧 Restaurar" };
-                        return styleMap[previewItem.style] || previewItem.style;
-                      })()}
-                    </span>
-                  ) : null}
+                  {(() => {
+                    const STYLE_NAMES = { photorealistic: lang === "en" ? "📸 Photorealistic" : "📸 Fotorrealista", cinematic: lang === "en" ? "🎬 Cinematic" : "🎬 Cinemático", product: lang === "en" ? "🛍️ Product" : "🛍️ Producto", portrait: lang === "en" ? "👤 Portrait" : "👤 Retrato", pixar: "🎭 Pixar 3D", ads: lang === "en" ? "🚀 Ad Creative" : "🚀 Anuncio Ads", neutral: lang === "en" ? "⚪ Neutral" : "⚪ Neutro", restore: lang === "en" ? "🔧 Restore" : "🔧 Restaurar" };
+                    const RATIO_PATTERN = /^\d+:\d+$/;
+                    const s = previewItem.style;
+                    if (!s) return null;
+                    if (STYLE_NAMES[s]) return (
+                      <span style={{ fontSize: 9, color: "#a78bff", background: "rgba(167,139,255,.08)", border: "1px solid rgba(167,139,255,.15)", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>{STYLE_NAMES[s]}</span>
+                    );
+                    if (RATIO_PATTERN.test(s)) return (
+                      <span style={{ fontSize: 9, color: "#5a5a70", fontFamily: "'JetBrains Mono',monospace" }}>{s}</span>
+                    );
+                    return null;
+                  })()}
                   {isDesk && <span style={{ fontSize: 9, color: "#2a2a3a" }}>← →</span>}
                 </div>
                 <button onClick={() => { setPreviewItem(null); setPreviewIndex(null); }} style={{ background: "none", border: "none", color: "#5a5a70", fontSize: 18, cursor: "pointer" }}>✕</button>
