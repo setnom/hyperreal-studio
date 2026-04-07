@@ -1071,29 +1071,87 @@ export default function App() {
 
   // ═══ AUTH ═══
   if (page === P.AUTH) return wrap(
-    <div style={{ paddingTop: isDesk ? 60 : 30, maxWidth: 400, margin: "0 auto", animation: "fadeUp .5s ease" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
+    <div style={{ animation: "fadeUp .5s ease" }}>
+      {/* Nav bar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: isDesk ? 48 : 28 }}>
         <BackBtn to={P.LAND} />
         <LangSelector />
       </div>
-      <div style={{ textAlign: "center", marginBottom: 32 }}>
-        {logo(isDesk ? 34 : 30)}
-        <h2 style={{ fontSize: isDesk ? 24 : 20, fontWeight: 700, marginTop: 20 }}>{authMode === "login" ? t("login_title") : t("signup_title")}</h2>
-        <p style={{ fontSize: 13, color: "#5a5a70", marginTop: 5 }}>{authMode === "login" ? t("login_sub") : t("signup_sub")}</p>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <button onClick={() => sb.googleSignIn()} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "13px", fontSize: 14, fontWeight: 600, color: "#e0e0f0", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}><GIcon /> {t("google_btn")}</button>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "4px 0" }}><div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.06)" }} /><span style={{ fontSize: 11, color: "#3a3a50" }}>{t("or_email")}</span><div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.06)" }} /></div>
-        <input type="email" placeholder={t("email_ph")} value={email} onChange={e => setEmail(e.target.value)} style={inp} />
-        <input type="password" placeholder={t("pass_ph")} value={pw} onChange={e => setPw(e.target.value)} style={inp} onKeyDown={e => e.key === "Enter" && handleAuth()} />
-        {authErr && <p style={{ fontSize: 12, color: authErr.includes("✓") ? "#00f0ff" : "#ff4d6a", textAlign: "center" }}>{authErr}</p>}
-        <button onClick={handleAuth} disabled={authLoad || !email || pw.length < 6} style={{ padding: "13px", fontSize: 14, fontWeight: 700, color: "#06060e", background: authLoad ? "rgba(0,240,255,.3)" : "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 10, cursor: authLoad ? "wait" : "pointer", fontFamily: "inherit", marginTop: 2 }}>{authLoad ? t("loading") : authMode === "login" ? t("login_btn") : t("signup_btn")}</button>
-        <p style={{ fontSize: 12, color: "#5a5a70", textAlign: "center", marginTop: 6 }}>{authMode === "login" ? t("no_account") : t("has_account")}<button onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthErr(""); }} style={{ background: "none", border: "none", color: "#00f0ff", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600 }}>{authMode === "login" ? t("register") : t("signin")}</button></p>
-        <p style={{ fontSize: 10, color: "#3a3a50", textAlign: "center", marginTop: 8 }}>
-          {lang === "es" ? "Al registrarte aceptas nuestros " : "By signing up you agree to our "}
-          <button onClick={() => setShowTyC(true)} style={{ background: "none", border: "none", color: "#5a5a70", cursor: "pointer", fontFamily: "inherit", fontSize: 10, textDecoration: "underline" }}>{t("terms")}</button>
-        </p>
-      </div>
+
+      {isDesk ? (
+        /* ── DESKTOP: two columns ── */
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center", maxWidth: 900, margin: "0 auto" }}>
+          {/* Left — branding */}
+          <div style={{ padding: "40px 0" }}>
+            {logo(42)}
+            <h2 style={{ fontSize: 36, fontWeight: 800, lineHeight: 1.1, margin: "28px 0 16px", letterSpacing: -1 }}>
+              {lang === "es" ? <>Genera contenido <span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>hiperrealista</span> con IA</> : <>Generate <span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>hyperrealistic</span> AI content</>}
+            </h2>
+            <p style={{ fontSize: 15, color: "#5a5a70", lineHeight: 1.65, marginBottom: 32 }}>
+              {lang === "es" ? "Imágenes y videos de calidad profesional en segundos. Sin equipos. Sin estudios." : "Professional-quality images and videos in seconds. No equipment. No studios."}
+            </p>
+            {/* Mini stats */}
+            <div style={{ display: "flex", gap: 24 }}>
+              {[["97%", lang === "es" ? "Ahorro" : "Savings"], ["300×", lang === "es" ? "Más rápido" : "Faster"], ["$0.25", lang === "es" ? "Por imagen" : "Per image"]].map(([v, l]) => (
+                <div key={l}>
+                  <p style={{ fontSize: 22, fontWeight: 800, margin: 0, fontFamily: "'JetBrains Mono',monospace", background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{v}</p>
+                  <p style={{ fontSize: 10, color: "#4a4a60", margin: "3px 0 0" }}>{l}</p>
+                </div>
+              ))}
+            </div>
+            {/* Hero image preview */}
+            <div style={{ marginTop: 36, borderRadius: 16, overflow: "hidden", border: "1px solid rgba(255,255,255,.07)", position: "relative", height: 200 }}>
+              <img src="/images/hero.webp" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }} />
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(6,6,14,.8) 0%, transparent 60%)" }} />
+              <div style={{ position: "absolute", bottom: 12, left: 14, display: "flex", gap: 6 }}>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, background: "rgba(0,240,255,.15)", border: "1px solid rgba(0,240,255,.25)", color: "#00f0ff", fontWeight: 600 }}>Nano Banana 2</span>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, background: "rgba(180,74,255,.15)", border: "1px solid rgba(180,74,255,.25)", color: "#b44aff", fontWeight: 600 }}>Kling 3.0</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right — form */}
+          <div style={{ background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.06)", borderRadius: 20, padding: "36px 32px" }}>
+            <h3 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 4px" }}>{authMode === "login" ? t("login_title") : t("signup_title")}</h3>
+            <p style={{ fontSize: 13, color: "#5a5a70", margin: "0 0 24px" }}>{authMode === "login" ? t("login_sub") : t("signup_sub")}</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={() => sb.googleSignIn()} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "13px", fontSize: 14, fontWeight: 600, color: "#e0e0f0", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}><GIcon /> {t("google_btn")}</button>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "4px 0" }}><div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.06)" }} /><span style={{ fontSize: 11, color: "#3a3a50" }}>{t("or_email")}</span><div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.06)" }} /></div>
+              <input type="email" placeholder={t("email_ph")} value={email} onChange={e => setEmail(e.target.value)} style={inp} />
+              <input type="password" placeholder={t("pass_ph")} value={pw} onChange={e => setPw(e.target.value)} style={inp} onKeyDown={e => e.key === "Enter" && handleAuth()} />
+              {authErr && <p style={{ fontSize: 12, color: authErr.includes("✓") ? "#00f0ff" : "#ff4d6a", textAlign: "center" }}>{authErr}</p>}
+              <button onClick={handleAuth} disabled={authLoad || !email || pw.length < 6} style={{ padding: "13px", fontSize: 14, fontWeight: 700, color: "#06060e", background: authLoad ? "rgba(0,240,255,.3)" : "linear-gradient(135deg,#00f0ff,#00c8ff)", border: "none", borderRadius: 10, cursor: authLoad ? "wait" : "pointer", fontFamily: "inherit", marginTop: 2 }}>{authLoad ? t("loading") : authMode === "login" ? t("login_btn") : t("signup_btn")}</button>
+              <p style={{ fontSize: 12, color: "#5a5a70", textAlign: "center", marginTop: 6 }}>{authMode === "login" ? t("no_account") : t("has_account")}<button onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthErr(""); }} style={{ background: "none", border: "none", color: "#00f0ff", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600 }}>{authMode === "login" ? t("register") : t("signin")}</button></p>
+              <p style={{ fontSize: 10, color: "#3a3a50", textAlign: "center", marginTop: 4 }}>
+                {lang === "es" ? "Al registrarte aceptas nuestros " : "By signing up you agree to our "}
+                <button onClick={() => setShowTyC(true)} style={{ background: "none", border: "none", color: "#5a5a70", cursor: "pointer", fontFamily: "inherit", fontSize: 10, textDecoration: "underline" }}>{t("terms")}</button>
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ── MOBILE: single column ── */
+        <div style={{ maxWidth: 400, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            {logo(30)}
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginTop: 20 }}>{authMode === "login" ? t("login_title") : t("signup_title")}</h2>
+            <p style={{ fontSize: 13, color: "#5a5a70", marginTop: 5 }}>{authMode === "login" ? t("login_sub") : t("signup_sub")}</p>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button onClick={() => sb.googleSignIn()} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "13px", fontSize: 14, fontWeight: 600, color: "#e0e0f0", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}><GIcon /> {t("google_btn")}</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "4px 0" }}><div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.06)" }} /><span style={{ fontSize: 11, color: "#3a3a50" }}>{t("or_email")}</span><div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.06)" }} /></div>
+            <input type="email" placeholder={t("email_ph")} value={email} onChange={e => setEmail(e.target.value)} style={inp} />
+            <input type="password" placeholder={t("pass_ph")} value={pw} onChange={e => setPw(e.target.value)} style={inp} onKeyDown={e => e.key === "Enter" && handleAuth()} />
+            {authErr && <p style={{ fontSize: 12, color: authErr.includes("✓") ? "#00f0ff" : "#ff4d6a", textAlign: "center" }}>{authErr}</p>}
+            <button onClick={handleAuth} disabled={authLoad || !email || pw.length < 6} style={{ padding: "13px", fontSize: 14, fontWeight: 700, color: "#06060e", background: authLoad ? "rgba(0,240,255,.3)" : "linear-gradient(135deg,#00f0ff,#00c8ff)", border: "none", borderRadius: 10, cursor: authLoad ? "wait" : "pointer", fontFamily: "inherit", marginTop: 2 }}>{authLoad ? t("loading") : authMode === "login" ? t("login_btn") : t("signup_btn")}</button>
+            <p style={{ fontSize: 12, color: "#5a5a70", textAlign: "center", marginTop: 6 }}>{authMode === "login" ? t("no_account") : t("has_account")}<button onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthErr(""); }} style={{ background: "none", border: "none", color: "#00f0ff", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600 }}>{authMode === "login" ? t("register") : t("signin")}</button></p>
+            <p style={{ fontSize: 10, color: "#3a3a50", textAlign: "center", marginTop: 8 }}>
+              {lang === "es" ? "Al registrarte aceptas nuestros " : "By signing up you agree to our "}
+              <button onClick={() => setShowTyC(true)} style={{ background: "none", border: "none", color: "#5a5a70", cursor: "pointer", fontFamily: "inherit", fontSize: 10, textDecoration: "underline" }}>{t("terms")}</button>
+            </p>
+          </div>
+        </div>
+      )}
       <Footer />
     </div>
   );
