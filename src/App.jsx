@@ -141,7 +141,7 @@ const TEXTS = {
     no_billing: "Sin facturación activa",
     cancel_sub: "Cancelar suscripción",
     cancel_confirm_title: "¿Cancelar suscripción?",
-    cancel_confirm_body: "Si cancelas, conservas tu precio actual para siempre. Si los precios suben, tú mantienes la tarifa a la que te registraste. Puedes reactivar cuando quieras.",
+    cancel_confirm_body: "Si cancelas, pierdes tu precio actual para siempre. Si continúas activo y los precios suben, tú mantienes la tarifa a la que te registraste. Si definitivamente estás seguro de cancelar, no te preocupes, puedes reactivar cuando quieras, te estaremos esperando.",
     cancel_confirm_yes: "Sí, cancelar",
     cancel_confirm_no: "No, mantener",
     cancel_done: "Suscripción cancelada. Tus créditos siguen activos hasta fin de ciclo.",
@@ -257,7 +257,7 @@ const TEXTS = {
     no_billing: "No active billing",
     cancel_sub: "Cancel subscription",
     cancel_confirm_title: "Cancel subscription?",
-    cancel_confirm_body: "If you cancel, you keep your current price forever. If prices go up, you stay at the rate you signed up for. You can reactivate anytime.",
+    cancel_confirm_body: "If you cancel, you lose your current price forever. If you stay active and prices go up, you keep the rate you signed up for. If you're absolutely sure you want to cancel, don't worry — you can reactivate anytime, we'll be here waiting for you.",
     cancel_confirm_yes: "Yes, cancel",
     cancel_confirm_no: "No, keep it",
     cancel_done: "Subscription cancelled. Your credits remain active until end of cycle.",
@@ -690,16 +690,16 @@ export default function App() {
     setGenning(false);
   };
 
-  const cancelSubscription = async () => {
-    if (!session || !profile) return;
-    try {
-      await sb.updateProfile(profile.userId, { plan: "none", subscription_status: "cancelled" }, session.access_token);
-      setProfile(p => ({ ...p, plan: "none", subscription_status: "cancelled" }));
-      setCancelModal(false);
-      setUserPanelOpen(false);
-      setPayMsg(t("cancel_done"));
-      setTimeout(() => setPayMsg(""), 5000);
-    } catch {}
+  const STRIPE_PORTAL = "https://billing.stripe.com/p/login/14AdR90eK7q1eCjbQbeME00";
+
+  const cancelSubscription = () => {
+    // Open Stripe Customer Portal — handles real cancellation, invoices, payment methods
+    window.open(
+      `${STRIPE_PORTAL}?prefilled_email=${encodeURIComponent(profile?.email || "")}`,
+      "_blank"
+    );
+    setCancelModal(false);
+    setUserPanelOpen(false);
   };
 
   // Compute next billing date (30 days from subscription_start or today)
@@ -841,7 +841,13 @@ export default function App() {
           {/* Billing */}
           <div style={{ padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
             <span style={{ fontSize: 9, color: "#3a3a50", letterSpacing: 1, textTransform: "uppercase" }}>{t("next_billing")}</span>
-            <p style={{ fontSize: 11, color: "#5a5a70", margin: "3px 0 0" }}>{nextBill || t("no_billing")}</p>
+            <p style={{ fontSize: 11, color: "#5a5a70", margin: "3px 0 4px" }}>{nextBill || t("no_billing")}</p>
+            {hasPlanForPanel && (
+              <button onClick={() => window.open(`${STRIPE_PORTAL}?prefilled_email=${encodeURIComponent(profile?.email || "")}`, "_blank")}
+                style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, textDecoration: "underline" }}>
+                {lang === "en" ? "Manage billing →" : "Gestionar facturación →"}
+              </button>
+            )}
           </div>
           {/* Actions */}
           <div style={{ padding: "10px 16px" }}>
@@ -881,7 +887,7 @@ export default function App() {
           </button>
           <button onClick={cancelSubscription}
             style={{ flex: 1, padding: "12px", fontSize: 13, fontWeight: 600, color: "#ff4d6a", background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.2)", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}>
-            {t("cancel_confirm_yes")}
+            {lang === "en" ? "Manage in Stripe →" : "Gestionar en Stripe →"}
           </button>
         </div>
       </div>
@@ -958,7 +964,7 @@ export default function App() {
             {t("hero_title_1")}<span style={{ background: "linear-gradient(135deg, #00f0ff, #b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{t("hero_title_2")}</span>{t("hero_title_3")}
           </h1>
           <p style={{ fontSize: isDesk ? 17 : 14, color: "#6a6a80", lineHeight: 1.6, maxWidth: isDesk ? 460 : 380, margin: isDesk ? "0" : "0 auto 24px" }}>{t("hero_sub")}</p>
-          {isDesk && <button onClick={() => setPage(P.AUTH)} style={{ marginTop: 24, padding: "14px 36px", fontSize: 15, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 30px rgba(0,240,255,.25)" }}>{t("start_now")}</button>}
+          {isDesk && <button onClick={() => setPage(session ? P.DASH : P.AUTH)} style={{ marginTop: 24, padding: "14px 36px", fontSize: 15, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 30px rgba(0,240,255,.25)" }}>{session ? (lang === "en" ? "Generate now →" : "Generar ahora →") : t("start_now")}</button>}
         </div>
         {isDesk && (
           <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
@@ -994,7 +1000,7 @@ export default function App() {
       <h2 style={{ fontSize: isDesk ? 28 : 20, fontWeight: 700, textAlign: "center", marginBottom: 6 }}>{t("plans_title")}</h2>
       <p style={{ fontSize: isDesk ? 14 : 12, color: "#5a5a70", textAlign: "center", marginBottom: isDesk ? 32 : 18 }}>{t("plans_sub")}</p>
       <div style={{ display: "flex", flexDirection: isDesk ? "row" : "column", gap: isDesk ? 16 : 10, marginBottom: isDesk ? 60 : 36, alignItems: isDesk ? "stretch" : "unset" }}>
-        {PLANS.map(pl => <PlanCard key={pl.id} pl={pl} onAction={() => setPage(P.AUTH)} actionLabel={t("start_now")} isDesk={isDesk} lang={lang} features={planFeatures(pl)} />)}
+        {PLANS.map(pl => <PlanCard key={pl.id} pl={pl} onAction={() => setPage(session ? P.PLANS : P.AUTH)} actionLabel={session ? (lang === "en" ? `Subscribe → $${pl.price}/mo` : `Suscribirme → $${pl.price}/mes`) : t("start_now")} isDesk={isDesk} lang={lang} features={planFeatures(pl)} />)}
       </div>
 
       {/* Skool CTA */}
