@@ -69,7 +69,7 @@ export default async function handler(req, res) {
   const FAL_KEY = process.env.FAL_KEY;
   if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
-  const { type, prompt: rawPrompt, aspect_ratio, duration, audio,
+  const { type, prompt: rawPrompt, aspect_ratio, style_id, duration, audio,
           image_urls, start_frame, end_frame, multishot, user_token } = req.body || {};
 
   if (!user_token || typeof user_token !== "string")
@@ -185,7 +185,7 @@ export default async function handler(req, res) {
           method: "POST",
           headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
           body: JSON.stringify({
-            user_id: userId, type, prompt, style: safeRatio,
+            user_id: userId, type, prompt, style: style_id || "photorealistic",
             status: "processing", result_url: data.request_id + "|" + endpoint,
           }),
         });

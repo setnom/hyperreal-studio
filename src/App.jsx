@@ -792,6 +792,7 @@ export default function App() {
         body: JSON.stringify({
           type: isVid ? "video" : "image",
           prompt: buildStyledPrompt(prompt, tab === T.IMG ? style : "cinematic"),
+          style_id: tab === T.IMG ? style : "cinematic",
           aspect_ratio: isVid ? vidRatio : ratio,
           plan: profile.plan || "basic",
           duration: isVid ? vidDur : undefined,
@@ -876,7 +877,7 @@ export default function App() {
         if (p) setProfile(prev => ({ ...prev, images_remaining: p.images_remaining, videos_remaining: p.videos_remaining }));
       }
     } catch {}
-    setGens(prev => [{ id: Date.now(), type: isVid ? "video" : "image", prompt, style, created_at: new Date().toISOString(), url: data.url }, ...prev]);
+    setGens(prev => [{ id: Date.now(), type: isVid ? "video" : "image", prompt, style: tab === T.IMG ? style : "cinematic", created_at: new Date().toISOString(), url: data.url }, ...prev]);
     setGenResult({ type: isVid ? "video" : "image", url: data.url, resolution: data.resolution, audio: data.audio });
     setGenning(false);
   };
@@ -1723,9 +1724,17 @@ export default function App() {
             {/* Info — scrollable */}
             <div style={{ padding: "14px 16px", overflowY: "auto", flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 10, color: previewItem.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600, textTransform: "uppercase" }}>{previewItem.type === "image" ? t("tab_image") : t("tab_video")}</span>
                   <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>{new Date(previewItem.created_at).toLocaleDateString()}</span>
+                  {previewItem.style && previewItem.style !== "photorealistic" || previewItem.style ? (
+                    <span style={{ fontSize: 9, color: "#8a6aff", background: "rgba(138,106,255,.08)", border: "1px solid rgba(138,106,255,.15)", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>
+                      {(() => {
+                        const styleMap = { photorealistic: lang === "en" ? "📸 Photorealistic" : "📸 Fotorrealista", cinematic: lang === "en" ? "🎬 Cinematic" : "🎬 Cinemático", product: lang === "en" ? "🛍️ Product" : "🛍️ Producto", portrait: lang === "en" ? "👤 Portrait" : "👤 Retrato", pixar: "🎭 Pixar 3D", ads: lang === "en" ? "🚀 Ad Creative" : "🚀 Anuncio Ads", neutral: lang === "en" ? "⚪ Neutral" : "⚪ Neutro", restore: lang === "en" ? "🔧 Restore" : "🔧 Restaurar" };
+                        return styleMap[previewItem.style] || previewItem.style;
+                      })()}
+                    </span>
+                  ) : null}
                   {isDesk && <span style={{ fontSize: 9, color: "#2a2a3a" }}>← →</span>}
                 </div>
                 <button onClick={() => { setPreviewItem(null); setPreviewIndex(null); }} style={{ background: "none", border: "none", color: "#5a5a70", fontSize: 18, cursor: "pointer" }}>✕</button>
