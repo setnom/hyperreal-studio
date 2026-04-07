@@ -28,7 +28,7 @@ const PLAN_CREDITS = {
 const RESOLUTION_MAP   = { test: "1K", basic: "1K", pro: "2K", creator: "4K" };
 const MAX_DURATION     = { test: 5, basic: 5, pro: 8, creator: 10 };
 const VALID_TYPES      = ["image", "video"];
-const VALID_RATIOS_IMG = ["1:1", "16:9", "9:16", "4:3", "3:4"];
+const VALID_RATIOS_IMG = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"];
 const VALID_RATIOS_VID = ["16:9", "9:16", "1:1"];
 const MAX_PROMPT_LEN   = 2000;
 
@@ -156,7 +156,9 @@ export default async function handler(req, res) {
       const hasRefs = Array.isArray(image_urls) && image_urls.length > 0
         && image_urls.every(u => typeof u === "string" && u.startsWith("https://"));
       endpoint = hasRefs ? "fal-ai/nano-banana-2/edit" : "fal-ai/nano-banana-2";
-      body = { prompt, aspect_ratio: safeRatio, resolution: imageResolution, limit_generations: true };
+      body = { prompt, resolution: imageResolution, limit_generations: true };
+      // "auto" = omit aspect_ratio so model infers from prompt/reference
+      if (safeRatio !== "auto") body.aspect_ratio = safeRatio;
       if (hasRefs) body.image_urls = image_urls.slice(0, 14);
     } else {
       const hasStart = typeof start_frame === "string" && start_frame.startsWith("https://");

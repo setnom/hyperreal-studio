@@ -150,7 +150,7 @@ const TEXTS = {
     // TyC
     terms: "Términos y Condiciones",
     privacy: "Privacidad",
-    styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", pixar: "Pixar 3D", ads: "Anuncio Ads", neutral: "Neutro" },
+    styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", pixar: "Pixar 3D", ads: "Anuncio Ads", neutral: "Neutro", restore: "Restaurar" },
   },
   en: {
     hero_badge: "Nano Banana 2 + Kling 3.0",
@@ -266,7 +266,7 @@ const TEXTS = {
     // TyC
     terms: "Terms & Conditions",
     privacy: "Privacy",
-    styles: { photorealistic: "Photorealistic", cinematic: "Cinematic", product: "Product", portrait: "Portrait", pixar: "Pixar 3D", ads: "Ad Creative", neutral: "Neutral" },
+    styles: { photorealistic: "Photorealistic", cinematic: "Cinematic", product: "Product", portrait: "Portrait", pixar: "Pixar 3D", ads: "Ad Creative", neutral: "Neutral", restore: "Restore" },
   },
 };
 
@@ -306,12 +306,23 @@ const STYLE_PROMPTS = {
     prefix: "",
     suffix: "",
   },
+  restore: {
+    prefix: "",
+    suffix: "Restore, colorize, and enhance this old photograph to ultra-high quality 8K resolution. IDENTITY & COMPOSITION - NON-NEGOTIABLE: Preserve 100% of facial geometry, bone structure, expressions, and identity. Zero alterations. Keep exact composition: same pose, framing, background, and all elements. Do NOT reimagine, stylize, or add anything that wasn't in the original.",
+  },
 };
 
 function buildStyledPrompt(userPrompt, styleId) {
   const s = STYLE_PROMPTS[styleId] || STYLE_PROMPTS.photorealistic;
-  if (!s.prefix && !s.suffix) return userPrompt.trim(); // neutral — no modification
-  const base = userPrompt.trim().replace(/[.,]+$/, "");
+  // Neutral — no modification
+  if (!s.prefix && !s.suffix) return userPrompt.trim() || "Generate image";
+  // Restore — if prompt empty, use suffix alone as full prompt
+  if (styleId === "restore") {
+    const base = userPrompt.trim();
+    return base ? `${base}. ${s.suffix}` : s.suffix;
+  }
+  const base = (userPrompt.trim() || "").replace(/[.,]+$/, "");
+  if (!base) return s.suffix; // fallback if empty
   return `${s.prefix}${base}, ${s.suffix}`;
 }
 const PLANS = [
@@ -336,8 +347,9 @@ const STYLES = [
   { id: "pixar", label: "Pixar 3D", icon: "🎭" },
   { id: "ads", label: "Anuncio Ads", icon: "🚀" },
   { id: "neutral", label: "Neutro", icon: "⚪" },
+  { id: "restore", label: "Restaurar", icon: "🔧" },
 ];
-const RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
+const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"];
 const SAMPLE = ["Luxury perfume bottle on black marble, volumetric lighting, 8K", "Latin woman CEO in modern office, golden hour, shallow DOF", "Gourmet burger floating, ingredients exploding, dark bg, studio light", "Futuristic car in neon-lit Tokyo street, rain reflections, cinematic"];
 
 const P = { LAND: 0, AUTH: 1, DASH: 2, PLANS: 3 };
@@ -702,7 +714,7 @@ export default function App() {
   };
 
   const handleGen = async () => {
-    if (!prompt.trim() || !profile || !session) return;
+    if ((!prompt.trim() && style !== "restore") || !profile || !session) return;
     const isVid = tab === T.VID;
     if (isVid && profile.videos_remaining <= 0) return;
     if (!isVid && profile.images_remaining <= 0) return;
@@ -1430,10 +1442,12 @@ export default function App() {
                       </p>
                     </div>
                   )}
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>Proporción</p>
-                  <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{t("ratio_label")}</p>
+                  <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
                     {RATIOS.map(r => (
-                      <button key={r} onClick={() => setRatio(r)} style={{ flex: 1, padding: "8px 0", fontSize: 10, fontWeight: ratio === r ? 600 : 400, color: ratio === r ? "#00f0ff" : "#5a5a70", background: ratio === r ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: ratio === r ? "1px solid rgba(0,240,255,.2)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{r}</button>
+                      <button key={r} onClick={() => setRatio(r)} style={{ flex: r === "auto" ? "2" : "1", padding: "8px 0", fontSize: r === "auto" ? 11 : 10, fontWeight: ratio === r ? 700 : 400, color: ratio === r ? (r === "auto" ? "#ffb800" : "#00f0ff") : "#5a5a70", background: ratio === r ? (r === "auto" ? "rgba(255,184,0,.08)" : "rgba(0,240,255,.08)") : "rgba(255,255,255,.02)", border: ratio === r ? (r === "auto" ? "1px solid rgba(255,184,0,.25)" : "1px solid rgba(0,240,255,.2)") : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>
+                        {r === "auto" ? (lang === "en" ? "✦ Auto" : "✦ Auto") : r}
+                      </button>
                     ))}
                   </div>
 
@@ -1572,7 +1586,7 @@ export default function App() {
                 </div>
               )}
 
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genning || !prompt.trim() || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || !prompt.trim() ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || !prompt.trim() ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genning && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || !prompt.trim() ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genning || (!prompt.trim() && style !== "restore") || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genning && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
                 {!hasPlan ? t("plan_for_gen") : genning ? (t("loading")) : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
               </button>
               {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={tab} duration={vidDur} lang={lang} /></div>}
