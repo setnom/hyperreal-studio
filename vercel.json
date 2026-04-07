@@ -3,7 +3,8 @@
     "api/generate.js": { "maxDuration": 300 },
     "api/status.js":   { "maxDuration": 60  },
     "api/upload.js":   { "maxDuration": 30  },
-    "api/webhook.js":  { "maxDuration": 30  }
+    "api/webhook.js":  { "maxDuration": 30  },
+    "api/download.js": { "maxDuration": 60  }
   },
   "headers": [
     {

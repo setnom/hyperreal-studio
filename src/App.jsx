@@ -555,7 +555,13 @@ export default function App() {
   // Direct download without opening new tab
   const downloadFile = async (url, filename) => {
     try {
-      const res = await fetch(url);
+      // Use backend proxy to bypass CORS and force download
+      const res = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, filename, user_token: session?.access_token }),
+      });
+      if (!res.ok) throw new Error("Proxy failed");
       const blob = await res.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -563,9 +569,17 @@ export default function App() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(a.href);
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     } catch {
-      window.open(url, "_blank");
+      // Fallback: direct link with download attribute
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || "nanobanano-" + Date.now();
+      a.target = "_blank";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
   };
 
