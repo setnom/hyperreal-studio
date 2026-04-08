@@ -57,6 +57,7 @@ export default async function handler(req, res) {
 
   // 2. Verify payment with Stripe
   let confirmedPlan = null;
+  let subscriptionEnd = null;
   try {
     const stripe = new Stripe(STRIPE_SECRET);
     const customers = await stripe.customers.list({ email: userEmail, limit: 3 });
@@ -69,6 +70,7 @@ export default async function handler(req, res) {
         console.log(`Sub: ${sub.status} priceId=${priceId}`);
         if (["active","trialing","past_due","incomplete"].includes(sub.status) && PRICE_TO_PLAN[priceId]) {
           confirmedPlan = PRICE_TO_PLAN[priceId];
+            subscriptionEnd = new Date(sub.current_period_end * 1000).toISOString();
           break;
         }
       }
@@ -112,6 +114,7 @@ export default async function handler(req, res) {
       videos_remaining: credits.videos,
       subscription_status: "active",
       subscription_start: new Date().toISOString(),
+      subscription_end: subscriptionEnd || null,
     }),
   });
   const patchText = await patchRes.text();
@@ -138,6 +141,7 @@ export default async function handler(req, res) {
         videos_remaining: credits.videos,
         subscription_status: "active",
         subscription_start: new Date().toISOString(),
+      subscription_end: subscriptionEnd || null,
       }),
     });
     const insertText = await insertRes.text();
@@ -161,6 +165,7 @@ export default async function handler(req, res) {
           videos_remaining: credits.videos,
           subscription_status: "active",
           subscription_start: new Date().toISOString(),
+      subscription_end: subscriptionEnd || null,
         }),
       });
       const upsertText = await upsertRes.text();

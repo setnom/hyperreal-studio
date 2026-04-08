@@ -61,7 +61,7 @@ async function findUserByEmail(email, serviceKey) {
   return null;
 }
 
-async function setPlan(userId, plan, email, serviceKey) {
+async function setPlan(userId, plan, email, serviceKey, periodEnd = null) {
   const credits = PLAN_CREDITS[plan];
   if (!credits) { console.error("Unknown plan:", plan); return; }
   const res = await fetch(`${SB_URL}/rest/v1/profiles`, {
@@ -80,6 +80,7 @@ async function setPlan(userId, plan, email, serviceKey) {
       videos_remaining: credits.videos,
       subscription_status: "active",
       subscription_start: new Date().toISOString(),
+      subscription_end: periodEnd || null,
     }),
   });
   const body = await res.text();
@@ -185,10 +186,13 @@ export default async function handler(req, res) {
             }
           }
 
+          const periodEnd = invoice.lines?.data?.[0]?.period?.end
+            ? new Date(invoice.lines.data[0].period.end * 1000).toISOString()
+            : null;
           const user = await findUserByEmail(email, SERVICE_KEY);
           if (user) {
             // Clear payment_failed status and reset credits
-            await setPlan(user.id, plan, email, SERVICE_KEY);
+            await setPlan(user.id, plan, email, SERVICE_KEY, periodEnd);
             console.log(`✓ ${reason === "subscription_create" ? "First payment" : "Monthly renewal"}: ${plan} credits reset for ${email}`);
           } else {
             console.error(`User not found for invoice: ${email}`);

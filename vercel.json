@@ -6,8 +6,14 @@
     "api/webhook.js":   { "maxDuration": 30  },
     "api/download.js":  { "maxDuration": 60  },
     "api/favorites.js": { "maxDuration": 10  },
-    "api/activate.js":  { "maxDuration": 30  }
+    "api/activate.js":  { "maxDuration": 30  },
+    "api/pack.js":      { "maxDuration": 30  },
+    "api/sync.js":      { "maxDuration": 60  }
   },
+  "crons": [
+    { "path": "/api/sync", "schedule": "0 8 * * *"  },
+    { "path": "/api/sync", "schedule": "0 20 * * *" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

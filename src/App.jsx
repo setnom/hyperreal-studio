@@ -160,8 +160,8 @@ const TEXTS = {
     per_month: "/mes",
     // User panel
     my_plan: "Mi Plan",
-    next_billing: "Próxima facturación",
-    no_billing: "Sin facturación activa",
+    next_billing: "Plan hasta",
+    no_billing: "Sin fecha de renovación",
     cancel_sub: "Cancelar suscripción",
     cancel_confirm_title: "¿Cancelar suscripción?",
     cancel_confirm_body: "Si cancelas, pierdes tu precio actual para siempre. Si continúas activo y los precios suben, tú mantienes la tarifa a la que te registraste. Si definitivamente estás seguro de cancelar, no te preocupes, puedes reactivar cuando quieras, te estaremos esperando.",
@@ -276,8 +276,8 @@ const TEXTS = {
     per_month: "/mo",
     // User panel
     my_plan: "My Plan",
-    next_billing: "Next billing",
-    no_billing: "No active billing",
+    next_billing: "Plan until",
+    no_billing: "No renewal date",
     cancel_sub: "Cancel subscription",
     cancel_confirm_title: "Cancel subscription?",
     cancel_confirm_body: "If you cancel, you lose your current price forever. If you stay active and prices go up, you keep the rate you signed up for. If you're absolutely sure you want to cancel, don't worry — you can reactivate anytime, we'll be here waiting for you.",
@@ -1250,8 +1250,14 @@ export default function App() {
     setUserPanelOpen(false);
   };
 
-  // Compute next billing date (30 days from subscription_start or today)
+  // Use subscription_end from Stripe (set by sync cron and activate)
   const getNextBilling = () => {
+    // Prefer real date from Stripe via subscription_end
+    if (profile?.subscription_end) {
+      const d = new Date(profile.subscription_end);
+      return d.toLocaleDateString(lang === "es" ? "es-ES" : "en-US", { day: "numeric", month: "long", year: "numeric" });
+    }
+    // Fallback: calculate from subscription_start
     const start = profile?.subscription_start || profile?.created_at;
     if (!start) return null;
     const d = new Date(start);
