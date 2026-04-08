@@ -1753,11 +1753,13 @@ export default function App() {
                       <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "border-color .2s", position: "relative" }}
                         onMouseEnter={e => e.currentTarget.style.borderColor = g.type === "image" ? "rgba(0,240,255,.3)" : "rgba(180,74,255,.3)"}
                         onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"}>
-                        {g.url ? (
+                        {g.url && g.status !== "processing" ? (
                           g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: 80, objectFit: "cover", display: "block" }} />
                           : <video src={g.url} muted style={{ width: "100%", height: 80, objectFit: "cover", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
                         ) : (
-                          <div style={{ width: "100%", height: 80, background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{g.type === "image" ? "🖼️" : "🎬"}</div>
+                          <div style={{ width: "100%", height: 80, background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+                            {g.status === "processing" ? <div style={{ width: 18, height: 18, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : (g.type === "image" ? "🖼️" : "🎬")}
+                          </div>
                         )}
                         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 4px 3px", background: "linear-gradient(transparent, rgba(0,0,0,.7))" }}>
                           <span style={{ fontSize: 7, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
@@ -2042,11 +2044,13 @@ export default function App() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                     {gens.slice(0, visibleCount).map((g, i) => (
                       <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", position: "relative", aspectRatio: "1" }}>
-                        {g.url ? (
+                        {g.url && g.status !== "processing" ? (
                           g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                           : <video src={g.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : (
-                          <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{g.type === "image" ? "🖼️" : "🎬"}</div>
+                          <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>
+                            {g.status === "processing" ? <div style={{ width: 22, height: 22, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : (g.type === "image" ? "🖼️" : "🎬")}
+                          </div>
                         )}
                         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "14px 6px 4px", background: "linear-gradient(transparent, rgba(0,0,0,.8))" }}>
                           <span style={{ fontSize: 8, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
