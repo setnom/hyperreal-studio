@@ -647,43 +647,44 @@ export default function App() {
 
     // Pack purchase success
     if (params.get("pack") === "success") {
-      const packId = params.get("id");
       const packType = params.get("type");
       const packAmount = parseInt(params.get("amount") || "0");
       window.history.replaceState(null, "", window.location.pathname);
       const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
-      if (saved?.access_token && packId) {
+      if (saved?.access_token && packType && packAmount > 0) {
         setSession(saved);
-        setPayMsg(`Activando pack...`);
+        setPayMsg(packType === "images" ? `Agregando ${packAmount} imágenes...` : `Agregando ${packAmount} videos...`);
         const applyPack = async (attempt = 1) => {
           try {
             const r = await fetch("/api/pack", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_token: saved.access_token, pack_id: packId, type: packType, amount: packAmount }),
+              body: JSON.stringify({ user_token: saved.access_token, type: packType, amount: packAmount }),
             });
             const d = await r.json();
+            console.log("Pack response attempt", attempt, ":", d);
             if (d.ok) {
-              setProfile(prev => prev ? {
-                ...prev,
-                images_remaining: d.images_remaining,
-                videos_remaining: d.videos_remaining,
-              } : prev);
+              const label = packType === "images" ? `+${packAmount} imágenes` : `+${packAmount} videos`;
               await loadProfile(saved);
-              const label = packType === "images" ? `+${d.added} imágenes` : `+${d.added} videos`;
               setPayMsg(`✓ ${label} agregadas a tu cuenta`);
-              setTimeout(() => setPayMsg(""), 5000);
+              setTimeout(() => setPayMsg(""), 6000);
               return;
             }
-            if (attempt < 4) setTimeout(() => applyPack(attempt + 1), 3000);
-            else setPayMsg("Error aplicando pack. Contacta soporte.");
-          } catch {
-            if (attempt < 4) setTimeout(() => applyPack(attempt + 1), 3000);
+            console.warn("Pack failed:", d.error);
+            if (attempt < 5) setTimeout(() => applyPack(attempt + 1), 3000);
+            else setPayMsg(`Error al agregar créditos. Contacta soporte con: pack=${packType} amount=${packAmount}`);
+          } catch (e) {
+            console.error("Pack error:", e);
+            if (attempt < 5) setTimeout(() => applyPack(attempt + 1), 3000);
           }
         };
         applyPack();
         return;
       }
+      // Fallback: no params — just load profile
+      const saved2 = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
+      if (saved2?.access_token) { setSession(saved2); loadProfile(saved2); }
+      return;
     }
     const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
     if (saved?.access_token) { setSession(saved); loadProfile(saved); }
