@@ -731,40 +731,118 @@ export default function App() {
         if (pending) {
           const [reqId, ep] = pending.result_url.split("|");
           const genType = pending.type;
-          console.log("Resuming pending generation:", reqId, ep);
-          setGenning(true);
-          setGenStatus({ phase: "generating", position: null, elapsed: 0 });
-          const pollStart = Date.now();
-          let attempts = 0;
-          const resumePoll = async () => {
-            attempts++;
-            if (attempts > 100) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+          const pendingAge = Date.now() - new Date(pending.created_at).getTime(); // ms since created
+          const MAX_POLL_AGE = 30 * 60 * 1000; // 30 minutes max
+
+          console.log("Pending generation found, age:", Math.round(pendingAge / 1000) + "s");
+
+          // If older than 30 minutes — mark as failed silently, don't show spinner
+          if (pendingAge > MAX_POLL_AGE) {
+            console.log("Pending generation too old, skipping");
+            // Mark as failed in DB silently
+            try {
+              await fetch(`${SB_URL}/rest/v1/generations?id=eq.${pending.id}`, {
+                method: "PATCH",
+                headers: { ...hdr(s.access_token), Prefer: "return=minimal" },
+                body: JSON.stringify({ status: "failed" }),
+              });
+            } catch {}
+            setGens(prev => prev.filter(gen => gen.id !== pending.id));
+            return; // don't start polling
+          }
+
+          // Check fal.ai status once immediately
+          const quickCheck = async () => {
             try {
               const statusRes = await fetch("/api/status", {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
               });
               const statusData = await statusRes.json();
-              const elapsed = Math.round((Date.now() - pollStart) / 1000);
+
               if (statusData.status === "COMPLETED" && statusData.url) {
+                // Already done — update DB and show in history silently (no spinner)
                 const newGen = { ...pending, url: statusData.url, status: "completed", result_url: statusData.url };
                 setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
                 setGenResult({ type: genType, url: statusData.url });
-                setGenning(false);
-                setGenStatus({ phase: "done", position: null, elapsed });
-                playDoneSound();
+                console.log("Pending generation was already completed, restored silently");
+                // Gentle notification only if tab was hidden
                 if (document.hidden && Notification.permission === "granted") {
                   new Notification("NanoBanano Studio", { body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista", icon: "/favicon.png" });
                 }
+                return; // done — no spinner, no polling
+              }
+
+              if (statusData.status === "FAILED") {
+                setGens(prev => prev.filter(gen => gen.id !== pending.id));
                 return;
               }
-              if (statusData.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
-              const pos = statusData.position;
-              setGenStatus({ phase: pos > 0 ? "queued" : "generating", position: pos || null, elapsed });
-              setTimeout(resumePoll, 3000);
-            } catch { setTimeout(resumePoll, 5000); }
+
+              // Still processing — only show spinner if less than 5 minutes old
+              const SHOW_SPINNER_AGE = 5 * 60 * 1000;
+              if (pendingAge > SHOW_SPINNER_AGE) {
+                // Too old to show spinner — poll quietly in background
+                console.log("Polling silently in background (age > 5min)");
+                const bgPoll = async (attempts = 0) => {
+                  if (attempts > 40) return; // give up after ~2 more minutes
+                  try {
+                    const r = await fetch("/api/status", {
+                      method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
+                    });
+                    const d = await r.json();
+                    if (d.status === "COMPLETED" && d.url) {
+                      const newGen = { ...pending, url: d.url, status: "completed", result_url: d.url };
+                      setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
+                      setGenResult({ type: genType, url: d.url });
+                      playDoneSound();
+                    } else if (d.status !== "FAILED") {
+                      setTimeout(() => bgPoll(attempts + 1), 3000);
+                    }
+                  } catch { setTimeout(() => bgPoll(attempts + 1), 5000); }
+                };
+                setTimeout(() => bgPoll(0), 3000);
+                return;
+              }
+
+              // Less than 5 minutes old — show spinner and poll normally
+              setGenning(true);
+              setGenStatus({ phase: statusData.position > 0 ? "queued" : "generating", position: statusData.position || null, elapsed: Math.round(pendingAge / 1000) });
+              const pollStart = Date.now();
+              let attempts = 0;
+              const resumePoll = async () => {
+                attempts++;
+                if (attempts > 60) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+                try {
+                  const r2 = await fetch("/api/status", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
+                  });
+                  const d2 = await r2.json();
+                  const elapsed = Math.round((Date.now() - pollStart + pendingAge) / 1000);
+                  if (d2.status === "COMPLETED" && d2.url) {
+                    const newGen = { ...pending, url: d2.url, status: "completed", result_url: d2.url };
+                    setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
+                    setGenResult({ type: genType, url: d2.url });
+                    setGenning(false);
+                    setGenStatus({ phase: "done", position: null, elapsed });
+                    playDoneSound();
+                    if (document.hidden && Notification.permission === "granted") {
+                      new Notification("NanoBanano Studio", { body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista", icon: "/favicon.png" });
+                    }
+                    return;
+                  }
+                  if (d2.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+                  setGenStatus({ phase: d2.position > 0 ? "queued" : "generating", position: d2.position || null, elapsed });
+                  setTimeout(resumePoll, 3000);
+                } catch { setTimeout(resumePoll, 5000); }
+              };
+              setTimeout(resumePoll, 2000);
+
+            } catch { /* network error — ignore silently */ }
           };
-          setTimeout(resumePoll, 2000);
+
+          quickCheck();
         }
       }
 
