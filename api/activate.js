@@ -109,9 +109,11 @@ export default async function handler(req, res) {
     return res.status(402).json({ error: "Could not confirm subscription. Contact support." });
   }
 
-  // 3. Write plan to Supabase using service key
+  // 3. Write plan to Supabase — UPSERT so it creates the row if missing
   const credits = PLAN_CREDITS[confirmedPlan];
   const updateData = {
+    id: userId,
+    email: userEmail,
     plan: confirmedPlan,
     images_remaining: credits.images,
     videos_remaining: credits.videos,
@@ -119,24 +121,24 @@ export default async function handler(req, res) {
     subscription_start: new Date().toISOString(),
   };
 
-  console.log(`Updating profile ${userId} with:`, updateData);
+  console.log(`Upserting profile ${userId} with plan ${confirmedPlan}`);
 
-  const patchRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-    method: "PATCH",
+  const patchRes = await fetch(`${SB_URL}/rest/v1/profiles`, {
+    method: "POST",
     headers: {
       apikey: SERVICE_KEY,
       Authorization: `Bearer ${SERVICE_KEY}`,
       "Content-Type": "application/json",
-      Prefer: "return=representation",
+      "Prefer": "resolution=merge-duplicates,return=representation",
     },
     body: JSON.stringify(updateData),
   });
 
   const patchBody = await patchRes.text();
-  console.log(`Supabase PATCH status: ${patchRes.status}, body: ${patchBody.slice(0, 200)}`);
+  console.log(`Supabase upsert status: ${patchRes.status}, body: ${patchBody.slice(0, 300)}`);
 
-  if (!patchRes.ok) {
-    return res.status(500).json({ error: `Supabase update failed: ${patchRes.status} ${patchBody}` });
+  if (!patchRes.ok && patchRes.status !== 409) {
+    return res.status(500).json({ error: `Supabase upsert failed: ${patchRes.status} ${patchBody}` });
   }
 
   // 4. Verify it actually wrote correctly

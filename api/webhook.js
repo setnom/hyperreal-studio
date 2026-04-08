@@ -61,13 +61,20 @@ async function findUserByEmail(email, serviceKey) {
   return null;
 }
 
-async function setPlan(userId, plan, serviceKey) {
+async function setPlan(userId, plan, email, serviceKey) {
   const credits = PLAN_CREDITS[plan];
   if (!credits) { console.error("Unknown plan:", plan); return; }
-  const res = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-    method: "PATCH",
-    headers: sbHeaders(serviceKey),
+  const res = await fetch(`${SB_URL}/rest/v1/profiles`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+      "Prefer": "resolution=merge-duplicates,return=representation",
+    },
     body: JSON.stringify({
+      id: userId,
+      email: email || "",
       plan,
       images_remaining: credits.images,
       videos_remaining: credits.videos,
@@ -75,8 +82,8 @@ async function setPlan(userId, plan, serviceKey) {
       subscription_start: new Date().toISOString(),
     }),
   });
-  const result = await res.json();
-  console.log(`setPlan ${plan} for ${userId}:`, JSON.stringify(result).slice(0, 100));
+  const body = await res.text();
+  console.log(`setPlan ${plan} for ${userId}: status=${res.status}, body=${body.slice(0,100)}`);
 }
 
 async function deactivatePlan(userId, serviceKey) {
@@ -153,7 +160,7 @@ export default async function handler(req, res) {
     try {
       const user = await findUserByEmail(email, SERVICE_KEY);
       if (user) {
-        await setPlan(user.id, plan, SERVICE_KEY);
+        await setPlan(user.id, plan, email, SERVICE_KEY);
         console.log(`✓ Activated ${plan} for ${email}`);
       } else {
         console.error(`User not found for email: ${email} — they may need to register first`);
@@ -183,7 +190,7 @@ export default async function handler(req, res) {
         if (email && plan) {
           const user = await findUserByEmail(email, SERVICE_KEY);
           if (user) {
-            await setPlan(user.id, plan, SERVICE_KEY);
+            await setPlan(user.id, plan, email, SERVICE_KEY);
             console.log(`✓ ${reason === "subscription_create" ? "First payment" : "Renewal"}: ${plan} for ${email}`);
           } else {
             console.error(`User not found for invoice: ${email}`);
@@ -205,7 +212,7 @@ export default async function handler(req, res) {
         if (email && plan) {
           const user = await findUserByEmail(email, SERVICE_KEY);
           if (user && user.plan !== plan) {
-            await setPlan(user.id, plan, SERVICE_KEY);
+            await setPlan(user.id, plan, email, SERVICE_KEY);
             console.log(`✓ Plan updated to ${plan} for ${email}`);
           }
         }
