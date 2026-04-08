@@ -49,10 +49,12 @@ function openCheckout(planId) {
 function openPack(packId, userEmail) {
   const pack = PACKS[packId];
   if (!pack?.link || pack.link === "PENDING_STRIPE_LINK") return;
-  const successUrl = window.location.origin + "?pack=success&id=" + packId + "&type=" + pack.type + "&amount=" + pack.amount;
+  // {CHECKOUT_SESSION_ID} is replaced by Stripe automatically with the real session ID
+  const successUrl = window.location.origin + "?pack=success&id=" + packId + "&type=" + pack.type + "&amount=" + pack.amount + "&sid={CHECKOUT_SESSION_ID}";
   window.location.href = pack.link +
     "?prefilled_email=" + encodeURIComponent(userEmail || "") +
-    "&client_reference_id=" + packId;
+    "&client_reference_id=" + packId +
+    "&success_url=" + encodeURIComponent(successUrl);
 }
 
 // ─── i18n ───
@@ -649,6 +651,7 @@ export default function App() {
     if (params.get("pack") === "success") {
       const packType = params.get("type");
       const packAmount = parseInt(params.get("amount") || "0");
+      const sessionId = params.get("sid"); // Stripe checkout session ID
       window.history.replaceState(null, "", window.location.pathname);
       const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
       if (saved?.access_token && packType && packAmount > 0) {
@@ -659,7 +662,7 @@ export default function App() {
             const r = await fetch("/api/pack", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_token: saved.access_token, type: packType, amount: packAmount }),
+              body: JSON.stringify({ user_token: saved.access_token, type: packType, amount: packAmount, session_id: sessionId }),
             });
             const d = await r.json();
             console.log("Pack response attempt", attempt, ":", d);
@@ -668,6 +671,13 @@ export default function App() {
               await loadProfile(saved);
               setPayMsg(`✓ ${label} agregadas a tu cuenta`);
               setTimeout(() => setPayMsg(""), 6000);
+              return;
+            }
+            // 409 = already applied, don't retry
+            if (d.status === 409 || (d.error && d.error.includes("already been applied"))) {
+              await loadProfile(saved);
+              setPayMsg("✓ Créditos ya aplicados");
+              setTimeout(() => setPayMsg(""), 4000);
               return;
             }
             console.warn("Pack failed:", d.error);
@@ -681,7 +691,6 @@ export default function App() {
         applyPack();
         return;
       }
-      // Fallback: no params — just load profile
       const saved2 = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
       if (saved2?.access_token) { setSession(saved2); loadProfile(saved2); }
       return;
