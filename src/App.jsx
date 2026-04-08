@@ -1978,13 +1978,16 @@ export default function App() {
                         <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 12px" }}>
                           {lang === "en" ? "Add extra credits — quality follows your plan" : "Agrega créditos extra — calidad según tu plan actual"}
                         </p>
-                        <div style={{ display: "flex", gap: 6 }}>
+                        <div style={{ display: "flex", gap: 8 }}>
                           {packs.map(pk => (
                             <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)}
-                              style={{ flex: 1, padding: "10px 4px", borderRadius: 8, border: "1px solid rgba(0,240,255,.2)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
-                              <p style={{ fontSize: 12, fontWeight: 700, color: "#00f0ff", margin: "0 0 2px" }}>{pk.label}</p>
-                              <p style={{ fontSize: 11, color: "#e0e0f0", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount} {isImg ? (lang === "en" ? "img" : "img") : (lang === "en" ? "vid" : "vid")}</p>
-                              <p style={{ fontSize: 10, color: "#5a5a70", margin: 0 }}>${pk.price}</p>
+                              style={{ flex: 1, padding: "12px 6px", borderRadius: 10, border: "1px solid rgba(0,240,255,.25)", background: "linear-gradient(135deg, rgba(0,240,255,.08), rgba(0,240,255,.04))", cursor: "pointer", fontFamily: "inherit", textAlign: "center", transition: "border-color .2s, background .2s" }}
+                              onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(0,240,255,.5)"; e.currentTarget.style.background = "rgba(0,240,255,.12)"; }}
+                              onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(0,240,255,.25)"; e.currentTarget.style.background = "linear-gradient(135deg, rgba(0,240,255,.08), rgba(0,240,255,.04))"; }}>
+                              <p style={{ fontSize: 11, fontWeight: 600, color: "#8a8aaa", margin: "0 0 3px", textTransform: "uppercase", letterSpacing: 1 }}>{pk.label}</p>
+                              <p style={{ fontSize: 15, fontWeight: 800, color: "#00f0ff", margin: "0 0 4px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount}</p>
+                              <p style={{ fontSize: 10, color: "#8a8aaa", margin: "0 0 6px" }}>{isImg ? (lang === "en" ? "images" : "imágenes") : (lang === "en" ? "videos" : "videos")}</p>
+                              <p style={{ fontSize: 16, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
                             </button>
                           ))}
                         </div>
