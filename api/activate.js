@@ -22,18 +22,10 @@ async function verifyToken(user_token) {
   const res = await fetch(`${SB_URL}/auth/v1/user`, {
     headers: { apikey: anonKey, Authorization: `Bearer ${user_token}` },
   });
-  const user = await res.json();
-  if (!user?.id) throw new Error("Invalid session");
-  return user;
-}
-
-function sbHeaders(key) {
-  return {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-    Prefer: "return=representation",
-  };
+  const data = await res.json();
+  console.log("Auth user:", data?.id, data?.email);
+  if (!data?.id) throw new Error("Invalid session");
+  return data;
 }
 
 export default async function handler(req, res) {
@@ -50,92 +42,115 @@ export default async function handler(req, res) {
 
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
   const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
-  if (!SERVICE_KEY || !STRIPE_SECRET) return res.status(500).json({ error: "Server misconfiguration" });
+  if (!SERVICE_KEY) return res.status(500).json({ error: "SUPABASE_SERVICE_KEY missing" });
+  if (!STRIPE_SECRET) return res.status(500).json({ error: "STRIPE_SECRET_KEY missing" });
 
+  // 1. Verify user token
   let authUser;
   try { authUser = await verifyToken(user_token); }
-  catch { return res.status(401).json({ error: "Invalid session" }); }
+  catch (e) { return res.status(401).json({ error: "Invalid session: " + e.message }); }
 
   const userId = authUser.id;
   const userEmail = authUser.email;
 
-  try {
-    const stripe = new Stripe(STRIPE_SECRET);
+  // 2. Find plan — from Stripe or trust requestedPlan if customer exists
+  let confirmedPlan = null;
+  const stripe = new Stripe(STRIPE_SECRET);
 
-    // Find Stripe customer by email
-    const customers = await stripe.customers.list({ email: userEmail, limit: 3 });
-    
-    let confirmedPlan = null;
+  try {
+    const customers = await stripe.customers.list({ email: userEmail, limit: 5 });
+    console.log(`Stripe customers for ${userEmail}:`, customers.data.length);
 
     for (const customer of customers.data) {
-      if (confirmedPlan) break;
-
-      // Check all subscriptions (active, trialing, past_due)
-      const subs = await stripe.subscriptions.list({
-        customer: customer.id,
-        limit: 5,
-      });
+      // Check active/trialing/past_due subscriptions
+      const subs = await stripe.subscriptions.list({ customer: customer.id, limit: 10 });
+      console.log(`Subs for customer ${customer.id}:`, subs.data.map(s => `${s.status}:${s.items?.data?.[0]?.price?.id}`));
 
       for (const sub of subs.data) {
-        if (["active", "trialing", "past_due"].includes(sub.status)) {
+        if (["active", "trialing", "past_due", "incomplete"].includes(sub.status)) {
           const priceId = sub.items?.data?.[0]?.price?.id;
-          if (PRICE_TO_PLAN[priceId]) {
-            confirmedPlan = PRICE_TO_PLAN[priceId];
-            break;
-          }
+          if (PRICE_TO_PLAN[priceId]) { confirmedPlan = PRICE_TO_PLAN[priceId]; break; }
         }
       }
+      if (confirmedPlan) break;
 
-      // Also check recent paid invoices (catches cases where sub not yet active)
-      if (!confirmedPlan) {
-        const invoices = await stripe.invoices.list({
-          customer: customer.id,
-          status: "paid",
-          limit: 5,
-        });
-        for (const inv of invoices.data) {
-          // Only invoices from last 10 minutes
-          if (Date.now() / 1000 - inv.created > 600) continue;
-          const priceId = inv.lines?.data?.[0]?.price?.id;
-          if (PRICE_TO_PLAN[priceId]) {
-            confirmedPlan = PRICE_TO_PLAN[priceId];
-            break;
-          }
-        }
+      // Check ALL paid invoices (no time limit)
+      const invoices = await stripe.invoices.list({ customer: customer.id, status: "paid", limit: 10 });
+      console.log(`Invoices for ${customer.id}:`, invoices.data.map(i => `${i.lines?.data?.[0]?.price?.id}:${i.created}`));
+      for (const inv of invoices.data) {
+        const priceId = inv.lines?.data?.[0]?.price?.id;
+        if (PRICE_TO_PLAN[priceId]) { confirmedPlan = PRICE_TO_PLAN[priceId]; break; }
       }
+      if (confirmedPlan) break;
     }
 
-    // If still not found but requestedPlan is valid and we have a customer, trust it
-    // (Stripe may take a few seconds to propagate the subscription)
-    if (!confirmedPlan && requestedPlan && PLAN_CREDITS[requestedPlan] && customers.data.length > 0) {
-      console.warn(`Subscription not found yet for ${userEmail}, using requested plan: ${requestedPlan}`);
+    // If customer exists but plan not found yet (Stripe propagation delay) — trust requestedPlan
+    if (!confirmedPlan && requestedPlan && PLAN_CREDITS[requestedPlan]) {
+      if (customers.data.length > 0) {
+        console.warn(`Plan not confirmed yet, trusting requestedPlan: ${requestedPlan}`);
+        confirmedPlan = requestedPlan;
+      } else {
+        console.error(`No Stripe customer found for ${userEmail}`);
+        return res.status(402).json({ error: `No Stripe customer found for ${userEmail}. Did you use the same email for Stripe and app signup?` });
+      }
+    }
+  } catch (stripeErr) {
+    console.error("Stripe error:", stripeErr.message);
+    // If Stripe fails but we have a requestedPlan, still try to activate
+    if (requestedPlan && PLAN_CREDITS[requestedPlan]) {
+      console.warn("Stripe error — falling back to requestedPlan:", requestedPlan);
       confirmedPlan = requestedPlan;
+    } else {
+      return res.status(500).json({ error: "Stripe error: " + stripeErr.message });
     }
-
-    if (!confirmedPlan) {
-      console.error(`No subscription found for ${userEmail}`);
-      return res.status(402).json({ error: "No active subscription found" });
-    }
-
-    // Activate plan in Supabase
-    const credits = PLAN_CREDITS[confirmedPlan];
-    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-      method: "PATCH",
-      headers: sbHeaders(SERVICE_KEY),
-      body: JSON.stringify({
-        plan: confirmedPlan,
-        images_remaining: credits.images,
-        videos_remaining: credits.videos,
-        subscription_status: "active",
-        subscription_start: new Date().toISOString(),
-      }),
-    });
-
-    console.log(`✓ Activated ${confirmedPlan} for ${userEmail} (${userId})`);
-    return res.status(200).json({ ok: true, plan: confirmedPlan, credits });
-
-  } catch (err) {
-    console.error("Activate error:", err.message);
-    return res.status(500).json({ error: err.message });
   }
+
+  if (!confirmedPlan) {
+    return res.status(402).json({ error: "Could not confirm subscription. Contact support." });
+  }
+
+  // 3. Write plan to Supabase using service key
+  const credits = PLAN_CREDITS[confirmedPlan];
+  const updateData = {
+    plan: confirmedPlan,
+    images_remaining: credits.images,
+    videos_remaining: credits.videos,
+    subscription_status: "active",
+    subscription_start: new Date().toISOString(),
+  };
+
+  console.log(`Updating profile ${userId} with:`, updateData);
+
+  const patchRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+    method: "PATCH",
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(updateData),
+  });
+
+  const patchBody = await patchRes.text();
+  console.log(`Supabase PATCH status: ${patchRes.status}, body: ${patchBody.slice(0, 200)}`);
+
+  if (!patchRes.ok) {
+    return res.status(500).json({ error: `Supabase update failed: ${patchRes.status} ${patchBody}` });
+  }
+
+  // 4. Verify it actually wrote correctly
+  const verifyRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,images_remaining`, {
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+  });
+  const verifyData = await verifyRes.json();
+  console.log("Verify after update:", verifyData);
+
+  const updatedProfile = verifyData?.[0];
+  if (!updatedProfile || updatedProfile.plan !== confirmedPlan) {
+    return res.status(500).json({ error: `Profile not updated correctly. Got: ${JSON.stringify(updatedProfile)}` });
+  }
+
+  console.log(`✓ SUCCESS: Activated ${confirmedPlan} for ${userEmail} (${userId})`);
+  return res.status(200).json({ ok: true, plan: confirmedPlan, credits });
 }
