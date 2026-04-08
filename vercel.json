@@ -5,7 +5,8 @@
     "api/upload.js":    { "maxDuration": 30  },
     "api/webhook.js":   { "maxDuration": 30  },
     "api/download.js":  { "maxDuration": 60  },
-    "api/favorites.js": { "maxDuration": 10  }
+    "api/favorites.js": { "maxDuration": 10  },
+    "api/activate.js":  { "maxDuration": 30  }
   },
   "headers": [
     {
