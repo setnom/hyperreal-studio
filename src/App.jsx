@@ -529,65 +529,77 @@ export default function App() {
       }
     }
     if (params.get("payment") === "success") {
-      const planFromUrl = params.get("plan"); // plan comes in URL from Stripe redirect
+      const planFromUrl = params.get("plan");
       setPayMsg("¡Pago recibido! Activando tu plan...");
       window.history.replaceState(null, "", window.location.pathname);
       const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
-      if (saved?.access_token) {
-        setSession(saved);
-        let pollCount = 0;
+      if (!saved?.access_token) return;
+      setSession(saved);
 
-        const pollPlan = async () => {
+      const tryActivate = async () => {
+        // Step 1: Try activate endpoint immediately — verify with Stripe and activate
+        if (planFromUrl) {
           try {
-            const u = await sb.getUser(saved.access_token);
-            if (u?.id) {
-              const p = await sb.getProfile(u.id, saved.access_token);
-              // Consider active if plan is set and not "none" — don't require credits > 0
-              if (p && p.plan && p.plan !== "none") {
-                setProfile({ ...p, userId: u.id });
-                const g = await sb.getGens(u.id, saved.access_token);
-                if (Array.isArray(g)) { const mapped = g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url })); setGens(mapped); }
-                loadFavorites(saved.access_token);
-                setPage(P.DASH);
-                setPayMsg("✓ Plan activado");
-                setTimeout(() => setPayMsg(""), 3000);
-                return;
-              }
+            const activateRes = await fetch("/api/activate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_token: saved.access_token, plan: planFromUrl }),
+            });
+            const activateData = await activateRes.json();
+            if (activateData.ok) {
+              await loadProfile(saved);
+              setPayMsg("✓ Plan activado");
+              setTimeout(() => setPayMsg(""), 3000);
+              return;
+            }
+            console.warn("Activate returned:", activateData.error);
+          } catch (e) { console.error("Activate error:", e); }
+        }
+
+        // Step 2: Check if webhook already activated it
+        try {
+          const u = await sb.getUser(saved.access_token);
+          if (u?.id) {
+            const p = await sb.getProfile(u.id, saved.access_token);
+            if (p && p.plan && p.plan !== "none") {
+              await loadProfile(saved);
+              setPayMsg("✓ Plan activado");
+              setTimeout(() => setPayMsg(""), 3000);
+              return;
+            }
+          }
+        } catch {}
+
+        // Step 3: Stripe may take a few seconds — retry up to 5 times
+        let attempts = 0;
+        const retry = async () => {
+          attempts++;
+          setPayMsg(`Verificando pago${".".repeat(attempts % 4)}  `);
+          try {
+            const activateRes = await fetch("/api/activate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_token: saved.access_token, plan: planFromUrl }),
+            });
+            const activateData = await activateRes.json();
+            if (activateData.ok) {
+              await loadProfile(saved);
+              setPayMsg("✓ Plan activado");
+              setTimeout(() => setPayMsg(""), 3000);
+              return;
             }
           } catch {}
-
-          pollCount++;
-
-          // After 5 polls (~15s), try to activate directly via Stripe verification
-          if (pollCount === 5 && planFromUrl) {
-            try {
-              setPayMsg("Verificando pago con Stripe...");
-              const activateRes = await fetch("/api/activate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ user_token: saved.access_token, plan: planFromUrl }),
-              });
-              const activateData = await activateRes.json();
-              if (activateData.ok) {
-                // Reload profile now that it's activated
-                await loadProfile(saved);
-                setPayMsg("✓ Plan activado");
-                setTimeout(() => setPayMsg(""), 3000);
-                return;
-              }
-            } catch {}
-          }
-
-          if (pollCount < 15) setTimeout(pollPlan, 3000);
+          if (attempts < 5) setTimeout(retry, 3000);
           else {
-            setPayMsg("Pago procesado. Recargando...");
+            setPayMsg("Pago confirmado. Recargando...");
             await loadProfile(saved);
           }
         };
+        setTimeout(retry, 3000);
+      };
 
-        setTimeout(pollPlan, 2000);
-        return;
-      }
+      tryActivate();
+      return;
     }
     if (params.get("payment") === "cancel") { setPayMsg("Pago cancelado"); window.history.replaceState(null, "", window.location.pathname); }
     const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();

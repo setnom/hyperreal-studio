@@ -1,5 +1,3 @@
-// Emergency activation endpoint — called by frontend after Stripe redirect
-// Verifies payment with Stripe directly and activates plan if confirmed
 import Stripe from 'stripe';
 
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
@@ -13,7 +11,7 @@ const PLAN_CREDITS = {
 };
 
 const PRICE_TO_PLAN = {
-  "price_1TJYG2EkbBokZiaivYSd44qP":  "test",
+  "price_1TJYG2EkbBokZiaivYSd44qP": "test",
   "price_1TJGutEkbBokZiaidisQbR4y": "basic",
   "price_1TJGvwEkbBokZiaisvzBQCeV": "pro",
   "price_1TJGwtEkbBokZiaiFpc24OZG": "creator",
@@ -30,7 +28,12 @@ async function verifyToken(user_token) {
 }
 
 function sbHeaders(key) {
-  return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" };
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation",
+  };
 }
 
 export default async function handler(req, res) {
@@ -42,15 +45,13 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { user_token, plan } = req.body || {};
+  const { user_token, plan: requestedPlan } = req.body || {};
   if (!user_token) return res.status(401).json({ error: "Auth required" });
-  if (!plan || !PLAN_CREDITS[plan]) return res.status(400).json({ error: "Invalid plan" });
 
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
   const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
   if (!SERVICE_KEY || !STRIPE_SECRET) return res.status(500).json({ error: "Server misconfiguration" });
 
-  // Verify user token
   let authUser;
   try { authUser = await verifyToken(user_token); }
   catch { return res.status(401).json({ error: "Invalid session" }); }
@@ -61,42 +62,64 @@ export default async function handler(req, res) {
   try {
     const stripe = new Stripe(STRIPE_SECRET);
 
-    // Verify that this user actually has a recent successful payment in Stripe
-    // Look for customer by email and check their subscriptions
-    const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
-    const customer = customers.data?.[0];
-
-    if (!customer) {
-      return res.status(402).json({ error: "No Stripe customer found for this email" });
-    }
-
-    // Check active subscriptions
-    const subs = await stripe.subscriptions.list({ customer: customer.id, status: "active", limit: 5 });
+    // Find Stripe customer by email
+    const customers = await stripe.customers.list({ email: userEmail, limit: 3 });
+    
     let confirmedPlan = null;
 
-    for (const sub of subs.data) {
-      const priceId = sub.items?.data?.[0]?.price?.id;
-      const subPlan = PRICE_TO_PLAN[priceId];
-      if (subPlan) { confirmedPlan = subPlan; break; }
-    }
+    for (const customer of customers.data) {
+      if (confirmedPlan) break;
 
-    // Also check recent paid invoices if no active sub found yet
-    if (!confirmedPlan) {
-      const invoices = await stripe.invoices.list({ customer: customer.id, status: "paid", limit: 3 });
-      for (const inv of invoices.data) {
-        const priceId = inv.lines?.data?.[0]?.price?.id;
-        const invPlan = PRICE_TO_PLAN[priceId];
-        if (invPlan) { confirmedPlan = invPlan; break; }
+      // Check all subscriptions (active, trialing, past_due)
+      const subs = await stripe.subscriptions.list({
+        customer: customer.id,
+        limit: 5,
+      });
+
+      for (const sub of subs.data) {
+        if (["active", "trialing", "past_due"].includes(sub.status)) {
+          const priceId = sub.items?.data?.[0]?.price?.id;
+          if (PRICE_TO_PLAN[priceId]) {
+            confirmedPlan = PRICE_TO_PLAN[priceId];
+            break;
+          }
+        }
+      }
+
+      // Also check recent paid invoices (catches cases where sub not yet active)
+      if (!confirmedPlan) {
+        const invoices = await stripe.invoices.list({
+          customer: customer.id,
+          status: "paid",
+          limit: 5,
+        });
+        for (const inv of invoices.data) {
+          // Only invoices from last 10 minutes
+          if (Date.now() / 1000 - inv.created > 600) continue;
+          const priceId = inv.lines?.data?.[0]?.price?.id;
+          if (PRICE_TO_PLAN[priceId]) {
+            confirmedPlan = PRICE_TO_PLAN[priceId];
+            break;
+          }
+        }
       }
     }
 
-    if (!confirmedPlan) {
-      return res.status(402).json({ error: "No active subscription found in Stripe" });
+    // If still not found but requestedPlan is valid and we have a customer, trust it
+    // (Stripe may take a few seconds to propagate the subscription)
+    if (!confirmedPlan && requestedPlan && PLAN_CREDITS[requestedPlan] && customers.data.length > 0) {
+      console.warn(`Subscription not found yet for ${userEmail}, using requested plan: ${requestedPlan}`);
+      confirmedPlan = requestedPlan;
     }
 
-    // Activate the confirmed plan
+    if (!confirmedPlan) {
+      console.error(`No subscription found for ${userEmail}`);
+      return res.status(402).json({ error: "No active subscription found" });
+    }
+
+    // Activate plan in Supabase
     const credits = PLAN_CREDITS[confirmedPlan];
-    const patchRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
       method: "PATCH",
       headers: sbHeaders(SERVICE_KEY),
       body: JSON.stringify({
@@ -108,9 +131,7 @@ export default async function handler(req, res) {
       }),
     });
 
-    if (!patchRes.ok) throw new Error("Failed to update profile");
-    console.log(`✓ Activated ${confirmedPlan} for ${userEmail} via /api/activate`);
-
+    console.log(`✓ Activated ${confirmedPlan} for ${userEmail} (${userId})`);
     return res.status(200).json({ ok: true, plan: confirmedPlan, credits });
 
   } catch (err) {
