@@ -144,18 +144,8 @@ export default async function handler(req, res) {
       } catch (e) { console.error("Sub lookup error:", e.message); }
     }
 
-    if (!plan && session.amount_total) {
-      // Fallback: guess plan by price paid
-      const amt = session.amount_total;
-      if (amt <= 999) plan = "test";
-      else if (amt <= 1999) plan = "basic";
-      else if (amt <= 4799) plan = "pro";
-      else plan = "creator";
-      console.log("Plan guessed from amount:", amt, "→", plan);
-    }
-
     if (!email) { console.error("No email in checkout session"); return res.status(200).json({ received: true }); }
-    if (!plan)  { console.error("Could not determine plan"); return res.status(200).json({ received: true }); }
+    if (!plan)  { console.error("Could not determine plan from price ID or client_reference_id"); return res.status(200).json({ received: true }); }
 
     try {
       const user = await findUserByEmail(email, SERVICE_KEY);

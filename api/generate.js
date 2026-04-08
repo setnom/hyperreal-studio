@@ -72,6 +72,10 @@ export default async function handler(req, res) {
   const { type, prompt: rawPrompt, aspect_ratio, style_id, duration, audio,
           image_urls, start_frame, end_frame, multishot, user_token } = req.body || {};
 
+  // Validate style_id against allowed values only
+  const VALID_STYLE_IDS = ["photorealistic", "cinematic", "product", "portrait", "pixar", "ads", "neutral", "restore", "colorize"];
+  const safeStyleId = VALID_STYLE_IDS.includes(style_id) ? style_id : "photorealistic";
+
   if (!user_token || typeof user_token !== "string")
     return res.status(401).json({ error: "Authentication required" });
 
@@ -185,7 +189,7 @@ export default async function handler(req, res) {
           method: "POST",
           headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
           body: JSON.stringify({
-            user_id: userId, type, prompt, style: style_id || "photorealistic",
+            user_id: userId, type, prompt, style: safeStyleId,
             status: "processing", result_url: data.request_id + "|" + endpoint,
           }),
         });

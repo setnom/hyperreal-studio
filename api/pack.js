@@ -3,14 +3,7 @@ import Stripe from 'stripe';
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
-const PLAN_CREDITS = {
-  test:    { images: 20,  videos: 2  },
-  basic:   { images: 40,  videos: 8  },
-  pro:     { images: 90,  videos: 18 },
-  creator: { images: 200, videos: 30 },
-};
-
-// Pack amounts → cents for Stripe amount matching
+// Pack definitions — cents for Stripe matching
 const PACK_AMOUNTS_CENTS = {
   images: { 20: 599, 50: 1299, 120: 2799 },
   videos: { 5: 1299, 12: 2799, 30: 5999 },
@@ -26,7 +19,11 @@ async function verifyToken(user_token) {
   return data;
 }
 
-function sbHeaders(key) {
+function sbReadHeaders(key) {
+  return { apikey: key, Authorization: `Bearer ${key}` };
+}
+
+function sbWriteHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" };
 }
 
@@ -41,7 +38,6 @@ export default async function handler(req, res) {
 
   const { user_token, type, amount } = req.body || {};
   if (!user_token) return res.status(401).json({ error: "Auth required" });
-  if (!type || !amount) return res.status(400).json({ error: "type and amount required" });
 
   const amountNum = parseInt(amount);
   const expectedCents = PACK_AMOUNTS_CENTS[type]?.[amountNum];
@@ -58,101 +54,134 @@ export default async function handler(req, res) {
 
   const userId = authUser.id;
   const userEmail = authUser.email;
-  console.log(`Pack request: ${type} +${amountNum} for ${userEmail}`);
+  console.log(`Pack request: ${type} +${amountNum} for ${userEmail} (${userId})`);
 
-  // 2. Verify active subscription Basic+
-  const profileRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,images_remaining,videos_remaining,subscription_status`, {
-    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-  });
+  // 2. Get profile — verify subscription AND get processed payments
+  const profileRes = await fetch(
+    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,images_remaining,videos_remaining,subscription_status,processed_pack_payments`,
+    { headers: sbReadHeaders(SERVICE_KEY) }
+  );
   const profiles = await profileRes.json();
   const profile = profiles?.[0];
+  console.log("Profile plan:", profile?.plan, "status:", profile?.subscription_status);
 
-  if (!profile || !["basic", "pro", "creator"].includes(profile.plan)) {
-    return res.status(403).json({ error: "Pack purchases require an active Basic, Pro, or Creator subscription." });
-  }
+  if (!profile) return res.status(404).json({ error: "Profile not found" });
+  if (!["basic", "pro", "creator"].includes(profile.plan))
+    return res.status(403).json({ error: "Requires active Basic, Pro, or Creator subscription" });
+  if (profile.subscription_status === "payment_failed")
+    return res.status(403).json({ error: "Subscription has a payment issue. Resolve it first." });
 
-  // 3. Verify recent payment with Stripe
-  let confirmed = false;
+  const processedPayments = Array.isArray(profile.processed_pack_payments) ? profile.processed_pack_payments : [];
+
+  // 3. Find and verify payment in Stripe
+  const stripe = new Stripe(STRIPE_SECRET);
+  const WINDOW = 30 * 60; // 30 min window
+  let confirmedPaymentId = null;
+  let confirmedPlan = null;
+
   try {
-    const stripe = new Stripe(STRIPE_SECRET);
     const customers = await stripe.customers.list({ email: userEmail, limit: 5 });
     console.log(`Stripe customers: ${customers.data.length}`);
 
-    const WINDOW = 30 * 60; // 30 minute window
-
     for (const customer of customers.data) {
-      if (confirmed) break;
+      if (confirmedPaymentId) break;
 
-      // Check PaymentIntents (Payment Links create these)
-      const payments = await stripe.paymentIntents.list({ customer: customer.id, limit: 20 });
-      for (const pi of payments.data) {
-        if (pi.status !== "succeeded") continue;
-        if (Date.now() / 1000 - pi.created > WINDOW) continue;
-        console.log(`PI: amount=${pi.amount} expected=${expectedCents}`);
-        if (pi.amount === expectedCents) { confirmed = true; console.log(`✓ Confirmed via PaymentIntent ${pi.id}`); break; }
-      }
-      if (confirmed) break;
+      // Check PaymentIntents (most common for Payment Links)
+      try {
+        const pis = await stripe.paymentIntents.list({ customer: customer.id, limit: 20 });
+        for (const pi of pis.data) {
+          if (pi.status !== "succeeded") continue;
+          if (Date.now() / 1000 - pi.created > WINDOW) continue;
+          if (pi.amount !== expectedCents) continue;
 
-      // Check Checkout Sessions (alternative Payment Link flow)
-      const sessions = await stripe.checkout.sessions.list({ customer: customer.id, limit: 20 });
-      for (const session of sessions.data) {
-        if (session.payment_status !== "paid") continue;
-        if (Date.now() / 1000 - session.created > WINDOW) continue;
-        console.log(`Session: amount=${session.amount_total} expected=${expectedCents}`);
-        if (session.amount_total === expectedCents) { confirmed = true; console.log(`✓ Confirmed via Session ${session.id}`); break; }
-      }
-      if (confirmed) break;
+          // Check not already used
+          if (processedPayments.includes(pi.id)) {
+            console.warn(`PaymentIntent ${pi.id} already processed — rejecting duplicate`);
+            return res.status(409).json({ error: "This payment has already been applied to your account." });
+          }
 
-      // Check paid invoices
-      const invoices = await stripe.invoices.list({ customer: customer.id, status: "paid", limit: 10 });
-      for (const inv of invoices.data) {
-        if (Date.now() / 1000 - inv.created > WINDOW) continue;
-        if (inv.subscription) continue; // skip subscription invoices
-        if (inv.amount_paid === expectedCents) { confirmed = true; console.log(`✓ Confirmed via Invoice ${inv.id}`); break; }
-      }
+          confirmedPaymentId = pi.id;
+          console.log(`✓ Confirmed via PaymentIntent ${pi.id} (${pi.amount} cents)`);
+          break;
+        }
+      } catch (e) { console.warn("PI list error:", e.message); }
+      if (confirmedPaymentId) break;
+
+      // Check Checkout Sessions
+      try {
+        const sessions = await stripe.checkout.sessions.list({ customer: customer.id, limit: 20 });
+        for (const s of sessions.data) {
+          if (s.payment_status !== "paid") continue;
+          if (Date.now() / 1000 - s.created > WINDOW) continue;
+          if (s.amount_total !== expectedCents) continue;
+
+          const sessionPaymentId = s.payment_intent || s.id;
+          if (processedPayments.includes(sessionPaymentId)) {
+            console.warn(`Session ${sessionPaymentId} already processed — rejecting duplicate`);
+            return res.status(409).json({ error: "This payment has already been applied to your account." });
+          }
+
+          confirmedPaymentId = sessionPaymentId;
+          console.log(`✓ Confirmed via Checkout Session ${s.id} → payment ${confirmedPaymentId}`);
+          break;
+        }
+      } catch (e) { console.warn("Session list error:", e.message); }
+      if (confirmedPaymentId) break;
     }
   } catch (e) {
     console.error("Stripe error:", e.message);
-    // On Stripe error — still apply if user came from success URL (trust the redirect)
-    confirmed = true;
-    console.warn("Stripe verification failed, trusting redirect");
+    // Do NOT apply credits if Stripe is unreachable — security first
+    return res.status(503).json({ error: "Payment verification unavailable. Please try again in a moment." });
   }
 
-  if (!confirmed) {
-    console.error(`Payment not confirmed for ${userEmail}: ${type} x${amountNum} (${expectedCents} cents)`);
-    return res.status(402).json({ error: `Payment not confirmed. Make sure you completed the purchase. pack=${type} amount=${amountNum}` });
+  // 4. HARD GATE — must have confirmed payment ID
+  if (!confirmedPaymentId) {
+    console.error(`No confirmed payment for ${userEmail}: ${type} x${amountNum} (${expectedCents} cents) within ${WINDOW}s`);
+    return res.status(402).json({
+      error: "Payment not confirmed. If you just paid, wait 30 seconds and try again. Make sure you used the same email for your account and Stripe payment.",
+      debug: { type, amount: amountNum, email: userEmail },
+    });
   }
 
-  // 4. Add credits atomically
+  // 5. Apply credits atomically + record payment ID to prevent replay
   const field = type === "images" ? "images_remaining" : "videos_remaining";
-  const current = type === "images" ? (profile.images_remaining || 0) : (profile.videos_remaining || 0);
+  const current = (type === "images" ? profile.images_remaining : profile.videos_remaining) || 0;
   const newTotal = current + amountNum;
+  const updatedPayments = [...processedPayments, confirmedPaymentId];
+
+  console.log(`Applying: ${field} ${current} → ${newTotal}, recording payment ${confirmedPaymentId}`);
 
   const updateRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
     method: "PATCH",
-    headers: sbHeaders(SERVICE_KEY),
-    body: JSON.stringify({ [field]: newTotal }),
+    headers: sbWriteHeaders(SERVICE_KEY),
+    body: JSON.stringify({
+      [field]: newTotal,
+      processed_pack_payments: updatedPayments,
+    }),
   });
+
   const updateText = await updateRes.text();
-  console.log(`Credits: ${field} ${current} → ${newTotal} | status=${updateRes.status}`);
+  console.log(`PATCH: status=${updateRes.status} body=${updateText.slice(0, 200)}`);
 
   if (!updateRes.ok) {
-    return res.status(500).json({ error: `DB update failed: ${updateText.slice(0, 100)}` });
+    return res.status(500).json({ error: `DB update failed (${updateRes.status})` });
   }
 
-  // 5. Return final profile credits
-  const finalRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,videos_remaining`, {
-    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-  });
-  const final = (await finalRes.json())?.[0];
+  let updatedRows = [];
+  try { updatedRows = JSON.parse(updateText); } catch {}
+  if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+    return res.status(500).json({ error: "Credits not applied — profile row not found or not updated" });
+  }
 
-  console.log(`✓ Pack applied: +${amountNum} ${type} for ${userEmail} → total: ${newTotal}`);
+  const updated = updatedRows[0];
+  console.log(`✓ Pack applied: +${amountNum} ${type} for ${userEmail} | payment: ${confirmedPaymentId}`);
+
   return res.status(200).json({
     ok: true,
     type,
     amount: amountNum,
     added: amountNum,
-    images_remaining: final?.images_remaining ?? newTotal,
-    videos_remaining: final?.videos_remaining ?? (profile.videos_remaining || 0),
+    images_remaining: updated.images_remaining,
+    videos_remaining: updated.videos_remaining,
   });
 }
