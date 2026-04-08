@@ -171,27 +171,35 @@ export default async function handler(req, res) {
   }
 
   // ─── invoice.payment_succeeded ───
-  // Handles BOTH first payment (subscription_create) and renewals (subscription_cycle)
   if (event.type === "invoice.payment_succeeded") {
     const invoice = event.data.object;
     const reason = invoice.billing_reason;
     console.log("invoice reason:", reason);
 
-    // Process both first payment and renewals
     if (reason === "subscription_create" || reason === "subscription_cycle") {
       try {
         const customer = await stripe.customers.retrieve(invoice.customer);
         const email = customer.email;
         const priceId = invoice.lines?.data?.[0]?.price?.id;
         const plan = PRICE_TO_PLAN[priceId];
-
         console.log("invoice email:", email, "priceId:", priceId, "plan:", plan);
 
         if (email && plan) {
+          // For renewals: verify subscription is still active in Stripe before resetting credits
+          if (reason === "subscription_cycle" && invoice.subscription) {
+            const sub = await stripe.subscriptions.retrieve(invoice.subscription);
+            console.log(`Renewal verification: sub status=${sub.status}`);
+            if (sub.status !== "active") {
+              console.warn(`Subscription not active (${sub.status}), skipping renewal for ${email}`);
+              return res.status(200).json({ received: true });
+            }
+          }
+
           const user = await findUserByEmail(email, SERVICE_KEY);
           if (user) {
+            // Clear payment_failed status and reset credits
             await setPlan(user.id, plan, email, SERVICE_KEY);
-            console.log(`✓ ${reason === "subscription_create" ? "First payment" : "Renewal"}: ${plan} for ${email}`);
+            console.log(`✓ ${reason === "subscription_create" ? "First payment" : "Monthly renewal"}: ${plan} credits reset for ${email}`);
           } else {
             console.error(`User not found for invoice: ${email}`);
           }
@@ -200,48 +208,14 @@ export default async function handler(req, res) {
     }
   }
 
-  // ─── customer.subscription.updated ───
-  if (event.type === "customer.subscription.updated") {
-    const sub = event.data.object;
-    if (sub.status === "active") {
-      try {
-        const customer = await stripe.customers.retrieve(sub.customer);
-        const email = customer.email;
-        const plan = await getPlanFromSubscription(stripe, sub);
-
-        if (email && plan) {
-          const user = await findUserByEmail(email, SERVICE_KEY);
-          if (user && user.plan !== plan) {
-            await setPlan(user.id, plan, email, SERVICE_KEY);
-            console.log(`✓ Plan updated to ${plan} for ${email}`);
-          }
-        }
-      } catch (e) { console.error("Update error:", e.message); }
-    }
-  }
-
-  // ─── customer.subscription.deleted ───
-  if (event.type === "customer.subscription.deleted") {
-    const sub = event.data.object;
-    try {
-      const customer = await stripe.customers.retrieve(sub.customer);
-      const email = customer.email;
-      if (email) {
-        const user = await findUserByEmail(email, SERVICE_KEY);
-        if (user) {
-          await deactivatePlan(user.id, SERVICE_KEY);
-          console.log(`✓ Deactivated for ${email}`);
-        }
-      }
-    } catch (e) { console.error("Deactivation error:", e.message); }
-  }
-
   // ─── invoice.payment_failed ───
+  // Freeze account — block generation until payment is resolved
   if (event.type === "invoice.payment_failed") {
     const invoice = event.data.object;
     try {
       const customer = await stripe.customers.retrieve(invoice.customer);
       const email = customer.email;
+      console.log(`Payment failed for ${email}, attempt ${invoice.attempt_count}`);
       if (email) {
         const user = await findUserByEmail(email, SERVICE_KEY);
         if (user) {
@@ -250,10 +224,43 @@ export default async function handler(req, res) {
             headers: sbHeaders(SERVICE_KEY),
             body: JSON.stringify({ subscription_status: "payment_failed" }),
           });
-          console.warn(`Payment failed for ${email}`);
+          console.warn(`✗ Account frozen for ${email} (attempt ${invoice.attempt_count})`);
         }
       }
     } catch (e) { console.error("payment_failed error:", e.message); }
+  }
+
+  // ─── customer.subscription.updated ───
+  // Handle status changes: active→past_due, past_due→active, cancellations
+  if (event.type === "customer.subscription.updated") {
+    const sub = event.data.object;
+    try {
+      const customer = await stripe.customers.retrieve(sub.customer);
+      const email = customer.email;
+      const plan = await getPlanFromSubscription(stripe, sub);
+      console.log(`Sub updated: status=${sub.status} plan=${plan} email=${email}`);
+
+      if (email) {
+        const user = await findUserByEmail(email, SERVICE_KEY);
+        if (user) {
+          if (sub.status === "active") {
+            // Reactivated after payment issue — unfreeze if was frozen
+            if (plan) {
+              await setPlan(user.id, plan, email, SERVICE_KEY);
+              console.log(`✓ Reactivated ${plan} for ${email}`);
+            }
+          } else if (sub.status === "past_due" || sub.status === "unpaid") {
+            // Payment issue — freeze account
+            await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+              method: "PATCH",
+              headers: sbHeaders(SERVICE_KEY),
+              body: JSON.stringify({ subscription_status: "payment_failed" }),
+            });
+            console.warn(`✗ Frozen account for ${email} (sub status: ${sub.status})`);
+          }
+        }
+      }
+    } catch (e) { console.error("Sub update error:", e.message); }
   }
 
   res.status(200).json({ received: true });

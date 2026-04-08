@@ -150,7 +150,7 @@ const TEXTS = {
     // TyC
     terms: "Términos y Condiciones",
     privacy: "Privacidad",
-    styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", pixar: "Pixar 3D", ads: "Anuncio Ads", neutral: "Neutro", restore: "Restaurar" },
+    styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", pixar: "Pixar 3D", ads: "Anuncio Ads", neutral: "Neutro", restore: "Restaurar", colorize: "Colorear" },
   },
   en: {
     hero_badge: "Nano Banana 2 + Kling 3.0",
@@ -266,7 +266,7 @@ const TEXTS = {
     // TyC
     terms: "Terms & Conditions",
     privacy: "Privacy",
-    styles: { photorealistic: "Photorealistic", cinematic: "Cinematic", product: "Product", portrait: "Portrait", pixar: "Pixar 3D", ads: "Ad Creative", neutral: "Neutral", restore: "Restore" },
+    styles: { photorealistic: "Photorealistic", cinematic: "Cinematic", product: "Product", portrait: "Portrait", pixar: "Pixar 3D", ads: "Ad Creative", neutral: "Neutral", restore: "Restore", colorize: "Coloring Page" },
   },
 };
 
@@ -310,19 +310,23 @@ const STYLE_PROMPTS = {
     prefix: "",
     suffix: "Do not alter facial features or characteristics. Restore, colorize, and enhance this old photograph to ultra-high quality 8K resolution. IDENTITY & COMPOSITION - NON-NEGOTIABLE: Preserve 100% of facial geometry, bone structure, expressions, and identity. Zero alterations. Keep exact composition: same pose, framing, background, and all elements. Do NOT reimagine, stylize, or add anything that wasn't in the original.",
   },
+  colorize: {
+    prefix: "",
+    suffix: "Transform the provided image into a high-quality black-and-white illustration in a coloring page style. GENERAL REQUIREMENTS: Completely remove color and any complex shading. Convert the image into clean line art, with well-defined black lines on a pure white background. Do not use grays, gradients, or fills: only outlines. The result should look like a professional coloring book page. LINE TREATMENT: Use continuous, smooth, and closed lines. Medium to consistent line thickness. Prioritize clear and simplified contours, avoiding visual noise. Keep important details but remove unnecessary micro-details. Ensure all areas are clearly enclosed so they can be colored. SIMPLIFICATION AND STYLE: Simplify complex textures into easy-to-color shapes. Maintain the essence and proportions of the original subject. Clean, friendly style, like a children's illustration or professional coloring book. Avoid hyperrealism; prioritize clarity and readability. MAIN SUBJECT: Preserve the shape, pose, and key features of the original subject. Keep facial expressions clear if applicable. Clearly define the subject's edges to separate it from the background. BACKGROUND: Simplify the background or remove it if very complex. Reduce to minimal elements with clear lines. Avoid visual clutter. FINAL QUALITY: High resolution. Sharp edges, no pixelation. No artifacts, smudges, or noise. Balanced and centered composition. OUTPUT: Pure black-and-white image, only black lines on a white background, ready to print and color. Add small wide spaces to make coloring easier. High level of detail.",
+  },
 };
 
 function buildStyledPrompt(userPrompt, styleId) {
   const s = STYLE_PROMPTS[styleId] || STYLE_PROMPTS.photorealistic;
   // Neutral — no modification
   if (!s.prefix && !s.suffix) return userPrompt.trim() || "Generate image";
-  // Restore — if prompt empty, use suffix alone as full prompt
-  if (styleId === "restore") {
+  // Restore/Colorize — suffix only, works with empty prompt
+  if (styleId === "restore" || styleId === "colorize") {
     const base = userPrompt.trim();
     return base ? `${base}. ${s.suffix}` : s.suffix;
   }
   const base = (userPrompt.trim() || "").replace(/[.,]+$/, "");
-  if (!base) return s.suffix; // fallback if empty
+  if (!base) return s.suffix;
   return `${s.prefix}${base}, ${s.suffix}`;
 }
 const PLANS = [
@@ -348,6 +352,7 @@ const STYLES = [
   { id: "ads", label: "Anuncio Ads", icon: "🚀" },
   { id: "neutral", label: "Neutro", icon: "⚪" },
   { id: "restore", label: "Restaurar", icon: "🔧" },
+  { id: "colorize", label: "Colorear", icon: "🖍️" },
 ];
 const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"];
 const SAMPLE = ["Luxury perfume bottle on black marble, volumetric lighting, 8K", "Latin woman CEO in modern office, golden hour, shallow DOF", "Gourmet burger floating, ingredients exploding, dark bg, studio light", "Futuristic car in neon-lit Tokyo street, rain reflections, cinematic"];
@@ -647,7 +652,6 @@ export default function App() {
       const p = await sb.getProfile(u.id, s.access_token);
 
       if (!p) {
-        // Profile row missing — new user, go to plans
         setPage(P.PLANS);
         return;
       }
@@ -659,19 +663,57 @@ export default function App() {
         const mapped = g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url }));
         setGens(mapped);
         setVisibleCount(20);
+
+        // Resume polling for any pending generation (page was reloaded mid-generation)
+        const pending = g.find(gen => gen.status === "processing" && gen.result_url && gen.result_url.includes("|"));
+        if (pending) {
+          const [reqId, ep] = pending.result_url.split("|");
+          const genType = pending.type;
+          console.log("Resuming pending generation:", reqId, ep);
+          setGenning(true);
+          setGenStatus({ phase: "generating", position: null, elapsed: 0 });
+          const pollStart = Date.now();
+          let attempts = 0;
+          const resumePoll = async () => {
+            attempts++;
+            if (attempts > 100) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+            try {
+              const statusRes = await fetch("/api/status", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
+              });
+              const statusData = await statusRes.json();
+              const elapsed = Math.round((Date.now() - pollStart) / 1000);
+              if (statusData.status === "COMPLETED" && statusData.url) {
+                const newGen = { ...pending, url: statusData.url, status: "completed", result_url: statusData.url };
+                setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
+                setGenResult({ type: genType, url: statusData.url });
+                setGenning(false);
+                setGenStatus({ phase: "done", position: null, elapsed });
+                playDoneSound();
+                if (document.hidden && Notification.permission === "granted") {
+                  new Notification("NanoBanano Studio", { body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista", icon: "/favicon.png" });
+                }
+                return;
+              }
+              if (statusData.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+              const pos = statusData.position;
+              setGenStatus({ phase: pos > 0 ? "queued" : "generating", position: pos || null, elapsed });
+              setTimeout(resumePoll, 3000);
+            } catch { setTimeout(resumePoll, 5000); }
+          };
+          setTimeout(resumePoll, 2000);
+        }
       }
 
       loadFavorites(s.access_token);
       if (Notification.permission === "default") Notification.requestPermission().catch(() => {});
 
-      // Only go to PLANS if user explicitly has no plan
-      // Never redirect to PLANS on error — always prefer DASH
       const hasNoPlan = p.plan === "none" || p.plan === null || p.plan === undefined || p.plan === "";
       setPage(hasNoPlan ? P.PLANS : P.DASH);
 
     } catch (err) {
       console.error("loadProfile error:", err);
-      // On any error, go to DASH — better to show dashboard than loop on plans
       setPage(P.DASH);
     }
   };
@@ -884,7 +926,7 @@ export default function App() {
   };
 
   const handleGen = async () => {
-    if ((!prompt.trim() && style !== "restore") || !profile || !session) return;
+    if ((!prompt.trim() && style !== "restore" && style !== "colorize") || !profile || !session) return;
     const isVid = tab === T.VID;
     if (isVid && profile.videos_remaining <= 0) return;
     if (!isVid && profile.images_remaining <= 0) return;
@@ -1784,7 +1826,7 @@ export default function App() {
                 </div>
               )}
 
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genning || (!prompt.trim() && style !== "restore") || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genning && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genning || (!prompt.trim() && style !== "restore" && style !== "colorize") || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genning && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
                 {!hasPlan ? t("plan_for_gen") : genning ? (t("loading")) : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
               </button>
               {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={tab} duration={vidDur} lang={lang} genStatus={genStatus} /></div>}
@@ -1904,7 +1946,7 @@ export default function App() {
                   <span style={{ fontSize: 10, color: previewItem.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600, textTransform: "uppercase" }}>{previewItem.type === "image" ? t("tab_image") : t("tab_video")}</span>
                   <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>{new Date(previewItem.created_at).toLocaleDateString()}</span>
                   {(() => {
-                    const STYLE_NAMES = { photorealistic: lang === "en" ? "📸 Photorealistic" : "📸 Fotorrealista", cinematic: lang === "en" ? "🎬 Cinematic" : "🎬 Cinemático", product: lang === "en" ? "🛍️ Product" : "🛍️ Producto", portrait: lang === "en" ? "👤 Portrait" : "👤 Retrato", pixar: "🎭 Pixar 3D", ads: lang === "en" ? "🚀 Ad Creative" : "🚀 Anuncio Ads", neutral: lang === "en" ? "⚪ Neutral" : "⚪ Neutro", restore: lang === "en" ? "🔧 Restore" : "🔧 Restaurar" };
+                    const STYLE_NAMES = { photorealistic: lang === "en" ? "📸 Photorealistic" : "📸 Fotorrealista", cinematic: lang === "en" ? "🎬 Cinematic" : "🎬 Cinemático", product: lang === "en" ? "🛍️ Product" : "🛍️ Producto", portrait: lang === "en" ? "👤 Portrait" : "👤 Retrato", pixar: "🎭 Pixar 3D", ads: lang === "en" ? "🚀 Ad Creative" : "🚀 Anuncio Ads", neutral: lang === "en" ? "⚪ Neutral" : "⚪ Neutro", restore: lang === "en" ? "🔧 Restore" : "🔧 Restaurar", colorize: lang === "en" ? "🖍️ Coloring Page" : "🖍️ Colorear" };
                     const RATIO_PATTERN = /^\d+:\d+$/;
                     const s = previewItem.style;
                     if (!s) return null;
