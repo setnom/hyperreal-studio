@@ -584,14 +584,12 @@ export default function App() {
   const loadProfile = async (s) => {
     try {
       const u = await sb.getUser(s.access_token);
-      if (!u?.id) { console.error("loadProfile: no user id"); return; }
+      if (!u?.id) { setPage(P.DASH); return; }
 
       const p = await sb.getProfile(u.id, s.access_token);
-      console.log("loadProfile: profile =", p);
 
       if (!p) {
-        // Profile missing — create a basic one and go to plans
-        console.warn("loadProfile: profile not found, redirecting to plans");
+        // Profile row missing — new user, go to plans
         setPage(P.PLANS);
         return;
       }
@@ -608,13 +606,15 @@ export default function App() {
       loadFavorites(s.access_token);
       if (Notification.permission === "default") Notification.requestPermission().catch(() => {});
 
-      const noPlan = !p.plan || p.plan === "none";
-      setPage(noPlan ? P.PLANS : P.DASH);
+      // Only go to PLANS if user explicitly has no plan
+      // Never redirect to PLANS on error — always prefer DASH
+      const hasNoPlan = p.plan === "none" || p.plan === null || p.plan === undefined || p.plan === "";
+      setPage(hasNoPlan ? P.PLANS : P.DASH);
 
     } catch (err) {
       console.error("loadProfile error:", err);
-      // Don't leave user stuck on landing — go to plans as fallback
-      setPage(P.PLANS);
+      // On any error, go to DASH — better to show dashboard than loop on plans
+      setPage(P.DASH);
     }
   };
   const handleAuth = async () => {
