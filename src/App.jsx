@@ -536,69 +536,85 @@ export default function App() {
       if (!saved?.access_token) return;
       setSession(saved);
 
-      const tryActivate = async () => {
-        // Step 1: Try activate endpoint immediately — verify with Stripe and activate
-        if (planFromUrl) {
-          try {
-            const activateRes = await fetch("/api/activate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_token: saved.access_token, plan: planFromUrl }),
-            });
-            const activateData = await activateRes.json();
-            if (activateData.ok) {
-              await loadProfile(saved);
-              setPayMsg("✓ Plan activado");
-              setTimeout(() => setPayMsg(""), 3000);
-              return;
+      const goToDash = async () => {
+        // Load everything and go to dashboard
+        const u = await sb.getUser(saved.access_token);
+        if (u?.id) {
+          const p = await sb.getProfile(u.id, saved.access_token);
+          if (p) {
+            setProfile({ ...p, userId: u.id });
+            const g = await sb.getGens(u.id, saved.access_token);
+            if (Array.isArray(g)) {
+              const mapped = g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url }));
+              setGens(mapped); setVisibleCount(20);
             }
-            console.warn("Activate returned:", activateData.error);
-          } catch (e) { console.error("Activate error:", e); }
+            loadFavorites(saved.access_token);
+          }
         }
-
-        // Step 2: Check if webhook already activated it
-        try {
-          const u = await sb.getUser(saved.access_token);
-          if (u?.id) {
-            const p = await sb.getProfile(u.id, saved.access_token);
-            if (p && p.plan && p.plan !== "none") {
-              await loadProfile(saved);
-              setPayMsg("✓ Plan activado");
-              setTimeout(() => setPayMsg(""), 3000);
-              return;
-            }
-          }
-        } catch {}
-
-        // Step 3: Stripe may take a few seconds — retry up to 5 times
-        let attempts = 0;
-        const retry = async () => {
-          attempts++;
-          setPayMsg(`Verificando pago${".".repeat(attempts % 4)}  `);
-          try {
-            const activateRes = await fetch("/api/activate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_token: saved.access_token, plan: planFromUrl }),
-            });
-            const activateData = await activateRes.json();
-            if (activateData.ok) {
-              await loadProfile(saved);
-              setPayMsg("✓ Plan activado");
-              setTimeout(() => setPayMsg(""), 3000);
-              return;
-            }
-          } catch {}
-          if (attempts < 5) setTimeout(retry, 3000);
-          else {
-            setPayMsg("Pago confirmado. Recargando...");
-            await loadProfile(saved);
-          }
-        };
-        setTimeout(retry, 3000);
+        setPage(P.DASH);
+        setPayMsg("✓ Plan activado");
+        setTimeout(() => setPayMsg(""), 5000);
       };
 
-      tryActivate();
+      const activate = async (attempt = 1) => {
+        setPayMsg(attempt === 1 ? "Activando tu plan..." : `Verificando${".".repeat(attempt % 4)}   `);
+        try {
+          // Call activate endpoint
+          const r = await fetch("/api/activate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_token: saved.access_token, plan: planFromUrl }),
+          });
+          const d = await r.json();
+          console.log(`Activate attempt ${attempt}:`, d);
+
+          if (d.ok) {
+            // Wait 800ms for Supabase write to propagate then verify
+            await new Promise(res => setTimeout(res, 800));
+            const u = await sb.getUser(saved.access_token);
+            if (u?.id) {
+              const p = await sb.getProfile(u.id, saved.access_token);
+              console.log("Profile after activate:", p?.plan, p?.images_remaining);
+              if (p && p.plan && p.plan !== "none") {
+                setProfile({ ...p, userId: u.id });
+                const g = await sb.getGens(u.id, saved.access_token);
+                if (Array.isArray(g)) {
+                  const mapped = g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url }));
+                  setGens(mapped); setVisibleCount(20);
+                }
+                loadFavorites(saved.access_token);
+                setPage(P.DASH);
+                setPayMsg("✓ Plan activado");
+                setTimeout(() => setPayMsg(""), 5000);
+                return;
+              }
+            }
+            // activate said ok but profile not updated yet — wait and try reading again
+            await new Promise(res => setTimeout(res, 2000));
+            const u2 = await sb.getUser(saved.access_token);
+            if (u2?.id) {
+              const p2 = await sb.getProfile(u2.id, saved.access_token);
+              if (p2 && p2.plan && p2.plan !== "none") {
+                setProfile({ ...p2, userId: u2.id });
+                setPage(P.DASH);
+                setPayMsg("✓ Plan activado");
+                setTimeout(() => setPayMsg(""), 5000);
+                return;
+              }
+            }
+          }
+        } catch (e) { console.error("Activate error:", e.message); }
+
+        // Retry up to 6 times (18 seconds total)
+        if (attempt < 6) {
+          setTimeout(() => activate(attempt + 1), 3000);
+        } else {
+          setPayMsg("Pago confirmado. Contacta soporte si no ves tu plan activo.");
+          await goToDash(); // Go to dash anyway — don't leave user stuck
+        }
+      };
+
+      activate();
       return;
     }
     if (params.get("payment") === "cancel") { setPayMsg("Pago cancelado"); window.history.replaceState(null, "", window.location.pathname); }
