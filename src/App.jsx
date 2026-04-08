@@ -308,7 +308,7 @@ const STYLE_PROMPTS = {
   },
   restore: {
     prefix: "",
-    suffix: "Restore, colorize, and enhance this old photograph to ultra-high quality 8K resolution. IDENTITY & COMPOSITION - NON-NEGOTIABLE: Preserve 100% of facial geometry, bone structure, expressions, and identity. Zero alterations. Keep exact composition: same pose, framing, background, and all elements. Do NOT reimagine, stylize, or add anything that wasn't in the original.",
+    suffix: "Do not alter facial features or characteristics. Restore, colorize, and enhance this old photograph to ultra-high quality 8K resolution. IDENTITY & COMPOSITION - NON-NEGOTIABLE: Preserve 100% of facial geometry, bone structure, expressions, and identity. Zero alterations. Keep exact composition: same pose, framing, background, and all elements. Do NOT reimagine, stylize, or add anything that wasn't in the original.",
   },
 };
 
