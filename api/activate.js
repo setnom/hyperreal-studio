@@ -23,9 +23,81 @@ async function verifyToken(user_token) {
     headers: { apikey: anonKey, Authorization: `Bearer ${user_token}` },
   });
   const data = await res.json();
-  console.log("Auth user:", data?.id, data?.email);
   if (!data?.id) throw new Error("Invalid session");
   return data;
+}
+
+async function writeProfileToSupabase(userId, userEmail, plan, serviceKey) {
+  const credits = PLAN_CREDITS[plan];
+  const data = {
+    id: userId,
+    email: userEmail,
+    plan,
+    images_remaining: credits.images,
+    videos_remaining: credits.videos,
+    subscription_status: "active",
+    subscription_start: new Date().toISOString(),
+  };
+
+  // Try 1: PATCH existing row
+  console.log("Trying PATCH...");
+  const patchRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+    method: "PATCH",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+    },
+    body: JSON.stringify({ plan, images_remaining: credits.images, videos_remaining: credits.videos, subscription_status: "active", subscription_start: data.subscription_start }),
+  });
+  const patchText = await patchRes.text();
+  console.log(`PATCH status: ${patchRes.status}, body: ${patchText.slice(0,200)}`);
+
+  // If PATCH updated something, done
+  try {
+    const patchData = JSON.parse(patchText);
+    if (Array.isArray(patchData) && patchData.length > 0) {
+      console.log("PATCH succeeded");
+      return true;
+    }
+  } catch {}
+
+  // Try 2: INSERT new row
+  console.log("PATCH returned empty (row missing), trying INSERT...");
+  const insertRes = await fetch(`${SB_URL}/rest/v1/profiles`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+    },
+    body: JSON.stringify(data),
+  });
+  const insertText = await insertRes.text();
+  console.log(`INSERT status: ${insertRes.status}, body: ${insertText.slice(0,200)}`);
+
+  if (insertRes.ok) {
+    console.log("INSERT succeeded");
+    return true;
+  }
+
+  // Try 3: UPSERT with merge-duplicates
+  console.log("INSERT failed, trying UPSERT...");
+  const upsertRes = await fetch(`${SB_URL}/rest/v1/profiles`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+      "Prefer": "resolution=merge-duplicates,return=representation",
+    },
+    body: JSON.stringify(data),
+  });
+  const upsertText = await upsertRes.text();
+  console.log(`UPSERT status: ${upsertRes.status}, body: ${upsertText.slice(0,200)}`);
+  return upsertRes.ok;
 }
 
 export default async function handler(req, res) {
@@ -45,38 +117,37 @@ export default async function handler(req, res) {
   if (!SERVICE_KEY) return res.status(500).json({ error: "SUPABASE_SERVICE_KEY missing" });
   if (!STRIPE_SECRET) return res.status(500).json({ error: "STRIPE_SECRET_KEY missing" });
 
-  // 1. Verify user token
+  // 1. Verify user
   let authUser;
   try { authUser = await verifyToken(user_token); }
   catch (e) { return res.status(401).json({ error: "Invalid session: " + e.message }); }
 
   const userId = authUser.id;
   const userEmail = authUser.email;
+  console.log(`Activate request: userId=${userId}, email=${userEmail}, requestedPlan=${requestedPlan}`);
 
-  // 2. Find plan — from Stripe or trust requestedPlan if customer exists
+  // 2. Confirm plan via Stripe
   let confirmedPlan = null;
-  const stripe = new Stripe(STRIPE_SECRET);
-
   try {
+    const stripe = new Stripe(STRIPE_SECRET);
     const customers = await stripe.customers.list({ email: userEmail, limit: 5 });
-    console.log(`Stripe customers for ${userEmail}:`, customers.data.length);
+    console.log(`Stripe customers found: ${customers.data.length}`);
 
     for (const customer of customers.data) {
-      // Check active/trialing/past_due subscriptions
+      // Check subscriptions
       const subs = await stripe.subscriptions.list({ customer: customer.id, limit: 10 });
-      console.log(`Subs for customer ${customer.id}:`, subs.data.map(s => `${s.status}:${s.items?.data?.[0]?.price?.id}`));
-
       for (const sub of subs.data) {
-        if (["active", "trialing", "past_due", "incomplete"].includes(sub.status)) {
-          const priceId = sub.items?.data?.[0]?.price?.id;
-          if (PRICE_TO_PLAN[priceId]) { confirmedPlan = PRICE_TO_PLAN[priceId]; break; }
+        const priceId = sub.items?.data?.[0]?.price?.id;
+        console.log(`Sub ${sub.id}: status=${sub.status}, priceId=${priceId}`);
+        if (["active","trialing","past_due","incomplete"].includes(sub.status) && PRICE_TO_PLAN[priceId]) {
+          confirmedPlan = PRICE_TO_PLAN[priceId];
+          break;
         }
       }
       if (confirmedPlan) break;
 
-      // Check ALL paid invoices (no time limit)
+      // Check paid invoices
       const invoices = await stripe.invoices.list({ customer: customer.id, status: "paid", limit: 10 });
-      console.log(`Invoices for ${customer.id}:`, invoices.data.map(i => `${i.lines?.data?.[0]?.price?.id}:${i.created}`));
       for (const inv of invoices.data) {
         const priceId = inv.lines?.data?.[0]?.price?.id;
         if (PRICE_TO_PLAN[priceId]) { confirmedPlan = PRICE_TO_PLAN[priceId]; break; }
@@ -84,75 +155,40 @@ export default async function handler(req, res) {
       if (confirmedPlan) break;
     }
 
-    // If customer exists but plan not found yet (Stripe propagation delay) — trust requestedPlan
-    if (!confirmedPlan && requestedPlan && PLAN_CREDITS[requestedPlan]) {
-      if (customers.data.length > 0) {
-        console.warn(`Plan not confirmed yet, trusting requestedPlan: ${requestedPlan}`);
-        confirmedPlan = requestedPlan;
-      } else {
-        console.error(`No Stripe customer found for ${userEmail}`);
-        return res.status(402).json({ error: `No Stripe customer found for ${userEmail}. Did you use the same email for Stripe and app signup?` });
-      }
+    // If customer exists but no plan yet — trust requestedPlan
+    if (!confirmedPlan && requestedPlan && PLAN_CREDITS[requestedPlan] && customers.data.length > 0) {
+      console.warn(`Trusting requestedPlan: ${requestedPlan}`);
+      confirmedPlan = requestedPlan;
     }
   } catch (stripeErr) {
     console.error("Stripe error:", stripeErr.message);
-    // If Stripe fails but we have a requestedPlan, still try to activate
     if (requestedPlan && PLAN_CREDITS[requestedPlan]) {
-      console.warn("Stripe error — falling back to requestedPlan:", requestedPlan);
+      console.warn("Stripe failed, falling back to requestedPlan");
       confirmedPlan = requestedPlan;
-    } else {
-      return res.status(500).json({ error: "Stripe error: " + stripeErr.message });
     }
   }
 
   if (!confirmedPlan) {
-    return res.status(402).json({ error: "Could not confirm subscription. Contact support." });
+    return res.status(402).json({ error: `No subscription found for ${userEmail}. Make sure you used the same email for signup and payment.` });
   }
 
-  // 3. Write plan to Supabase — UPSERT so it creates the row if missing
-  const credits = PLAN_CREDITS[confirmedPlan];
-  const updateData = {
-    id: userId,
-    email: userEmail,
-    plan: confirmedPlan,
-    images_remaining: credits.images,
-    videos_remaining: credits.videos,
-    subscription_status: "active",
-    subscription_start: new Date().toISOString(),
-  };
+  // 3. Write to Supabase with 3 fallback methods
+  const written = await writeProfileToSupabase(userId, userEmail, confirmedPlan, SERVICE_KEY);
 
-  console.log(`Upserting profile ${userId} with plan ${confirmedPlan}`);
-
-  const patchRes = await fetch(`${SB_URL}/rest/v1/profiles`, {
-    method: "POST",
-    headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      "Content-Type": "application/json",
-      "Prefer": "resolution=merge-duplicates,return=representation",
-    },
-    body: JSON.stringify(updateData),
-  });
-
-  const patchBody = await patchRes.text();
-  console.log(`Supabase upsert status: ${patchRes.status}, body: ${patchBody.slice(0, 300)}`);
-
-  if (!patchRes.ok && patchRes.status !== 409) {
-    return res.status(500).json({ error: `Supabase upsert failed: ${patchRes.status} ${patchBody}` });
-  }
-
-  // 4. Verify it actually wrote correctly
+  // 4. Verify
   const verifyRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,images_remaining`, {
     headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
   });
   const verifyData = await verifyRes.json();
-  console.log("Verify after update:", verifyData);
+  console.log("Final verify:", JSON.stringify(verifyData));
 
-  const updatedProfile = verifyData?.[0];
-  if (!updatedProfile || updatedProfile.plan !== confirmedPlan) {
-    return res.status(500).json({ error: `Profile not updated correctly. Got: ${JSON.stringify(updatedProfile)}` });
+  const profile = verifyData?.[0];
+  if (!profile || profile.plan !== confirmedPlan) {
+    return res.status(500).json({
+      error: `Failed to write to database. Got: ${JSON.stringify(profile)}. Written: ${written}`,
+    });
   }
 
-  console.log(`✓ SUCCESS: Activated ${confirmedPlan} for ${userEmail} (${userId})`);
-  return res.status(200).json({ ok: true, plan: confirmedPlan, credits });
+  console.log(`✓ SUCCESS: ${confirmedPlan} activated for ${userEmail}`);
+  return res.status(200).json({ ok: true, plan: confirmedPlan, credits: PLAN_CREDITS[confirmedPlan] });
 }
