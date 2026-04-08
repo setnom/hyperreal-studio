@@ -10,6 +10,19 @@ const PRICES = {
   creator: { link: "https://buy.stripe.com/aFacN55z4bGh3XF2fBeME0J", images: 200, videos: 30 },
 };
 
+// Extra credit packs — one-time purchase, only for Basic+ subscribers
+const PACKS = {
+  img_s:  { link: "https://buy.stripe.com/bJeaEX9PkaCdbq77zVeME0L", type: "images", amount: 20,  price: 5.99,  label: "Pack S", emoji: "📦" },
+  img_m:  { link: "https://buy.stripe.com/fZu9AT2mS4dP1Px3jFeME0M", type: "images", amount: 50,  price: 12.99, label: "Pack M", emoji: "📦" },
+  img_l:  { link: "https://buy.stripe.com/bJe6oHbXsh0BgKrg6reME0N", type: "images", amount: 120, price: 27.99, label: "Pack L", emoji: "📦" },
+  vid_s:  { link: "https://buy.stripe.com/6oUaEXe5A11D3XFf2neME0O", type: "videos", amount: 5,   price: 12.99, label: "Pack S", emoji: "🎬" },
+  vid_m:  { link: "https://buy.stripe.com/cNi4gz8Lgh0B2TBdYjeME0P", type: "videos", amount: 12,  price: 27.99, label: "Pack M", emoji: "🎬" },
+  vid_l:  { link: "https://buy.stripe.com/3cI3cv9Pk9y9dyfbQbeME0Q",              type: "videos", amount: 30,  price: 59.99, label: "Pack L", emoji: "🎬" },
+};
+
+// Plans that can purchase extra packs (basic and above)
+const PACK_ELIGIBLE_PLANS = ["basic", "pro", "creator"];
+
 const hdr = (t) => ({ apikey: SB_KEY, Authorization: `Bearer ${t || SB_KEY}`, "Content-Type": "application/json" });
 
 const sb = {
@@ -28,10 +41,18 @@ const sb = {
 function openCheckout(planId) {
   const plan = PRICES[planId];
   if (plan?.link) {
-    // Stripe Payment Links support a ?client_reference_id param
     const successReturn = encodeURIComponent(window.location.origin + "?payment=success&plan=" + planId);
     window.location.href = plan.link + "?prefilled_email=" + encodeURIComponent("") + "&client_reference_id=" + planId;
   }
+}
+
+function openPack(packId, userEmail) {
+  const pack = PACKS[packId];
+  if (!pack?.link || pack.link === "PENDING_STRIPE_LINK") return;
+  const successUrl = window.location.origin + "?pack=success&id=" + packId + "&type=" + pack.type + "&amount=" + pack.amount;
+  window.location.href = pack.link +
+    "?prefilled_email=" + encodeURIComponent(userEmail || "") +
+    "&client_reference_id=" + packId;
 }
 
 // ─── i18n ───
@@ -622,7 +643,48 @@ export default function App() {
       activate();
       return;
     }
-    if (params.get("payment") === "cancel") { setPayMsg("Pago cancelado"); window.history.replaceState(null, "", window.location.pathname); }
+    if (params.get("pack") === "cancel") { setPayMsg("Compra cancelada"); window.history.replaceState(null, "", window.location.pathname); }
+
+    // Pack purchase success
+    if (params.get("pack") === "success") {
+      const packId = params.get("id");
+      const packType = params.get("type");
+      const packAmount = parseInt(params.get("amount") || "0");
+      window.history.replaceState(null, "", window.location.pathname);
+      const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
+      if (saved?.access_token && packId) {
+        setSession(saved);
+        setPayMsg(`Activando pack...`);
+        const applyPack = async (attempt = 1) => {
+          try {
+            const r = await fetch("/api/pack", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_token: saved.access_token, pack_id: packId, type: packType, amount: packAmount }),
+            });
+            const d = await r.json();
+            if (d.ok) {
+              setProfile(prev => prev ? {
+                ...prev,
+                images_remaining: d.images_remaining,
+                videos_remaining: d.videos_remaining,
+              } : prev);
+              await loadProfile(saved);
+              const label = packType === "images" ? `+${d.added} imágenes` : `+${d.added} videos`;
+              setPayMsg(`✓ ${label} agregadas a tu cuenta`);
+              setTimeout(() => setPayMsg(""), 5000);
+              return;
+            }
+            if (attempt < 4) setTimeout(() => applyPack(attempt + 1), 3000);
+            else setPayMsg("Error aplicando pack. Contacta soporte.");
+          } catch {
+            if (attempt < 4) setTimeout(() => applyPack(attempt + 1), 3000);
+          }
+        };
+        applyPack();
+        return;
+      }
+    }
     const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
     if (saved?.access_token) { setSession(saved); loadProfile(saved); }
   }, []);
@@ -1810,21 +1872,58 @@ export default function App() {
                 </>
               )}
 
-              {/* No credits popup */}
-              {hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0)) && (
-                <div style={{ padding: "18px", borderRadius: 12, background: "linear-gradient(135deg, rgba(255,107,43,.08), rgba(180,74,255,.06))", border: "1px solid rgba(255,107,43,.2)", textAlign: "center", marginBottom: 14, animation: "fadeUp .4s ease" }}>
-                  <p style={{ fontSize: 20, margin: "0 0 6px" }}>😔</p>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: "#ff6b2b", margin: "0 0 4px" }}>
-                    {tab === T.IMG ? t("no_credits_img") : t("no_credits_vid")}
-                  </p>
-                  <p style={{ fontSize: 11, color: "#5a5a70", margin: "0 0 14px", lineHeight: 1.5 }}>
-                    Actualiza tu plan para obtener más créditos y seguir creando
-                  </p>
-                  <button onClick={() => setPage(P.PLANS)} style={{ padding: "10px 28px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #ff6b2b, #b44aff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 20px rgba(255,107,43,.2)" }}>
-                    Actualizar plan →
-                  </button>
-                </div>
-              )}
+              {/* No credits — show packs for eligible plans, upgrade for others */}
+              {hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0)) && (() => {
+                const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
+                const isImg = tab === T.IMG;
+                const imgPacks = [
+                  { id: "img_s", label: "Pack S", amount: 20,  price: 5.99  },
+                  { id: "img_m", label: "Pack M", amount: 50,  price: 12.99 },
+                  { id: "img_l", label: "Pack L", amount: 120, price: 27.99 },
+                ];
+                const vidPacks = [
+                  { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
+                  { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 },
+                  { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 },
+                ];
+                const packs = isImg ? imgPacks : vidPacks;
+                return (
+                  <div style={{ padding: "16px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>
+                      {isImg ? (lang === "en" ? "📸 Out of image credits" : "📸 Sin créditos de imagen") : (lang === "en" ? "🎬 Out of video credits" : "🎬 Sin créditos de video")}
+                    </p>
+                    {isPackEligible ? (
+                      <>
+                        <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 12px" }}>
+                          {lang === "en" ? "Add extra credits — quality follows your plan" : "Agrega créditos extra — calidad según tu plan actual"}
+                        </p>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {packs.map(pk => (
+                            <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)}
+                              style={{ flex: 1, padding: "10px 4px", borderRadius: 8, border: "1px solid rgba(0,240,255,.2)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
+                              <p style={{ fontSize: 12, fontWeight: 700, color: "#00f0ff", margin: "0 0 2px" }}>{pk.label}</p>
+                              <p style={{ fontSize: 11, color: "#e0e0f0", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount} {isImg ? (lang === "en" ? "img" : "img") : (lang === "en" ? "vid" : "vid")}</p>
+                              <p style={{ fontSize: 10, color: "#5a5a70", margin: 0 }}>${pk.price}</p>
+                            </button>
+                          ))}
+                        </div>
+                        <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", marginTop: 8, padding: "8px", fontSize: 11, color: "#5a5a70", background: "transparent", border: "1px solid rgba(255,255,255,.06)", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>
+                          {lang === "en" ? "Or upgrade plan →" : "O actualiza tu plan →"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ fontSize: 11, color: "#5a5a70", margin: "0 0 10px" }}>
+                          {lang === "en" ? "Upgrade to Basic or higher to buy extra credit packs" : "Actualiza a Básico o superior para comprar packs extra"}
+                        </p>
+                        <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", padding: "10px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
+                          {lang === "en" ? "Upgrade plan →" : "Actualizar plan →"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genning || (!prompt.trim() && style !== "restore" && style !== "colorize") || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genning && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
                 {!hasPlan ? t("plan_for_gen") : genning ? (t("loading")) : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
