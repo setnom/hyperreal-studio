@@ -160,8 +160,9 @@ const TEXTS = {
     per_month: "/mes",
     // User panel
     my_plan: "Mi Plan",
-    next_billing: "Plan hasta",
-    no_billing: "Sin fecha de renovación",
+    next_billing: "Próxima facturación",
+    billing_until: "Plan hasta",
+    no_billing: "Sin fecha activa",
     cancel_sub: "Cancelar suscripción",
     cancel_confirm_title: "¿Cancelar suscripción?",
     cancel_confirm_body: "Si cancelas, pierdes tu precio actual para siempre. Si continúas activo y los precios suben, tú mantienes la tarifa a la que te registraste. Si definitivamente estás seguro de cancelar, no te preocupes, puedes reactivar cuando quieras, te estaremos esperando.",
@@ -276,8 +277,9 @@ const TEXTS = {
     per_month: "/mo",
     // User panel
     my_plan: "My Plan",
-    next_billing: "Plan until",
-    no_billing: "No renewal date",
+    next_billing: "Next billing",
+    billing_until: "Plan until",
+    no_billing: "No active date",
     cancel_sub: "Cancel subscription",
     cancel_confirm_title: "Cancel subscription?",
     cancel_confirm_body: "If you cancel, you lose your current price forever. If you stay active and prices go up, you keep the rate you signed up for. If you're absolutely sure you want to cancel, don't worry — you can reactivate anytime, we'll be here waiting for you.",
@@ -1250,9 +1252,11 @@ export default function App() {
     setUserPanelOpen(false);
   };
 
-  // Use subscription_end from Stripe (set by sync cron and activate)
+  // Billing date logic:
+  // - Active: next renewal date (subscription_end from Stripe)
+  // - Cancelled/Failed: plan expiry date (subscription_end — when access ends)
   const getNextBilling = () => {
-    // Prefer real date from Stripe via subscription_end
+    // Always prefer the real date from Stripe
     if (profile?.subscription_end) {
       const d = new Date(profile.subscription_end);
       return d.toLocaleDateString(lang === "es" ? "es-ES" : "en-US", { day: "numeric", month: "long", year: "numeric" });
@@ -1394,14 +1398,39 @@ export default function App() {
           )}
           {/* Billing */}
           <div style={{ padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
-            <span style={{ fontSize: 9, color: "#3a3a50", letterSpacing: 1, textTransform: "uppercase" }}>{t("next_billing")}</span>
-            <p style={{ fontSize: 11, color: "#5a5a70", margin: "3px 0 4px" }}>{nextBill || t("no_billing")}</p>
-            {hasPlanForPanel && (
-              <button onClick={() => window.open(`${STRIPE_PORTAL}?prefilled_email=${encodeURIComponent(profile?.email || "")}`, "_blank")}
-                style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, textDecoration: "underline" }}>
-                {lang === "en" ? "Manage billing →" : "Gestionar facturación →"}
-              </button>
-            )}
+            {(() => {
+              const isCancelled = profile?.subscription_status === "cancelled";
+              const isFailed = profile?.subscription_status === "payment_failed";
+              const isActive = profile?.subscription_status === "active" || (!isCancelled && !isFailed);
+              const billingLabel = (isCancelled || isFailed) ? t("billing_until") : t("next_billing");
+              const billingColor = isFailed ? "#ff4d6a" : isCancelled ? "#ffb800" : "#3a3a50";
+              const dateColor = isFailed ? "#ff4d6a" : isCancelled ? "#ffb800" : "#5a5a70";
+              return (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                    <span style={{ fontSize: 9, color: billingColor, letterSpacing: 1, textTransform: "uppercase" }}>{billingLabel}</span>
+                    {isCancelled && <span style={{ fontSize: 8, background: "rgba(255,184,0,.12)", color: "#ffb800", border: "1px solid rgba(255,184,0,.2)", borderRadius: 3, padding: "1px 5px", fontWeight: 700 }}>{lang === "en" ? "CANCELLED" : "CANCELADO"}</span>}
+                    {isFailed && <span style={{ fontSize: 8, background: "rgba(255,77,106,.12)", color: "#ff4d6a", border: "1px solid rgba(255,77,106,.2)", borderRadius: 3, padding: "1px 5px", fontWeight: 700 }}>{lang === "en" ? "PAYMENT ISSUE" : "PAGO FALLIDO"}</span>}
+                  </div>
+                  <p style={{ fontSize: 11, color: dateColor, margin: "0 0 4px", fontWeight: (isCancelled || isFailed) ? 600 : 400 }}>
+                    {nextBill || t("no_billing")}
+                  </p>
+                  {isCancelled && nextBill && (
+                    <p style={{ fontSize: 9, color: "#8a6a00", margin: "0 0 4px", lineHeight: 1.4 }}>
+                      {lang === "en" ? "Your plan ends on this date. Resubscribe to continue." : "Tu plan termina en esta fecha. Resuscríbete para continuar."}
+                    </p>
+                  )}
+                  {hasPlanForPanel && (
+                    <button onClick={() => window.open(`${STRIPE_PORTAL}?prefilled_email=${encodeURIComponent(profile?.email || "")}`, "_blank")}
+                      style={{ fontSize: 10, color: isFailed ? "#ff4d6a" : "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, textDecoration: "underline" }}>
+                      {isFailed
+                        ? (lang === "en" ? "Fix payment →" : "Resolver pago →")
+                        : (lang === "en" ? "Manage billing →" : "Gestionar facturación →")}
+                    </button>
+                  )}
+                </>
+              );
+            })()}
           </div>
           {/* Actions */}
           <div style={{ padding: "10px 16px" }}>
