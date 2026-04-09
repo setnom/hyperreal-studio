@@ -2242,31 +2242,62 @@ export default function App() {
             const isMotionEligible = ["basic","pro","creator"].includes(profile?.plan);
             const motionMaxDur = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
             const motionCredits = (profile?.plan === "creator" && motionDur > 8) ? 3 : 2;
-            const canGenMotion = isMotionEligible && motionImageUrl && motionVideoUrl && !genning && (profile?.videos_remaining ?? 0) >= motionCredits;
+            const canGenMotion = isMotionEligible && motionImageUrl && motionVideoUrl && !genning && !motionUploadProgress.img && !motionUploadProgress.vid && (profile?.videos_remaining ?? 0) >= motionCredits;
 
             const uploadMotionFile = async (file, isImg) => {
               if (!file) return;
               const fieldKey = isImg ? "img" : "vid";
+
+              // Show preview immediately from local file — don't wait for upload
+              if (isImg) setMotionImage(file);
+              else setMotionVideo(file);
+
               setMotionUploadProgress(p => ({ ...p, [fieldKey]: true }));
+
               try {
-                // Upload to Supabase Storage via backend (never exposes fal.ai)
-                const r = await fetch("/api/motion-upload", {
-                  method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    user_token: session?.access_token,
-                    file_name: file.name,
-                    mime_type: file.type,
-                    file_data: await fileToBase64(file),
-                  }),
-                });
-                const d = await r.json();
-                if (d.error) throw new Error(d.error);
-                if (d.path) {
-                  if (isImg) { setMotionImage(file); setMotionImageUrl(d.path); }
-                  else { setMotionVideo(file); setMotionVideoUrl(d.path); }
+                const MAX_BASE64 = 4 * 1024 * 1024; // 4MB — use direct PUT above this
+
+                if (file.size > MAX_BASE64) {
+                  // Large file — get presigned URL, upload directly (no base64 conversion)
+                  const initR = await fetch("/api/upload-init", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mime_type: file.type, file_name: file.name, user_token: session?.access_token }),
+                  });
+                  const initD = await initR.json();
+                  if (!initD.upload_url) throw new Error("Could not get upload URL");
+                  const putRes = await fetch(initD.upload_url, {
+                    method: "PUT",
+                    headers: { "Content-Type": file.type },
+                    body: file,
+                  });
+                  if (!putRes.ok) throw new Error("Direct upload failed");
+                  // Store the fal.ai file_url as the path reference
+                  if (isImg) setMotionImageUrl(initD.file_url);
+                  else setMotionVideoUrl(initD.file_url);
+                } else {
+                  // Small file — base64 via motion-upload to Supabase
+                  const base64 = await fileToBase64(file);
+                  const r = await fetch("/api/motion-upload", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      user_token: session?.access_token,
+                      file_name: file.name,
+                      mime_type: file.type,
+                      file_data: base64,
+                    }),
+                  });
+                  const d = await r.json();
+                  if (d.error) throw new Error(d.error);
+                  if (d.path) {
+                    if (isImg) setMotionImageUrl(d.path);
+                    else setMotionVideoUrl(d.path);
+                  }
                 }
               } catch (e) {
                 console.error("Upload error:", e.message);
+                // Clear on error
+                if (isImg) { setMotionImage(null); setMotionImageUrl(null); }
+                else { setMotionVideo(null); setMotionVideoUrl(null); }
               } finally {
                 setMotionUploadProgress(p => ({ ...p, [fieldKey]: false }));
               }
@@ -2346,26 +2377,44 @@ export default function App() {
                       {/* Character Image */}
                       <div>
                         <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "📸 Tu imagen / personaje" : "📸 Your image / character"}</p>
-                        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, borderRadius: 12, border: motionImageUrl ? "1px solid rgba(0,240,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: motionImageUrl ? "rgba(0,240,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
-                          {motionImageUrl
-                            ? <img src={URL.createObjectURL(motionImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            : motionUploadProgress.img
-                              ? <><div style={{ width: 24, height: 24, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 6 }} /><span style={{ fontSize: 10, color: "#5a5a70" }}>{lang === "es" ? "Subiendo..." : "Uploading..."}</span></>
-                              : <><span style={{ fontSize: 24, marginBottom: 6 }}>🖼️</span><span style={{ fontSize: 10, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Toca para subir imagen" : "Tap to upload image"}</span></>}
-                          {motionImageUrl && <button onClick={e => { e.preventDefault(); setMotionImage(null); setMotionImageUrl(null); }} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>}
+                        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, borderRadius: 12, border: (motionImage || motionImageUrl) ? "1px solid rgba(0,240,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: (motionImage || motionImageUrl) ? "rgba(0,240,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
+                          {motionImage
+                            ? <>
+                                <img src={URL.createObjectURL(motionImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                {motionUploadProgress.img && (
+                                  <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                                    <div style={{ width: 22, height: 22, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 4 }} />
+                                    <span style={{ fontSize: 9, color: "#00f0ff" }}>{lang === "es" ? "Subiendo..." : "Uploading..."}</span>
+                                  </div>
+                                )}
+                                {!motionUploadProgress.img && motionImageUrl && (
+                                  <div style={{ position: "absolute", top: 4, left: 4, background: "rgba(0,240,255,.8)", borderRadius: 4, padding: "2px 6px", fontSize: 9, color: "#06060e", fontWeight: 700 }}>✓</div>
+                                )}
+                              </>
+                            : <><span style={{ fontSize: 24, marginBottom: 6 }}>🖼️</span><span style={{ fontSize: 10, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Toca para subir imagen" : "Tap to upload image"}</span></>}
+                          {motionImage && !motionUploadProgress.img && <button onClick={e => { e.preventDefault(); setMotionImage(null); setMotionImageUrl(null); }} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>}
                           <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadMotionFile(e.target.files[0], true)} />
                         </label>
                       </div>
                       {/* Motion Video */}
                       <div>
                         <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "🎬 Video de movimiento" : "🎬 Motion reference video"}</p>
-                        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, borderRadius: 12, border: motionVideoUrl ? "1px solid rgba(180,74,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: motionVideoUrl ? "rgba(180,74,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
-                          {motionVideoUrl
-                            ? <video src={URL.createObjectURL(motionVideo)} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            : motionUploadProgress.vid
-                              ? <><div style={{ width: 24, height: 24, border: "2px solid rgba(180,74,255,.2)", borderTop: "2px solid #b44aff", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 6 }} /><span style={{ fontSize: 10, color: "#5a5a70" }}>{lang === "es" ? "Subiendo..." : "Uploading..."}</span></>
-                              : <><span style={{ fontSize: 24, marginBottom: 6 }}>🎬</span><span style={{ fontSize: 10, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Toca para subir video" : "Tap to upload video"}</span></>}
-                          {motionVideoUrl && <button onClick={e => { e.preventDefault(); setMotionVideo(null); setMotionVideoUrl(null); }} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>}
+                        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, borderRadius: 12, border: (motionVideo || motionVideoUrl) ? "1px solid rgba(180,74,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: (motionVideo || motionVideoUrl) ? "rgba(180,74,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
+                          {motionVideo
+                            ? <>
+                                <video src={URL.createObjectURL(motionVideo)} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                {motionUploadProgress.vid && (
+                                  <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                                    <div style={{ width: 22, height: 22, border: "2px solid rgba(180,74,255,.3)", borderTop: "2px solid #b44aff", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 4 }} />
+                                    <span style={{ fontSize: 9, color: "#b44aff" }}>{lang === "es" ? "Subiendo..." : "Uploading..."}</span>
+                                  </div>
+                                )}
+                                {!motionUploadProgress.vid && motionVideoUrl && (
+                                  <div style={{ position: "absolute", top: 4, left: 4, background: "rgba(180,74,255,.8)", borderRadius: 4, padding: "2px 6px", fontSize: 9, color: "#fff", fontWeight: 700 }}>✓</div>
+                                )}
+                              </>
+                            : <><span style={{ fontSize: 24, marginBottom: 6 }}>🎬</span><span style={{ fontSize: 10, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Toca para subir video" : "Tap to upload video"}</span></>}
+                          {motionVideo && !motionUploadProgress.vid && <button onClick={e => { e.preventDefault(); setMotionVideo(null); setMotionVideoUrl(null); }} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>}
                           <input type="file" accept="video/mp4,video/mov,video/webm,video/m4v" style={{ display: "none" }} onChange={e => uploadMotionFile(e.target.files[0], false)} />
                         </label>
                       </div>
@@ -2423,7 +2472,7 @@ export default function App() {
                     {/* Generate button */}
                     <button onClick={handleMotionGen} disabled={!canGenMotion}
                       style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGenMotion ? "#06060e" : "#3a3a50", background: canGenMotion ? "linear-gradient(135deg, #ff6b2b, #ffb800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGenMotion ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGenMotion ? "0 0 22px rgba(255,107,43,.3)" : "none", transition: "all .2s" }}>
-                      {genning ? (lang === "es" ? "Generando..." : "Generating...") : !motionImageUrl ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !motionVideoUrl ? (lang === "es" ? "Sube un video de movimiento" : "Upload a motion video") : (profile?.videos_remaining ?? 0) < motionCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Generar Motion (${motionCredits} créditos)` : `🎭 Generate Motion (${motionCredits} credits)`)}
+                      {genning ? (lang === "es" ? "Generando..." : "Generating...") : (motionUploadProgress.img || motionUploadProgress.vid) ? (lang === "es" ? "⏳ Subiendo archivos..." : "⏳ Uploading files...") : !motionImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !motionVideo ? (lang === "es" ? "Sube un video de movimiento" : "Upload a motion video") : !motionImageUrl || !motionVideoUrl ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : (profile?.videos_remaining ?? 0) < motionCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Generar Motion (${motionCredits} créditos)` : `🎭 Generate Motion (${motionCredits} credits)`)}
                     </button>
                     {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={motionDur} lang={lang} genStatus={genStatus} /></div>}
                     {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>{genError}</div>}

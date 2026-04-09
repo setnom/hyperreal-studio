@@ -86,9 +86,16 @@ export default async function handler(req, res) {
   catch { return res.status(401).json({ error: "Invalid session" }); }
   const userId = authUser.id;
 
-  // Validate storage paths belong to this user (prevent accessing other users' files)
-  if (!validateStoragePath(image_path, userId)) return res.status(400).json({ error: "Invalid image path" });
-  if (!validateStoragePath(video_path, userId)) return res.status(400).json({ error: "Invalid video path" });
+  // Determine if paths are Supabase paths or fal.ai URLs (large file direct upload)
+  const ALLOWED_FAL_HOSTS = ["v3b.fal.media","v2.fal.media","fal.media","cdn.fal.run"];
+  const isFalUrl = (v) => { try { const u = new URL(v); return u.protocol === "https:" && ALLOWED_FAL_HOSTS.some(h => u.hostname === h || u.hostname.endsWith("." + h)); } catch { return false; } };
+  const isSupabasePath = (v) => { if (!v || typeof v !== "string") return false; const parts = v.split("/"); return parts.length === 2 && parts[0] === userId && /^[a-zA-Z0-9._-]+$/.test(parts[1]); };
+
+  // Validate both inputs
+  if (!image_path) return res.status(400).json({ error: "Image required" });
+  if (!video_path) return res.status(400).json({ error: "Video required" });
+  if (!isSupabasePath(image_path) && !isFalUrl(image_path)) return res.status(400).json({ error: "Invalid image path" });
+  if (!isSupabasePath(video_path) && !isFalUrl(video_path)) return res.status(400).json({ error: "Invalid video path" });
 
   // Get profile — verify plan and credits
   const profileRes = await fetch(
@@ -120,13 +127,18 @@ export default async function handler(req, res) {
 
   console.log(`Motion: plan=${plan} dur=${finalDur}s credits=${creditsNeeded} user=${userId}`);
 
-  const filesToDelete = [image_path, video_path];
+  const filesToDelete = [image_path, video_path].filter(p => isSupabasePath(p));
 
   try {
-    // Generate 10-minute signed URLs for fal.ai
-    const [imageSignedUrl, videoSignedUrl] = await Promise.all([
-      getSignedUrl(image_path, SERVICE_KEY, 600),
-      getSignedUrl(video_path, SERVICE_KEY, 600),
+    // Generate signed URLs — Supabase paths need signing, fal.ai URLs are already accessible
+    const getAccessUrl = async (pathOrUrl) => {
+      if (isFalUrl(pathOrUrl)) return pathOrUrl; // already a public fal.ai URL
+      return getSignedUrl(pathOrUrl, SERVICE_KEY, 600); // generate 10min signed URL
+    };
+
+    const [imageAccessUrl, videoAccessUrl] = await Promise.all([
+      getAccessUrl(image_path),
+      getAccessUrl(video_path),
     ]);
 
     // Submit to fal.ai with signed URLs
@@ -134,8 +146,8 @@ export default async function handler(req, res) {
       method: "POST",
       headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        image_url: imageSignedUrl,
-        video_url: videoSignedUrl,
+        image_url: imageAccessUrl,
+        video_url: videoAccessUrl,
         character_orientation: safeOrientation,
         duration: finalDur,
         cfg_scale: 0.8,
