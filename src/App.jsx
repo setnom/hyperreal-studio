@@ -520,7 +520,7 @@ function CarouselSection({ lang, isDesk }) {
 
         {/* Ribbon — outside overflow so it shows fully, clipped by wrapper */}
         <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 3, overflow: "hidden" }}>
-          <div key={idx} style={{ position: "absolute", top: 24, left: -40, width: 180, textAlign: "center", transform: "rotate(-35deg)", background: s.color, color: "#06060e", fontSize: 9, fontWeight: 900, padding: "7px 0", letterSpacing: 1, textTransform: "uppercase", boxShadow: `0 2px 14px ${s.color}88`, whiteSpace: "pre-line", lineHeight: 1.3, opacity: transitioning ? 0 : 1, transition: "opacity .3s ease" }}>
+          <div key={idx} style={{ position: "absolute", top: 24, left: -40, width: 180, textAlign: "center", transform: "rotate(-35deg)", background: s.color, color: "#06060e", fontSize: s.tag.length > 10 ? 7 : 9, fontWeight: 900, padding: "7px 0", letterSpacing: 1, textTransform: "uppercase", boxShadow: `0 2px 14px ${s.color}88`, whiteSpace: "pre-line", lineHeight: 1.3, opacity: transitioning ? 0 : 1, transition: "opacity .3s ease" }}>
             {s.tag}
           </div>
         </div>
@@ -1680,7 +1680,7 @@ export default function App() {
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: isDesk ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: isDesk ? 16 : 8, marginBottom: isDesk ? 56 : 36 }}>
-        {[{ v: "97%", l: t("stat_save") }, { v: "300×", l: t("stat_fast") }, { v: "$0.25", l: t("stat_price") }, ...(isDesk ? [{ v: "5s", l: "Videos IA" }] : [])].map((s, i) => (
+        {[{ v: "97%", l: t("stat_save") }, { v: "300×", l: t("stat_fast") }, { v: "<$0.25", l: t("stat_price") }, ...(isDesk ? [{ v: "5s", l: "Videos IA" }] : [])].map((s, i) => (
           <div key={i} style={{ padding: isDesk ? "24px 16px" : "16px 8px", background: "rgba(255,255,255,.02)", borderRadius: 14, border: "1px solid rgba(255,255,255,.04)", textAlign: "center" }}>
             <p style={{ fontSize: isDesk ? 28 : 20, fontWeight: 800, margin: 0, fontFamily: "'JetBrains Mono',monospace", background: "linear-gradient(135deg, #00f0ff, #b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{s.v}</p>
             <p style={{ fontSize: isDesk ? 11 : 9, color: "#5a5a70", margin: "4px 0 0" }}>{s.l}</p>
