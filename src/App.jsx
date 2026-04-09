@@ -61,9 +61,9 @@ function openPack(packId, userEmail) {
 const TEXTS = {
   es: {
     hero_badge: "Nano Banana 2 + Kling 3.0",
-    hero_title_1: "Genera contenido ",
-    hero_title_2: "hiperrealista",
-    hero_title_3: " con IA",
+    hero_title_1: "Crea contenido que ",
+    hero_title_2: "vende",
+    hero_title_3: "",
     hero_sub: "Imágenes y videos de calidad profesional en segundos. Sin equipos. Sin estudios. Sin esperas.",
     start: "Iniciar →",
     start_now: "Comenzar ahora →",
@@ -178,9 +178,9 @@ const TEXTS = {
   },
   en: {
     hero_badge: "Nano Banana 2 + Kling 3.0",
-    hero_title_1: "Generate ",
-    hero_title_2: "hyperrealistic",
-    hero_title_3: " AI content",
+    hero_title_1: "Create content that ",
+    hero_title_2: "sells",
+    hero_title_3: "",
     hero_sub: "Professional-quality images and videos in seconds. No equipment. No studios. No waiting.",
     start: "Start →",
     start_now: "Get started →",
@@ -479,11 +479,12 @@ function PlanCard({ pl, onAction, actionLabel, isDesk, lang, features }) {
 // ─── APP ───
 function CarouselSection({ lang, isDesk }) {
   const slides = [
-    { src: "/images/carousel_realismo.webp",  tag: lang === "en" ? "Ultra\nRealism"    : "Ultra\nRealismo",    color: "#00f0ff" },
-    { src: "/images/carousel_restaurar.webp", tag: lang === "en" ? "Photo\nRestore"   : "Restauración",       color: "#b44aff" },
-    { src: "/images/carousel_anuncio1.webp",  tag: lang === "en" ? "Winning\nAd"      : "Anuncio",             color: "#ffb800" },
-    { src: "/images/carousel_anuncio2.webp",  tag: lang === "en" ? "Winning\nAd"      : "Anuncio",             color: "#ffb800" },
-    { src: "/images/carousel_animado.webp",   tag: lang === "en" ? "Animated\nStyle"  : "Estilo\nAnimado",     color: "#ff6b2b" },
+    { src: "/images/carousel_realismo.webp",  tag: lang === "en" ? "Ultra\nRealism"    : "Ultra\nRealismo",    color: "#00f0ff", duration: 3000 },
+    { src: "/images/carousel_restaurar.webp", tag: lang === "en" ? "Photo\nRestore"   : "Restauración",       color: "#b44aff", duration: 3000 },
+    { src: "/images/carousel_anuncio1.webp",  tag: lang === "en" ? "Winning\nAd"      : "Anuncio",             color: "#ffb800", duration: 3000 },
+    { src: "/images/carousel_anuncio2.webp",  tag: lang === "en" ? "Winning\nAd"      : "Anuncio",             color: "#ffb800", duration: 3000 },
+    { src: "/images/carousel_animado.webp",   tag: lang === "en" ? "Animated\nStyle"  : "Estilo\nAnimado",     color: "#ff6b2b", duration: 3000 },
+    { src: "/images/carousel_ugc.webp",       tag: "UGC",                                                      color: "#00ff88", duration: 5000 },
   ];
   const [idx, setIdx] = useState(0);
   const [prev, setPrev] = useState(null);
@@ -498,8 +499,8 @@ function CarouselSection({ lang, isDesk }) {
   };
 
   useEffect(() => {
-    const t = setInterval(() => go((idx + 1) % slides.length), 3000);
-    return () => clearInterval(t);
+    const t = setTimeout(() => go((idx + 1) % slides.length), slides[idx].duration);
+    return () => clearTimeout(t);
   }, [idx, transitioning]);
 
   const s = slides[idx];
@@ -1653,7 +1654,7 @@ export default function App() {
         <div style={{ flex: 1, textAlign: isDesk ? "left" : "center", animation: "fadeUp .8s ease" }}>
           <div style={{ display: "inline-block", fontSize: isDesk ? 10 : 9, fontFamily: "'JetBrains Mono',monospace", color: "#00f0ff", letterSpacing: 3, textTransform: "uppercase", marginBottom: 16, padding: "5px 12px", border: "1px solid rgba(0,240,255,.2)", borderRadius: 20, background: "rgba(0,240,255,.04)" }}>{t("hero_badge")}</div>
           <h1 style={{ fontSize: isDesk ? 48 : 32, fontWeight: 800, lineHeight: 1.08, margin: "0 0 16px", letterSpacing: -1.5 }}>
-            {t("hero_title_1")}<span style={{ background: "linear-gradient(135deg, #00f0ff, #b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{t("hero_title_2")}</span>{t("hero_title_3")}
+            {t("hero_title_1")}<span style={{ background: "linear-gradient(135deg, #b44aff, #00f0ff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{t("hero_title_2")}</span>{t("hero_title_3")}
           </h1>
           <p style={{ fontSize: isDesk ? 17 : 14, color: "#6a6a80", lineHeight: 1.6, maxWidth: isDesk ? 460 : 380, margin: isDesk ? "0" : "0 auto 24px" }}>{t("hero_sub")}</p>
           {isDesk && <button onClick={() => setPage(session ? P.DASH : P.AUTH)} style={{ marginTop: 24, padding: "14px 36px", fontSize: 15, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 30px rgba(0,240,255,.25)" }}>{session ? (lang === "en" ? "Generate now →" : "Generar ahora →") : t("start_now")}</button>}
@@ -1725,7 +1726,7 @@ export default function App() {
           <div style={{ padding: "40px 0" }}>
             {logo(42)}
             <h2 style={{ fontSize: 36, fontWeight: 800, lineHeight: 1.1, margin: "28px 0 16px", letterSpacing: -1 }}>
-              {lang === "es" ? <>Genera contenido <span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>hiperrealista</span> con IA</> : <>Generate <span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>hyperrealistic</span> AI content</>}
+              {lang === "es" ? <>Crea contenido que <span style={{ background: "linear-gradient(135deg,#b44aff,#00f0ff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>vende</span></> : <>Create content that <span style={{ background: "linear-gradient(135deg,#b44aff,#00f0ff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>sells</span></>}
             </h2>
             <p style={{ fontSize: 15, color: "#5a5a70", lineHeight: 1.65, marginBottom: 32 }}>
               {lang === "es" ? "Imágenes y videos de calidad profesional en segundos. Sin equipos. Sin estudios." : "Professional-quality images and videos in seconds. No equipment. No studios."}
