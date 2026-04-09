@@ -608,6 +608,7 @@ export default function App() {
   const [motionSceneFrom, setMotionSceneFrom] = useState("image"); // "image" | "video"
   const [motionPrompt, setMotionPrompt] = useState("");
   const [motionDur, setMotionDur] = useState(8); // duration in seconds
+  const [motionUploadProgress, setMotionUploadProgress] = useState({ img: false, vid: false });
   const [genning, setGenning] = useState(false);
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
@@ -2242,9 +2243,6 @@ export default function App() {
             const motionMaxDur = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
             const motionCredits = (profile?.plan === "creator" && motionDur > 8) ? 3 : 2;
             const canGenMotion = isMotionEligible && motionImageUrl && motionVideoUrl && !genning && (profile?.videos_remaining ?? 0) >= motionCredits;
-
-            const [motionUploading, setMotionUploading] = useState(false);
-            const [motionUploadProgress, setMotionUploadProgress] = useState({ img: false, vid: false });
 
             const uploadMotionFile = async (file, isImg) => {
               if (!file) return;
