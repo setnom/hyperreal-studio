@@ -27,7 +27,7 @@ async function verifyToken(user_token) {
 
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
-  const allowed = origin === ALLOWED_ORIGIN || origin.endsWith(".vercel.app");
+  const allowed = origin === ALLOWED_ORIGIN || origin.endsWith(".vercel.app") && origin.includes("hyperreal-studio");
   res.setHeader("Access-Control-Allow-Origin", allowed ? origin : ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -52,6 +52,9 @@ export default async function handler(req, res) {
 
     const contentType = fileRes.headers.get("content-type") || "application/octet-stream";
     const buffer = await fileRes.arrayBuffer();
+    if (buffer.byteLength > 50 * 1024 * 1024) {
+      return res.status(413).json({ error: "File too large to proxy (max 50MB)" });
+    }
     const safeFilename = (filename || "nanobanano-file").replace(/[^a-zA-Z0-9._-]/g, "_");
 
     res.setHeader("Content-Type", contentType);

@@ -479,60 +479,83 @@ function PlanCard({ pl, onAction, actionLabel, isDesk, lang, features }) {
 // ─── APP ───
 function CarouselSection({ lang, isDesk }) {
   const slides = [
-    { src: "/images/carousel_realismo.webp",  tag: lang === "en" ? "Ultra Realism"  : "Ultra Realismo",  color: "#00f0ff",  angle: -25 },
-    { src: "/images/carousel_restaurar.webp", tag: lang === "en" ? "Photo Restore"  : "Restauración",    color: "#b44aff",  angle: -25 },
-    { src: "/images/carousel_anuncio1.webp",  tag: lang === "en" ? "Winning Ad"     : "Anuncio",          color: "#ffb800",  angle: -25 },
-    { src: "/images/carousel_anuncio2.webp",  tag: lang === "en" ? "Winning Ad"     : "Anuncio",          color: "#ffb800",  angle: -25 },
-    { src: "/images/carousel_animado.webp",   tag: lang === "en" ? "Animated Style" : "Estilo Animado",   color: "#ff6b2b",  angle: -25 },
+    { src: "/images/carousel_realismo.webp",  tag: lang === "en" ? "Ultra Realism"  : "Ultra Realismo",  color: "#00f0ff" },
+    { src: "/images/carousel_restaurar.webp", tag: lang === "en" ? "Photo Restore"  : "Restauración",    color: "#b44aff" },
+    { src: "/images/carousel_anuncio1.webp",  tag: lang === "en" ? "Winning Ad"     : "Anuncio",          color: "#ffb800" },
+    { src: "/images/carousel_anuncio2.webp",  tag: lang === "en" ? "Winning Ad"     : "Anuncio",          color: "#ffb800" },
+    { src: "/images/carousel_animado.webp",   tag: lang === "en" ? "Animated Style" : "Estilo Animado",   color: "#ff6b2b" },
   ];
   const [idx, setIdx] = useState(0);
-  const [fading, setFading] = useState(false);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFading(true);
-      setTimeout(() => {
-        setIdx(i => (i + 1) % slides.length);
-        setFading(false);
-      }, 400);
-    }, 3000);
-    return () => clearInterval(timer);
-  }, []);
+  const [prev, setPrev] = useState(null);
+  const [transitioning, setTransitioning] = useState(false);
 
   const go = (n) => {
-    setFading(true);
-    setTimeout(() => { setIdx(n); setFading(false); }, 300);
+    if (transitioning) return;
+    setPrev(idx);
+    setTransitioning(true);
+    setIdx(n);
+    setTimeout(() => { setPrev(null); setTransitioning(false); }, 600);
   };
 
-  const s = slides[idx];
-  return (
-    <div style={{ marginBottom: isDesk ? 56 : 36, userSelect: "none" }}>
-      <div style={{ position: "relative", borderRadius: 20, overflow: "hidden", maxWidth: isDesk ? 700 : "100%", margin: "0 auto", boxShadow: "0 24px 64px rgba(0,0,0,.5)" }}>
-        {/* Image */}
-        <img src={s.src} alt={s.tag} style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", display: "block", opacity: fading ? 0 : 1, transition: "opacity .4s ease" }} />
+  useEffect(() => {
+    const t = setInterval(() => go((idx + 1) % slides.length), 3000);
+    return () => clearInterval(t);
+  }, [idx, transitioning]);
 
-        {/* Tag diagonal */}
-        <div style={{ position: "absolute", top: 22, left: -28, width: 160, textAlign: "center", transform: "rotate(-35deg)", background: s.color, color: "#06060e", fontSize: 11, fontWeight: 800, padding: "5px 0", letterSpacing: 0.5, textTransform: "uppercase", boxShadow: `0 2px 12px ${s.color}66`, zIndex: 2 }}>
-          {s.tag}
+  const s = slides[idx];
+  const p = prev !== null ? slides[prev] : null;
+
+  return (
+    <div style={{ marginBottom: isDesk ? 48 : 32 }}>
+      {/* Carousel container */}
+      <div style={{ position: "relative", maxWidth: isDesk ? 680 : "100%", margin: "0 auto", borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 64px rgba(0,0,0,.5)", aspectRatio: "1/1" }}>
+
+        {/* Previous image — fades out */}
+        {p && (
+          <img src={p.src} alt={p.tag} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: transitioning ? 0 : 1, transition: "opacity .6s ease", zIndex: 1 }} />
+        )}
+
+        {/* Current image — fades in */}
+        <img src={s.src} alt={s.tag} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: transitioning ? 1 : 1, transition: "opacity .6s ease", zIndex: 2 }} />
+
+        {/* Ribbon — outside overflow so it shows fully, clipped by wrapper */}
+        <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 3, overflow: "hidden" }}>
+          <div key={idx} style={{ position: "absolute", top: 28, left: -36, width: 180, textAlign: "center", transform: "rotate(-35deg)", background: s.color, color: "#06060e", fontSize: 10, fontWeight: 900, padding: "6px 0", letterSpacing: 1, textTransform: "uppercase", boxShadow: `0 2px 14px ${s.color}88`, whiteSpace: "nowrap", opacity: transitioning ? 0 : 1, transition: "opacity .3s ease" }}>
+            {s.tag}
+          </div>
         </div>
 
-        {/* Gradient bottom */}
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 80, background: "linear-gradient(transparent, rgba(6,6,14,.7))" }} />
+        {/* Bottom gradient */}
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 90, background: "linear-gradient(transparent, rgba(6,6,14,.75))", zIndex: 4 }} />
 
         {/* Dots */}
-        <div style={{ position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 7, zIndex: 2 }}>
-          {slides.map((_, i) => (
-            <button key={i} onClick={() => go(i)} style={{ width: i === idx ? 22 : 8, height: 8, borderRadius: 4, border: "none", background: i === idx ? s.color : "rgba(255,255,255,.3)", cursor: "pointer", padding: 0, transition: "all .3s" }} />
+        <div style={{ position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 7, zIndex: 5 }}>
+          {slides.map((sl, i) => (
+            <button key={i} onClick={() => go(i)} style={{ width: i === idx ? 24 : 8, height: 8, borderRadius: 4, border: "none", background: i === idx ? s.color : "rgba(255,255,255,.3)", cursor: "pointer", padding: 0, transition: "all .4s ease" }} />
           ))}
         </div>
 
-        {/* Prev/Next arrows */}
+        {/* Arrows desktop */}
         {isDesk && (
           <>
-            <button onClick={() => go((idx - 1 + slides.length) % slides.length)} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.5)", border: "1px solid rgba(255,255,255,.15)", borderRadius: "50%", width: 38, height: 38, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>‹</button>
-            <button onClick={() => go((idx + 1) % slides.length)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.5)", border: "1px solid rgba(255,255,255,.15)", borderRadius: "50%", width: 38, height: 38, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>›</button>
+            <button onClick={() => go((idx - 1 + slides.length) % slides.length)} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.5)", border: "1px solid rgba(255,255,255,.15)", borderRadius: "50%", width: 40, height: 40, color: "#fff", fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 5, lineHeight: 1 }}>‹</button>
+            <button onClick={() => go((idx + 1) % slides.length)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.5)", border: "1px solid rgba(255,255,255,.15)", borderRadius: "50%", width: 40, height: 40, color: "#fff", fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 5, lineHeight: 1 }}>›</button>
           </>
         )}
+      </div>
+
+      {/* Tagline below carousel */}
+      <div style={{ textAlign: "center", marginTop: isDesk ? 28 : 20, padding: "0 16px" }}>
+        <p style={{ fontSize: isDesk ? 22 : 17, fontWeight: 800, lineHeight: 1.3, margin: "0 0 8px", letterSpacing: -0.5 }}>
+          {lang === "en"
+            ? <>No experience needed.<br /><span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Just describe it — AI does the rest.</span></>
+            : <>Sin experiencia. Sin prompts complicados.<br /><span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Solo describilo — la IA hace el resto.</span></>}
+        </p>
+        <p style={{ fontSize: isDesk ? 13 : 12, color: "#5a5a70", margin: 0, maxWidth: 480, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
+          {lang === "en"
+            ? "NanoBanano Studio is not just a generator — it's your creative partner. Get professional results from day one, no design skills required."
+            : "NanoBanano Studio no es solo un generador — es tu aliado creativo. Resultados profesionales desde el primer día, sin conocimientos de diseño."}
+        </p>
       </div>
     </div>
   );

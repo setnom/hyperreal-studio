@@ -28,7 +28,7 @@ function sbWriteHeaders(key) {
 
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
-  const allowed = origin === ALLOWED_ORIGIN || origin.endsWith(".vercel.app");
+  const allowed = origin === ALLOWED_ORIGIN || origin.endsWith(".vercel.app") && origin.includes("hyperreal-studio");
   res.setHeader("Access-Control-Allow-Origin", allowed ? origin : ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");

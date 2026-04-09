@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   // Verify cron secret to prevent unauthorized calls
   const authHeader = req.headers.authorization || "";
   const secret = CRON_SECRET || "";
-  if (secret && authHeader !== `Bearer ${secret}`) {
+  if (!secret || authHeader !== `Bearer ${secret}`) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
