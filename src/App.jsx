@@ -60,7 +60,7 @@ function openPack(packId, userEmail) {
 // ─── i18n ───
 const TEXTS = {
   es: {
-    hero_badge: "Nano Banana 2 + Kling 3.0",
+    hero_badge: "Contenido que convierte · IA Generativa",
     hero_title_1: "Crea contenido que ",
     hero_title_2: "vende",
     hero_title_3: "",
@@ -107,6 +107,7 @@ const TEXTS = {
     tab_image: "🖼️ Imagen",
     tab_video: "🎬 Video",
     tab_gallery: "📁 Galería",
+    tab_motion: "🎭 Motion",
     library: "Biblioteca",
     no_gens: "Sin generaciones aún",
     prompt_img: "Describe la imagen que quieres generar...",
@@ -119,7 +120,7 @@ const TEXTS = {
     square: "Cuadrado",
     duration: "Duración",
     audio: "Audio nativo",
-    audio_sub: "Kling 3.0 genera audio ambiental",
+    audio_sub: "IA genera audio ambiental",
     multishot: "Multishot",
     multishot_sub: "División automática en múltiples tomas",
     frames: "Frames inicio / fin",
@@ -133,8 +134,8 @@ const TEXTS = {
     gen_video: "Generar Video",
     generating_img: "Generando imagen",
     generating_vid: "Generando video",
-    powered_img: "Powered by Nano Banana 2",
-    powered_vid: "Powered by Kling 3.0",
+    powered_img: "Imagen Premium IA",
+    powered_vid: "Video Premium IA",
     est_time: "puede tardar de",
     est_to: "a",
     est_min: "min",
@@ -177,7 +178,7 @@ const TEXTS = {
     styles: { photorealistic: "Fotorrealista", cinematic: "Cinemático", product: "Producto", portrait: "Retrato", pixar: "Pixar 3D", ads: "Anuncio Ads", neutral: "Neutro", restore: "Restaurar", colorize: "Colorear" },
   },
   en: {
-    hero_badge: "Nano Banana 2 + Kling 3.0",
+    hero_badge: "Content That Converts · Generative AI",
     hero_title_1: "Create content that ",
     hero_title_2: "sells",
     hero_title_3: "",
@@ -224,6 +225,7 @@ const TEXTS = {
     tab_image: "🖼️ Image",
     tab_video: "🎬 Video",
     tab_gallery: "📁 Gallery",
+    tab_motion: "🎭 Motion",
     library: "Library",
     no_gens: "No generations yet",
     prompt_img: "Describe the image you want to generate...",
@@ -236,7 +238,7 @@ const TEXTS = {
     square: "Square",
     duration: "Duration",
     audio: "Native audio",
-    audio_sub: "Kling 3.0 generates ambient audio",
+    audio_sub: "AI generates ambient audio",
     multishot: "Multishot",
     multishot_sub: "Auto-split into multiple shots",
     frames: "Start / end frames",
@@ -250,8 +252,8 @@ const TEXTS = {
     gen_video: "Generate Video",
     generating_img: "Generating image",
     generating_vid: "Generating video",
-    powered_img: "Powered by Nano Banana 2",
-    powered_vid: "Powered by Kling 3.0",
+    powered_img: "Imagen Premium IA",
+    powered_vid: "Video Premium IA",
     est_time: "may take from",
     est_to: "to",
     est_min: "min",
@@ -356,16 +358,16 @@ function buildStyledPrompt(userPrompt, styleId) {
 }
 const PLANS = [
   { id: "test", name: "Test", nameEn: "Test", price: 9.99, oldPrice: 29.99, images: 20, videos: 2, maxDuration: [5], resolution: "1K",
-    features: { es: ["20 imágenes Nano Banana 2/mes", "2 videos Kling 3.0 (5s)/mes", "Calidad de imagen 1K", "Soporte por email"], en: ["20 Nano Banana 2 images/mo", "2 Kling 3.0 videos (5s)/mo", "1K image quality", "Email support"] },
+    features: { es: ["20 imágenes premium (calidad 1K)/mes", "2 videos premium (5s)/mes", "Calidad de imagen 1K", "Soporte por email"], en: ["20 premium images (1K quality)/mo", "2 premium videos (5s)/mo", "1K image quality", "Email support"] },
     color: "#22c55e", popular: false },
   { id: "basic", name: "Básico", nameEn: "Basic", price: 19.99, oldPrice: 49.99, images: 40, videos: 8, maxDuration: [5], resolution: "1K",
-    features: { es: ["40 imágenes Nano Banana 2/mes", "8 videos Kling 3.0 (5s)/mes", "Calidad de imagen 1K", "Soporte por email"], en: ["40 Nano Banana 2 images/mo", "8 Kling 3.0 videos (5s)/mo", "1K image quality", "Email support"] },
+    features: { es: ["40 imágenes premium (calidad 1K)/mes", "8 videos premium (5s)/mes", "Calidad de imagen 1K", "Soporte por email"], en: ["40 premium images (1K quality)/mo", "8 premium videos (5s)/mo", "1K image quality", "Email support"] },
     color: "#00f0ff", popular: false },
   { id: "pro", name: "Pro", nameEn: "Pro", price: 47.99, oldPrice: 99.99, images: 90, videos: 18, maxDuration: [5, 8], resolution: "2K",
-    features: { es: ["90 imágenes Nano Banana 2/mes", "18 videos Kling 3.0 (5-8s)/mes", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["90 Nano Banana 2 images/mo", "18 Kling 3.0 videos (5-8s)/mo", "2K image quality", "Priority queue", "Priority support"] },
+    features: { es: ["90 imágenes premium (calidad 2K)/mes", "18 videos premium (5-8s)/mes", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["90 premium images (2K quality)/mo", "18 premium videos (5-8s)/mo", "2K image quality", "Priority queue", "Priority support"] },
     color: "#b44aff", popular: true },
   { id: "creator", name: "Creador", nameEn: "Creator", price: 99.99, oldPrice: 199, images: 200, videos: 30, maxDuration: [5, 8, 10], resolution: "4K",
-    features: { es: ["200 imágenes Nano Banana 2/mes", "30 videos Kling 3.0 (5-10s)/mes", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 Nano Banana 2 images/mo", "30 Kling 3.0 videos (5-10s)/mo", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
+    features: { es: ["200 imágenes premium (calidad 4K)/mes", "30 videos premium (5-15s)/mes", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 premium images (4K quality)/mo", "30 premium videos (5-15s)/mo", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
     color: "#ff6b2b", popular: false },
 ];
 const STYLES = [
@@ -383,7 +385,7 @@ const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"];
 const SAMPLE = ["Luxury perfume bottle on black marble, volumetric lighting, 8K", "Latin woman CEO in modern office, golden hour, shallow DOF", "Gourmet burger floating, ingredients exploding, dark bg, studio light", "Futuristic car in neon-lit Tokyo street, rain reflections, cinematic"];
 
 const P = { LAND: 0, AUTH: 1, DASH: 2, PLANS: 3 };
-const T = { IMG: 0, VID: 1, GAL: 2 };
+const T = { IMG: 0, VID: 1, GAL: 2, MOT: 3 };
 
 // ─── HOOKS ───
 function useW() {
@@ -430,7 +432,7 @@ function Generating({ type, duration, lang, genStatus }) {
     <div style={{ position: "absolute", inset: 0, background: "rgba(6,6,14,.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 10, borderRadius: 14, backdropFilter: "blur(8px)" }}>
       <div style={{ width: 40, height: 40, border: `3px solid rgba(0,240,255,.12)`, borderTop: `3px solid ${phaseColor}`, borderRadius: "50%", animation: phase === "done" ? "none" : "spin .8s linear infinite", marginBottom: 12 }} />
       <p style={{ color: "#e0e0f0", fontSize: 14, fontWeight: 600, margin: "0 0 3px" }}>{phaseLabel}{phase !== "done" && d}</p>
-      <p style={{ color: "#5a5a70", fontSize: 11, margin: "0 0 4px" }}>Powered by {type === T.VID ? "Kling 3.0" : "Nano Banana 2"}</p>
+      <p style={{ color: "#5a5a70", fontSize: 11, margin: "0 0 4px" }}>Video Premium IA</p>
       <p style={{ color: "#3a3a50", fontSize: 10, margin: "0 0 10px", fontFamily: "'JetBrains Mono',monospace" }}>
         {elapsed > 0 ? formatTime(elapsed) : "—"} {phase === "generating" ? (isEn ? `· may take ${estMin}–${estMax} min` : `· puede tardar ${estMin}–${estMax} min`) : ""}
       </p>
@@ -596,6 +598,16 @@ export default function App() {
   const [imgQuality, setImgQuality] = useState("1K");
   const [vidDur, setVidDur] = useState(5);
   const [vidRatio, setVidRatio] = useState("16:9");
+
+  // Motion Control state
+  const [motionImage, setMotionImage] = useState(null);       // character image file
+  const [motionVideo, setMotionVideo] = useState(null);       // reference motion video file
+  const [motionImageUrl, setMotionImageUrl] = useState(null); // uploaded URL
+  const [motionVideoUrl, setMotionVideoUrl] = useState(null); // uploaded URL
+  const [motionOrientation, setMotionOrientation] = useState("video"); // "video" | "image"
+  const [motionSceneFrom, setMotionSceneFrom] = useState("image"); // "image" | "video"
+  const [motionPrompt, setMotionPrompt] = useState("");
+  const [motionDur, setMotionDur] = useState(8); // duration in seconds
   const [genning, setGenning] = useState(false);
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
@@ -1404,8 +1416,8 @@ export default function App() {
             : "Content generated through NanoBanano Studio is for personal and commercial use by the user. NanoBanano Studio does not claim ownership rights over generated content. However, the user is responsible for verifying that generated content does not infringe third-party rights in their jurisdiction." },
         { title: lang === "es" ? "5. Disponibilidad del Servicio" : "5. Service Availability",
           body: lang === "es"
-            ? "NanoBanano Studio no garantiza disponibilidad ininterrumpida del servicio. Mantenimientos programados, fallos técnicos o interrupciones de servicios de terceros (Nano Banana 2, Kling 3.0) pueden afectar temporalmente el servicio. Estos casos no dan derecho a reembolso, pero podrán resultar en compensación de créditos a discreción del equipo."
-            : "NanoBanano Studio does not guarantee uninterrupted service availability. Scheduled maintenance, technical failures, or third-party service interruptions (Nano Banana 2, Kling 3.0) may temporarily affect the service. These cases do not entitle users to refunds but may result in credit compensation at the team's discretion." },
+            ? "NanoBanano Studio no garantiza disponibilidad ininterrumpida del servicio. Mantenimientos programados, fallos técnicos o interrupciones de servicios de terceros de generación de IA pueden afectar temporalmente el servicio. Estos casos no dan derecho a reembolso, pero podrán resultar en compensación de créditos a discreción del equipo."
+            : "NanoBanano Studio does not guarantee uninterrupted service availability. Scheduled maintenance, technical failures, or third-party service interruptions AI generation services may temporarily affect the service. These cases do not entitle users to refunds but may result in credit compensation at the team's discretion." },
         { title: lang === "es" ? "6. Privacidad y Datos" : "6. Privacy and Data",
           body: lang === "es"
             ? "NanoBanano Studio almacena únicamente los datos necesarios para operar el servicio: email, historial de generaciones y estado de suscripción. No vendemos datos a terceros. Los datos de pago son procesados exclusivamente por Stripe y no son almacenados por NanoBanano Studio. Puedes solicitar la eliminación de tu cuenta y datos en cualquier momento contactando a soporte."
@@ -1765,8 +1777,8 @@ export default function App() {
               <img src="/images/hero.webp" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }} />
               <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(6,6,14,.8) 0%, transparent 60%)" }} />
               <div style={{ position: "absolute", bottom: 12, left: 14, display: "flex", gap: 6 }}>
-                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, background: "rgba(0,240,255,.15)", border: "1px solid rgba(0,240,255,.25)", color: "#00f0ff", fontWeight: 600 }}>Nano Banana 2</span>
-                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, background: "rgba(180,74,255,.15)", border: "1px solid rgba(180,74,255,.25)", color: "#b44aff", fontWeight: 600 }}>Kling 3.0</span>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, background: "rgba(0,240,255,.15)", border: "1px solid rgba(0,240,255,.25)", color: "#00f0ff", fontWeight: 600 }}>Imagen Premium</span>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, background: "rgba(180,74,255,.15)", border: "1px solid rgba(180,74,255,.25)", color: "#b44aff", fontWeight: 600 }}>Video Premium</span>
               </div>
             </div>
           </div>
@@ -1895,12 +1907,12 @@ export default function App() {
             <div style={{ padding: isDesk ? "18px" : "12px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.1)" }}>
               <p style={{ fontSize: 9, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>Imágenes</p>
               <p style={{ fontSize: isDesk ? 32 : 26, fontWeight: 800, margin: "4px 0 0", fontFamily: "'JetBrains Mono',monospace", color: "#00f0ff" }}>{profile?.images_remaining ?? 0}</p>
-              <p style={{ fontSize: 9, color: "#3a3a50", margin: "2px 0 0" }}>Nano Banana 2</p>
+              <p style={{ fontSize: 9, color: "#3a3a50", margin: "2px 0 0" }}>Imagen Premium</p>
             </div>
             <div style={{ padding: isDesk ? "18px" : "12px", borderRadius: 12, background: "rgba(180,74,255,.04)", border: "1px solid rgba(180,74,255,.1)" }}>
               <p style={{ fontSize: 9, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>Videos</p>
               <p style={{ fontSize: isDesk ? 32 : 26, fontWeight: 800, margin: "4px 0 0", fontFamily: "'JetBrains Mono',monospace", color: "#b44aff" }}>{profile?.videos_remaining ?? 0}</p>
-              <p style={{ fontSize: 9, color: "#3a3a50", margin: "2px 0 0" }}>Kling 3.0 Standard</p>
+              <p style={{ fontSize: 9, color: "#3a3a50", margin: "2px 0 0" }}>Video Premium</p>
             </div>
           </div>
 
@@ -1953,8 +1965,13 @@ export default function App() {
         <div>
           {/* Tabs (mobile shows gallery tab, desktop doesn't need it) */}
           <div style={{ display: "flex", gap: 3, marginBottom: 16, background: "rgba(255,255,255,.02)", borderRadius: 9, padding: 3 }}>
-            {[{ k: T.IMG, l: t("tab_image") }, { k: T.VID, l: t("tab_video") }, ...(!isDesk ? [{ k: T.GAL, l: t("tab_gallery") }] : [])].map(t => (
-              <button key={t.k} onClick={() => setTab(t.k)} style={{ flex: 1, padding: "10px 0", fontSize: 12, fontWeight: tab === t.k ? 700 : 400, color: tab === t.k ? "#fff" : "#5a5a70", background: tab === t.k ? "rgba(255,255,255,.06)" : "transparent", border: "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{t.l}</button>
+            {[
+              { k: T.IMG, l: t("tab_image") },
+              { k: T.VID, l: t("tab_video") },
+              ...( ["basic","pro","creator"].includes(profile?.plan) ? [{ k: T.MOT, l: t("tab_motion") }] : [] ),
+              ...(!isDesk ? [{ k: T.GAL, l: t("tab_gallery") }] : []),
+            ].map(tb => (
+              <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
             ))}
           </div>
 
@@ -2077,7 +2094,7 @@ export default function App() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: 14, borderRadius: 8, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.04)" }}>
                     <div>
                       <p style={{ fontSize: 12, color: "#e0e0f0", margin: 0, fontWeight: 500 }}>🔊 Audio nativo</p>
-                      <p style={{ fontSize: 9, color: "#5a5a70", margin: "2px 0 0" }}>Kling 3.0 genera audio ambiental</p>
+                      <p style={{ fontSize: 9, color: "#5a5a70", margin: "2px 0 0" }}>IA genera audio ambiental</p>
                     </div>
                     <button onClick={() => setAudioOn(!audioOn)} style={{ width: 44, height: 24, borderRadius: 12, border: "none", background: audioOn ? "linear-gradient(135deg, #b44aff, #8a2be2)" : "rgba(255,255,255,.08)", cursor: "pointer", position: "relative", transition: "background .3s" }}>
                       <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: audioOn ? 23 : 3, transition: "left .3s", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
@@ -2208,7 +2225,7 @@ export default function App() {
                   )}
                   <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {genResult.type === "image" ? "Nano Banana 2" : "Kling 3.0"}</span>
+                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {genResult.type === "image" ? "Imagen Premium" : "Video Premium"}</span>
                       {genResult.resolution && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: "rgba(0,240,255,.1)", color: "#00f0ff", fontWeight: 600 }}>{genResult.resolution}</span>}
                       {genResult.audio && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: "rgba(180,74,255,.1)", color: "#b44aff", fontWeight: 600 }}>🔊 Audio</span>}
                     </div>
@@ -2218,6 +2235,214 @@ export default function App() {
               )}
             </div>
           )}
+
+          {/* ═══ MOTION CONTROL TAB ═══ */}
+          {tab === T.MOT && (() => {
+            const isMotionEligible = ["basic","pro","creator"].includes(profile?.plan);
+            const motionMaxDur = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
+            const motionCredits = (profile?.plan === "creator" && motionDur > 8) ? 3 : 2;
+            const canGenMotion = isMotionEligible && motionImageUrl && motionVideoUrl && !genning && (profile?.videos_remaining ?? 0) >= motionCredits;
+
+            const [motionUploading, setMotionUploading] = useState(false);
+            const [motionUploadProgress, setMotionUploadProgress] = useState({ img: false, vid: false });
+
+            const uploadMotionFile = async (file, isImg) => {
+              if (!file) return;
+              const fieldKey = isImg ? "img" : "vid";
+              setMotionUploadProgress(p => ({ ...p, [fieldKey]: true }));
+              try {
+                // Upload to Supabase Storage via backend (never exposes fal.ai)
+                const r = await fetch("/api/motion-upload", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    user_token: session?.access_token,
+                    file_name: file.name,
+                    mime_type: file.type,
+                    file_data: await fileToBase64(file),
+                  }),
+                });
+                const d = await r.json();
+                if (d.error) throw new Error(d.error);
+                if (d.path) {
+                  if (isImg) { setMotionImage(file); setMotionImageUrl(d.path); }
+                  else { setMotionVideo(file); setMotionVideoUrl(d.path); }
+                }
+              } catch (e) {
+                console.error("Upload error:", e.message);
+              } finally {
+                setMotionUploadProgress(p => ({ ...p, [fieldKey]: false }));
+              }
+            };
+
+            const fileToBase64 = (file) => new Promise((resolve, reject) => {
+              const r = new FileReader();
+              r.onload = () => resolve(r.result.split(",")[1]);
+              r.onerror = reject;
+              r.readAsDataURL(file);
+            });
+
+            const handleMotionGen = async () => {
+              if (!canGenMotion) return;
+              setGenning(true); setGenError(null);
+              setGenStatus({ phase: "queued", position: null, elapsed: 0 });
+              try {
+                const r = await fetch("/api/motion", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    image_path: motionImageUrl,
+                    video_path: motionVideoUrl,
+                    character_orientation: motionOrientation,
+                    prompt: motionPrompt.trim() || undefined,
+                    duration: motionDur,
+                    user_token: session?.access_token,
+                  }),
+                });
+                const data = await r.json();
+                if (data.error) { setGenError(data.error); setGenning(false); return; }
+                // Clear local state — backend will delete files from storage
+                setMotionImageUrl(null); setMotionVideoUrl(null);
+                setMotionImage(null); setMotionVideo(null);
+                if (data.completed && data.url) { await saveGenResult(true, data); return; }
+                const { request_id, endpoint, status_url, response_url } = data;
+                setGenStatus({ phase: "queued", position: null, elapsed: 0 });
+                const pollStart = Date.now(); let attempts = 0;
+                const poll = async () => {
+                  attempts++;
+                  if (attempts > 150) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+                  try {
+                    const sr = await fetch("/api/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id, endpoint, type: "video", user_token: session?.access_token, status_url, response_url }) });
+                    const sd = await sr.json();
+                    const elapsed = Math.round((Date.now() - pollStart) / 1000);
+                    if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
+                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError(lang === "es" ? "Generación fallida. Tu crédito fue devuelto." : "Generation failed. Credit refunded."); return; }
+                    setGenStatus({ phase: (sd.position ?? 0) > 0 ? "queued" : "generating", position: sd.position || null, elapsed });
+                    setTimeout(poll, 4000);
+                  } catch { setTimeout(poll, 5000); }
+                };
+                setTimeout(poll, 3000);
+              } catch (e) { setGenError(e.message); setGenning(false); }
+            };
+
+            return (
+              <div style={{ animation: "fadeUp .4s ease" }}>
+                {/* Plan restriction notice */}
+                {!isMotionEligible && (
+                  <div style={{ textAlign: "center", padding: "24px 16px", borderRadius: 12, background: "rgba(255,107,43,.05)", border: "1px solid rgba(255,107,43,.15)" }}>
+                    <p style={{ fontSize: 22, marginBottom: 8 }}>🎭</p>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", marginBottom: 4 }}>{lang === "es" ? "Motion Control — Basic, Pro y Creator" : "Motion Control — Basic, Pro & Creator"}</p>
+                    <p style={{ fontSize: 11, color: "#5a5a70", marginBottom: 14 }}>{lang === "es" ? "Transfiere movimientos de un video a cualquier imagen" : "Transfer movements from a video to any image"}</p>
+                    <button onClick={() => setPage(P.PLANS)} style={{ padding: "10px 24px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ff6b2b,#ffb800)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{lang === "es" ? "Ver planes →" : "See plans →"}</button>
+                  </div>
+                )}
+
+                {isMotionEligible && (
+                  <>
+                    {/* Header */}
+                    <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 10, background: "rgba(255,107,43,.05)", border: "1px solid rgba(255,107,43,.12)" }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "#ff6b2b", margin: "0 0 2px" }}>🎭 Motion Control Premium</p>
+                      <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? `Transfiere el movimiento de un video a tu imagen — cuesta ${motionCredits} créditos de video` : `Transfer motion from a video to your image — costs ${motionCredits} video credits`}</p>
+                    </div>
+
+                    {/* Two upload boxes side by side */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                      {/* Character Image */}
+                      <div>
+                        <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "📸 Tu imagen / personaje" : "📸 Your image / character"}</p>
+                        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, borderRadius: 12, border: motionImageUrl ? "1px solid rgba(0,240,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: motionImageUrl ? "rgba(0,240,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
+                          {motionImageUrl
+                            ? <img src={URL.createObjectURL(motionImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            : motionUploadProgress.img
+                              ? <><div style={{ width: 24, height: 24, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 6 }} /><span style={{ fontSize: 10, color: "#5a5a70" }}>{lang === "es" ? "Subiendo..." : "Uploading..."}</span></>
+                              : <><span style={{ fontSize: 24, marginBottom: 6 }}>🖼️</span><span style={{ fontSize: 10, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Toca para subir imagen" : "Tap to upload image"}</span></>}
+                          {motionImageUrl && <button onClick={e => { e.preventDefault(); setMotionImage(null); setMotionImageUrl(null); }} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>}
+                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadMotionFile(e.target.files[0], true)} />
+                        </label>
+                      </div>
+                      {/* Motion Video */}
+                      <div>
+                        <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "🎬 Video de movimiento" : "🎬 Motion reference video"}</p>
+                        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, borderRadius: 12, border: motionVideoUrl ? "1px solid rgba(180,74,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: motionVideoUrl ? "rgba(180,74,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
+                          {motionVideoUrl
+                            ? <video src={URL.createObjectURL(motionVideo)} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            : motionUploadProgress.vid
+                              ? <><div style={{ width: 24, height: 24, border: "2px solid rgba(180,74,255,.2)", borderTop: "2px solid #b44aff", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 6 }} /><span style={{ fontSize: 10, color: "#5a5a70" }}>{lang === "es" ? "Subiendo..." : "Uploading..."}</span></>
+                              : <><span style={{ fontSize: 24, marginBottom: 6 }}>🎬</span><span style={{ fontSize: 10, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Toca para subir video" : "Tap to upload video"}</span></>}
+                          {motionVideoUrl && <button onClick={e => { e.preventDefault(); setMotionVideo(null); setMotionVideoUrl(null); }} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>}
+                          <input type="file" accept="video/mp4,video/mov,video/webm,video/m4v" style={{ display: "none" }} onChange={e => uploadMotionFile(e.target.files[0], false)} />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Orientation — the only real parameter that affects background */}
+                    <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.05)" }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>{lang === "es" ? "Modo de orientación:" : "Orientation mode:"}</p>
+                      <p style={{ fontSize: 9, color: "#5a5a70", margin: "0 0 10px" }}>
+                        {motionOrientation === "video"
+                          ? (lang === "es" ? "🎬 Sigue el video — mejor para baile, acciones complejas (máx. 15s)" : "🎬 Follows video — better for dance, complex actions (max 15s)")
+                          : (lang === "es" ? "🖼️ Sigue la imagen — mejor para movimientos de cámara (máx. 10s)" : "🖼️ Follows image — better for camera movements (max 10s)")}
+                      </p>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {[["video", lang === "es" ? "🎬 Seguir video" : "🎬 Follow video"], ["image", lang === "es" ? "🖼️ Seguir imagen" : "🖼️ Follow image"]].map(([v, l]) => (
+                          <button key={v} onClick={() => { setMotionOrientation(v); if (v === "image" && motionDur > 10) setMotionDur(10); }} style={{ flex: 1, padding: "9px", fontSize: 11, fontWeight: motionOrientation === v ? 700 : 400, color: motionOrientation === v ? "#fff" : "#5a5a70", background: motionOrientation === v ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: motionOrientation === v ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.05)", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Duration — depends on plan and orientation */}
+                    {(() => {
+                      const orientationMax = motionOrientation === "image" ? 10 : 30;
+                      const planMax = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
+                      const effectiveMax = Math.min(planMax, orientationMax);
+                      const durations = profile?.plan === "basic" ? [5] : profile?.plan === "pro" ? [8] : [5,8,10,15].filter(d => d <= effectiveMax);
+                      return (
+                        <div style={{ marginBottom: 12 }}>
+                          <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
+                            {lang === "es" ? `Duración — ${motionDur}s` : `Duration — ${motionDur}s`} <span style={{ color: "#ff6b2b", fontWeight: 700 }}>({motionCredits} {lang === "es" ? "créditos" : "credits"})</span>
+                          </p>
+                          <div style={{ display: "flex", gap: 5 }}>
+                            {durations.map(d => (
+                              <button key={d} onClick={() => setMotionDur(d)} style={{ flex: 1, padding: "8px 0", fontSize: 11, fontWeight: motionDur === d ? 700 : 400, color: motionDur === d ? "#ff6b2b" : "#5a5a70", background: motionDur === d ? "rgba(255,107,43,.1)" : "rgba(255,255,255,.02)", border: motionDur === d ? "1px solid rgba(255,107,43,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{d}s</button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Additional prompt */}
+                    <div style={{ marginBottom: 14 }}>
+                      <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena (opcional)" : "Scene description (optional)"}</p>
+                      <textarea value={motionPrompt} onChange={e => setMotionPrompt(e.target.value)} placeholder={lang === "es" ? "Ej: fondo de ciudad de noche, iluminación cálida... (no describas el movimiento, el video ya lo define)" : "E.g. city background at night, warm lighting... (don't describe the motion, the video defines it)"} rows={2} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={500} />
+                      <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{motionPrompt.length}/500</p>
+                    </div>
+
+                    {/* Credits warning */}
+                    {(profile?.videos_remaining ?? 0) < motionCredits && (
+                      <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>
+                        {lang === "es" ? `Necesitas ${motionCredits} créditos de video. Tienes ${profile?.videos_remaining ?? 0}.` : `You need ${motionCredits} video credits. You have ${profile?.videos_remaining ?? 0}.`}
+                      </div>
+                    )}
+
+                    {/* Generate button */}
+                    <button onClick={handleMotionGen} disabled={!canGenMotion}
+                      style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGenMotion ? "#06060e" : "#3a3a50", background: canGenMotion ? "linear-gradient(135deg, #ff6b2b, #ffb800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGenMotion ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGenMotion ? "0 0 22px rgba(255,107,43,.3)" : "none", transition: "all .2s" }}>
+                      {genning ? (lang === "es" ? "Generando..." : "Generating...") : !motionImageUrl ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !motionVideoUrl ? (lang === "es" ? "Sube un video de movimiento" : "Upload a motion video") : (profile?.videos_remaining ?? 0) < motionCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Generar Motion (${motionCredits} créditos)` : `🎭 Generate Motion (${motionCredits} credits)`)}
+                    </button>
+                    {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={motionDur} lang={lang} genStatus={genStatus} /></div>}
+                    {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>{genError}</div>}
+                    {genResult && !genning && tab === T.MOT && (
+                      <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,107,43,.2)", animation: "fadeUp .5s ease" }}>
+                        <video src={genResult.url} controls autoPlay style={{ width: "100%", display: "block", borderRadius: 14 }} />
+                        <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
+                          <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ Motion Control Premium</span>
+                          <button onClick={() => downloadFile(genResult.url, `motion-${Date.now()}.mp4`)} style={{ fontSize: 10, color: "#ff6b2b", background: "rgba(255,107,43,.08)", border: "1px solid rgba(255,107,43,.15)", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Mobile gallery */}
           {!isDesk && tab === T.GAL && (

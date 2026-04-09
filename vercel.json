@@ -8,7 +8,10 @@
     "api/favorites.js": { "maxDuration": 10  },
     "api/activate.js":  { "maxDuration": 30  },
     "api/pack.js":      { "maxDuration": 30  },
-    "api/sync.js":      { "maxDuration": 60  }
+    "api/sync.js":         { "maxDuration": 60  },
+    "api/motion.js":          { "maxDuration": 300 },
+    "api/upload-init.js":     { "maxDuration": 15  },
+    "api/motion-upload.js":   { "maxDuration": 60  }
   },
   "crons": [
     { "path": "/api/sync", "schedule": "0 8 * * *"  },

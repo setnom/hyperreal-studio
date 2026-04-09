@@ -1,10 +1,10 @@
 export const config = {
-  api: { bodyParser: { sizeLimit: '10mb' } },
+  api: { bodyParser: { sizeLimit: '200mb' } },
 };
 
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
-const ALLOWED_MIME   = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+const ALLOWED_MIME   = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "video/mp4", "video/quicktime", "video/webm", "video/x-m4v"];
 const MAX_B64_SIZE   = 8 * 1024 * 1024; // 8MB decoded
 
 async function verifyToken(user_token) {
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
 
   const mimeType = matches[1].toLowerCase();
   if (!ALLOWED_MIME.includes(mimeType))
-    return res.status(400).json({ error: "Only image files are allowed (jpeg, png, webp, gif)" });
+    return res.status(400).json({ error: "Only image files (jpeg, png, webp, gif) and video files (mp4, mov, webm) are allowed" });
 
   const base64Data = matches[2];
   if (base64Data.length > MAX_B64_SIZE)
@@ -65,7 +65,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid base64 data" });
   }
 
-  const ext = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : mimeType.includes("gif") ? "gif" : "jpg";
+  const ext = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : mimeType.includes("gif") ? "gif" : mimeType.includes("mp4") ? "mp4" : mimeType.includes("quicktime") ? "mov" : mimeType.includes("webm") ? "webm" : mimeType.includes("m4v") ? "m4v" : "jpg";
 
   // Method 1: fal.ai storage
   try {
