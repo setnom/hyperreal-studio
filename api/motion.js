@@ -1,10 +1,22 @@
 // Motion Control — fal-ai/kling-video/v3/pro/motion-control
-// Files stored in Supabase Storage, deleted immediately after result
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
-const BUCKET = "motion-refs";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const FAL_ENDPOINT = "fal-ai/kling-video/v3/pro/motion-control";
 const MOTION_MAX_DUR = { basic: 5, pro: 8, creator: 15 };
+
+// Allowed hosts for image/video URLs
+const ALLOWED_HOSTS = [
+  "pygcsyqahhdtmwmqklnl.supabase.co",
+  "storage.googleapis.com",
+  "fal.run","cdn.fal.run","v3b.fal.media","v2.fal.media","fal.media","fal-cdn.batata.so",
+  "nanobanano.studio",
+];
+function isSafeUrl(url) {
+  try {
+    const p = new URL(url);
+    return p.protocol === "https:" && ALLOWED_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("." + h));
+  } catch { return false; }
+}
 
 async function verifyToken(user_token) {
   const anonKey = process.env.SUPABASE_ANON_KEY;
@@ -14,51 +26,8 @@ async function verifyToken(user_token) {
   return data;
 }
 
-function sbHeaders(key, extra = {}) {
-  return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation", ...extra };
-}
-
-// Generate a signed URL from a Supabase Storage path (valid for 10 minutes)
-async function getSignedUrl(path, serviceKey, expiresIn = 600) {
-  const res = await fetch(
-    `${SB_URL}/storage/v1/object/sign/${BUCKET}/${path}`,
-    {
-      method: "POST",
-      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ expiresIn }),
-    }
-  );
-  const data = await res.json();
-  if (!res.ok || !data.signedURL) throw new Error("Failed to generate signed URL");
-  return `${SB_URL}/storage/v1${data.signedURL}`;
-}
-
-// Delete files from Supabase Storage immediately after use
-async function deleteStorageFiles(paths, serviceKey) {
-  try {
-    const res = await fetch(
-      `${SB_URL}/storage/v1/object/${BUCKET}`,
-      {
-        method: "DELETE",
-        headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ prefixes: paths }),
-      }
-    );
-    const result = await res.json();
-    console.log(`✓ Deleted motion ref files: ${paths.join(", ")} → status=${res.status}`);
-    return res.ok;
-  } catch (e) {
-    console.error("Failed to delete storage files:", e.message);
-    return false;
-  }
-}
-
-// Validate that path belongs to the authenticated user
-function validateStoragePath(path, userId) {
-  if (!path || typeof path !== "string") return false;
-  // Path format: userId/timestamp_filename.ext
-  const parts = path.split("/");
-  return parts.length === 2 && parts[0] === userId && /^[a-zA-Z0-9._-]+$/.test(parts[1]);
+function sbHeaders(key) {
+  return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" };
 }
 
 export default async function handler(req, res) {
@@ -70,12 +39,18 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { image_path, video_path, character_orientation, prompt, duration, user_token } = req.body || {};
+  // Accept both image_path/video_path (legacy) and image_url/video_url (new)
+  const body = req.body || {};
+  const image_url = body.image_url || body.image_path;
+  const video_url = body.video_url || body.video_path;
+  const { character_orientation, prompt, duration, user_token } = body;
 
   const FAL_KEY = process.env.FAL_KEY;
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
   if (!FAL_KEY || !SERVICE_KEY) return res.status(500).json({ error: "Server misconfiguration" });
   if (!user_token) return res.status(401).json({ error: "Auth required" });
+  if (!image_url || !isSafeUrl(image_url)) return res.status(400).json({ error: "Invalid or missing image URL" });
+  if (!video_url || !isSafeUrl(video_url)) return res.status(400).json({ error: "Invalid or missing video URL" });
 
   const safeOrientation = ["video", "image"].includes(character_orientation) ? character_orientation : "video";
   const safeDur = typeof duration === "number" && isFinite(duration) ? Math.floor(Math.max(1, duration)) : 5;
@@ -86,17 +61,6 @@ export default async function handler(req, res) {
   catch { return res.status(401).json({ error: "Invalid session" }); }
   const userId = authUser.id;
 
-  // Determine if paths are Supabase paths or fal.ai URLs (large file direct upload)
-  const ALLOWED_FAL_HOSTS = ["v3b.fal.media","v2.fal.media","fal.media","cdn.fal.run"];
-  const isFalUrl = (v) => { try { const u = new URL(v); return u.protocol === "https:" && ALLOWED_FAL_HOSTS.some(h => u.hostname === h || u.hostname.endsWith("." + h)); } catch { return false; } };
-  const isSupabasePath = (v) => { if (!v || typeof v !== "string") return false; const parts = v.split("/"); return parts.length === 2 && parts[0] === userId && /^[a-zA-Z0-9._-]+$/.test(parts[1]); };
-
-  // Validate both inputs
-  if (!image_path) return res.status(400).json({ error: "Image required" });
-  if (!video_path) return res.status(400).json({ error: "Video required" });
-  if (!isSupabasePath(image_path) && !isFalUrl(image_path)) return res.status(400).json({ error: "Invalid image path" });
-  if (!isSupabasePath(video_path) && !isFalUrl(video_path)) return res.status(400).json({ error: "Invalid video path" });
-
   // Get profile — verify plan and credits
   const profileRes = await fetch(
     `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,videos_remaining,subscription_status`,
@@ -106,15 +70,17 @@ export default async function handler(req, res) {
   if (!profile) return res.status(403).json({ error: "Profile not found" });
 
   const { plan, videos_remaining, subscription_status } = profile;
-  if (!["basic","pro","creator"].includes(plan)) return res.status(403).json({ error: "Motion Control requires Basic plan or higher." });
-  if (subscription_status === "payment_failed") return res.status(403).json({ error: "Your subscription has a payment issue." });
+  if (!["basic","pro","creator"].includes(plan))
+    return res.status(403).json({ error: "Motion Control requires Basic plan or higher." });
+  if (subscription_status === "payment_failed")
+    return res.status(403).json({ error: "Your subscription has a payment issue." });
 
   const maxDur = MOTION_MAX_DUR[plan] || 5;
   const finalDur = Math.min(safeDur, maxDur);
   const creditsNeeded = (plan === "creator" && finalDur > 8) ? 3 : 2;
 
   if ((videos_remaining ?? 0) < creditsNeeded)
-    return res.status(403).json({ error: `Not enough video credits. Need ${creditsNeeded}, have ${videos_remaining}.` });
+    return res.status(403).json({ error: `Not enough credits. Need ${creditsNeeded}, have ${videos_remaining}.` });
 
   // Deduct credits atomically
   const deductRes = await fetch(
@@ -127,27 +93,14 @@ export default async function handler(req, res) {
 
   console.log(`Motion: plan=${plan} dur=${finalDur}s credits=${creditsNeeded} user=${userId}`);
 
-  const filesToDelete = [image_path, video_path].filter(p => isSupabasePath(p));
-
   try {
-    // Generate signed URLs — Supabase paths need signing, fal.ai URLs are already accessible
-    const getAccessUrl = async (pathOrUrl) => {
-      if (isFalUrl(pathOrUrl)) return pathOrUrl; // already a public fal.ai URL
-      return getSignedUrl(pathOrUrl, SERVICE_KEY, 600); // generate 10min signed URL
-    };
-
-    const [imageAccessUrl, videoAccessUrl] = await Promise.all([
-      getAccessUrl(image_path),
-      getAccessUrl(video_path),
-    ]);
-
-    // Submit to fal.ai with signed URLs
+    // Submit to fal.ai
     const falRes = await fetch(`https://queue.fal.run/${FAL_ENDPOINT}`, {
       method: "POST",
       headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        image_url: imageAccessUrl,
-        video_url: videoAccessUrl,
+        image_url,
+        video_url,
         character_orientation: safeOrientation,
         duration: finalDur,
         cfg_scale: 0.8,
@@ -156,11 +109,14 @@ export default async function handler(req, res) {
       }),
     });
     const falData = await falRes.json();
-    if (!falRes.ok || !falData.request_id) throw new Error(falData.detail || "Submission failed");
+    if (!falRes.ok || !falData.request_id) {
+      console.error("fal.ai error:", JSON.stringify(falData));
+      throw new Error(falData.detail || falData.error || "Submission failed");
+    }
 
     const { request_id } = falData;
 
-    // Save pending generation record
+    // Save pending generation
     try {
       await fetch(`${SB_URL}/rest/v1/generations`, {
         method: "POST", headers: sbHeaders(SERVICE_KEY),
@@ -173,37 +129,8 @@ export default async function handler(req, res) {
       });
     } catch {}
 
-    // Poll for completion in background then delete files
-    // We start an async poll here — the main response returns immediately
-    // The frontend polls /api/status separately
-    // Files are deleted as soon as we detect completion OR after 10min max (fal.ai SLA)
-    const pollAndDelete = async () => {
-      const maxAttempts = 120; // 10 minutes at 5s intervals
-      let attempts = 0;
-      while (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 5000));
-        attempts++;
-        try {
-          const statusRes = await fetch(
-            `https://queue.fal.run/${FAL_ENDPOINT}/requests/${request_id}/status`,
-            { headers: { Authorization: `Key ${FAL_KEY}` } }
-          );
-          const statusData = await statusRes.json();
-          if (statusData.status === "COMPLETED" || statusData.status === "FAILED") {
-            await deleteStorageFiles(filesToDelete, SERVICE_KEY);
-            return;
-          }
-        } catch {}
-      }
-      // Max time reached — delete anyway
-      await deleteStorageFiles(filesToDelete, SERVICE_KEY);
-    };
-    pollAndDelete(); // fire and forget — doesn't block the response
-
     return res.status(200).json({
-      success: true,
-      request_id,
-      endpoint: FAL_ENDPOINT,
+      success: true, request_id, endpoint: FAL_ENDPOINT,
       status_url: falData.status_url,
       response_url: falData.response_url,
       type: "video",
@@ -211,14 +138,17 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error("Motion error:", err.message);
-    // Delete files on error too
-    await deleteStorageFiles(filesToDelete, SERVICE_KEY);
     // Refund credits
     try {
-      const cur = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining`, { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }).then(r => r.json());
+      const cur = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining`, {
+        headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` }
+      }).then(r => r.json());
       const refundVal = (cur?.[0]?.videos_remaining || 0) + creditsNeeded;
-      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbHeaders(SERVICE_KEY), body: JSON.stringify({ videos_remaining: refundVal }) });
+      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+        method: "PATCH", headers: sbHeaders(SERVICE_KEY),
+        body: JSON.stringify({ videos_remaining: refundVal }),
+      });
     } catch {}
-    return res.status(500).json({ error: "Motion generation failed. Your credits have been refunded." });
+    return res.status(500).json({ error: `Motion generation failed: ${err.message}` });
   }
 }

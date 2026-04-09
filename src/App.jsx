@@ -609,6 +609,7 @@ export default function App() {
   const [motionPrompt, setMotionPrompt] = useState("");
   const [motionDur, setMotionDur] = useState(8); // duration in seconds
   const [motionUploadProgress, setMotionUploadProgress] = useState({ img: false, vid: false });
+  const [motionUploadError, setMotionUploadError] = useState(null);
   const [genning, setGenning] = useState(false);
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
@@ -2247,68 +2248,62 @@ export default function App() {
             const uploadMotionFile = async (file, isImg) => {
               if (!file) return;
               const fieldKey = isImg ? "img" : "vid";
+              setMotionUploadError(null);
 
-              // Show preview immediately from local file — don't wait for upload
+              // Show preview immediately from local file
               if (isImg) setMotionImage(file);
               else setMotionVideo(file);
 
               setMotionUploadProgress(p => ({ ...p, [fieldKey]: true }));
 
               try {
-                const MAX_BASE64 = 4 * 1024 * 1024; // 4MB — use direct PUT above this
+                const MAX_BASE64 = 4 * 1024 * 1024; // 4MB threshold
 
                 if (file.size > MAX_BASE64) {
-                  // Large file — get presigned URL, upload directly (no base64 conversion)
+                  // Large file — use presigned URL direct upload to fal.ai storage
                   const initR = await fetch("/api/upload-init", {
-                    method: "POST", headers: { "Content-Type": "application/json" },
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ mime_type: file.type, file_name: file.name, user_token: session?.access_token }),
                   });
                   const initD = await initR.json();
-                  if (!initD.upload_url) throw new Error("Could not get upload URL");
+                  if (!initD.upload_url) throw new Error(initD.error || "No upload URL received");
                   const putRes = await fetch(initD.upload_url, {
                     method: "PUT",
                     headers: { "Content-Type": file.type },
                     body: file,
                   });
-                  if (!putRes.ok) throw new Error("Direct upload failed");
-                  // Store the fal.ai file_url as the path reference
+                  if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
                   if (isImg) setMotionImageUrl(initD.file_url);
                   else setMotionVideoUrl(initD.file_url);
                 } else {
-                  // Small file — base64 via motion-upload to Supabase
-                  const base64 = await fileToBase64(file);
-                  const r = await fetch("/api/motion-upload", {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      user_token: session?.access_token,
-                      file_name: file.name,
-                      mime_type: file.type,
-                      file_data: base64,
-                    }),
+                  // Small file — base64 via existing upload endpoint
+                  const base64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                  });
+                  const r = await fetch("/api/upload", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ data_url: base64, user_token: session?.access_token }),
                   });
                   const d = await r.json();
                   if (d.error) throw new Error(d.error);
-                  if (d.path) {
-                    if (isImg) setMotionImageUrl(d.path);
-                    else setMotionVideoUrl(d.path);
-                  }
+                  if (!d.url) throw new Error("No URL returned from upload");
+                  if (isImg) setMotionImageUrl(d.url);
+                  else setMotionVideoUrl(d.url);
                 }
               } catch (e) {
                 console.error("Upload error:", e.message);
-                // Clear on error
+                setMotionUploadError(lang === "es" ? `Error al subir: ${e.message}` : `Upload error: ${e.message}`);
                 if (isImg) { setMotionImage(null); setMotionImageUrl(null); }
                 else { setMotionVideo(null); setMotionVideoUrl(null); }
               } finally {
                 setMotionUploadProgress(p => ({ ...p, [fieldKey]: false }));
               }
             };
-
-            const fileToBase64 = (file) => new Promise((resolve, reject) => {
-              const r = new FileReader();
-              r.onload = () => resolve(r.result.split(",")[1]);
-              r.onerror = reject;
-              r.readAsDataURL(file);
-            });
 
             const handleMotionGen = async () => {
               if (!canGenMotion) return;
@@ -2318,8 +2313,8 @@ export default function App() {
                 const r = await fetch("/api/motion", {
                   method: "POST", headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    image_path: motionImageUrl,
-                    video_path: motionVideoUrl,
+                    image_url: motionImageUrl,
+                    video_url: motionVideoUrl,
                     character_orientation: motionOrientation,
                     prompt: motionPrompt.trim() || undefined,
                     duration: motionDur,
@@ -2461,6 +2456,14 @@ export default function App() {
                       <textarea value={motionPrompt} onChange={e => setMotionPrompt(e.target.value)} placeholder={lang === "es" ? "Ej: fondo de ciudad de noche, iluminación cálida... (no describas el movimiento, el video ya lo define)" : "E.g. city background at night, warm lighting... (don't describe the motion, the video defines it)"} rows={2} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={500} />
                       <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{motionPrompt.length}/500</p>
                     </div>
+
+                    {/* Upload error */}
+                    {motionUploadError && (
+                      <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>{motionUploadError}</span>
+                        <button onClick={() => setMotionUploadError(null)} style={{ background: "none", border: "none", color: "#ff4d6a", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
+                      </div>
+                    )}
 
                     {/* Credits warning */}
                     {(profile?.videos_remaining ?? 0) < motionCredits && (
