@@ -91,7 +91,10 @@ export default async function handler(req, res) {
     }
   } catch (e) {
     console.error("Stripe error:", e.message);
-    confirmedPlan = requestedPlan; // Stripe down = still activate
+    return res.status(503).json({
+      error: "Payment verification temporarily unavailable. Please wait a few seconds and try again.",
+      retryable: true,
+    });
   }
 
   if (!confirmedPlan) {

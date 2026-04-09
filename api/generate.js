@@ -196,14 +196,29 @@ export default async function handler(req, res) {
     const reqIdx = ORDER.indexOf(requestedRes);
     return ORDER[Math.min(reqIdx, maxIdx)];
   })();
-  const allowedDuration = Math.min(typeof duration === "number" ? duration : 5, MAX_DURATION[userPlan] || 5);
+  const allowedDuration = Math.min(
+    Math.max(typeof duration === "number" && isFinite(duration) ? Math.floor(duration) : 5, 1),
+    MAX_DURATION[userPlan] || 5
+  );
 
   try {
     let endpoint, body;
 
     if (!isVid) {
+      const ALLOWED_IMAGE_HOSTS = [
+        "pygcsyqahhdtmwmqklnl.supabase.co",
+        "storage.googleapis.com",
+        "fal.run", "cdn.fal.run",
+        "nanobanano.studio",
+      ];
+      const isSafeImageUrl = (u) => {
+        try {
+          const p = new URL(u);
+          return p.protocol === "https:" && ALLOWED_IMAGE_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("." + h));
+        } catch { return false; }
+      };
       const hasRefs = Array.isArray(image_urls) && image_urls.length > 0
-        && image_urls.every(u => typeof u === "string" && u.startsWith("https://"));
+        && image_urls.every(u => typeof u === "string" && isSafeImageUrl(u));
       endpoint = hasRefs ? "fal-ai/nano-banana-2/edit" : "fal-ai/nano-banana-2";
       body = { prompt, resolution: imageResolution, limit_generations: true };
       // "auto" = omit aspect_ratio so model infers from prompt/reference
