@@ -1700,8 +1700,8 @@ export default function App() {
       {/* Pricing */}
       <p style={{ fontSize: isDesk ? 14 : 12, color: "#5a5a70", textAlign: "center", marginBottom: isDesk ? 20 : 14, fontStyle: "italic" }}>
         {lang === "en"
-          ? "Creating this type of content normally costs $500–$2,000 per video with agencies."
-          : "Crear este tipo de contenido normalmente cuesta $500–$2,000 por video con agencias."}
+          ? "Creating this type of content with agencies normally costs $500–$2,000 per video."
+          : "Crear este tipo de contenido con agencias normalmente cuesta $500–$2,000 por video."}
       </p>
       <h2 style={{ fontSize: isDesk ? 28 : 20, fontWeight: 700, textAlign: "center", marginBottom: 6 }}>{t("plans_title")}</h2>
       <p style={{ fontSize: isDesk ? 14 : 12, color: "#5a5a70", textAlign: "center", marginBottom: isDesk ? 32 : 18 }}>{t("plans_sub")}</p>
@@ -1713,9 +1713,7 @@ export default function App() {
             pro:     { es: "Empezar a vender →",       en: "Start selling →" },
             creator: { es: "Escalar mi contenido →",   en: "Scale my content →" },
           };
-          const cta = session
-            ? (lang === "en" ? planCta[pl.id].en : planCta[pl.id].es)
-            : t("start_now");
+          const cta = lang === "en" ? planCta[pl.id].en : planCta[pl.id].es;
           return <PlanCard key={pl.id} pl={pl} onAction={() => setPage(session ? P.PLANS : P.AUTH)} actionLabel={cta} isDesk={isDesk} lang={lang} features={planFeatures(pl)} />;
         })}
       </div>
