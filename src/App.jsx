@@ -566,7 +566,13 @@ export default function App() {
   const w = useW();
   const isDesk = w >= 768;
   const [lang, setLang] = useState(detectLang());
-  const t = (key) => TEXTS[lang]?.[key] || TEXTS.en[key] || key;
+  const t = (key) => {
+    const v = TEXTS[lang]?.[key];
+    if (v !== undefined) return v;
+    const en = TEXTS.en[key];
+    if (en !== undefined) return en;
+    return key;
+  };
   const planName = (pl) => lang === "en" ? pl.nameEn : pl.name;
   const planFeatures = (pl) => pl.features[lang] || pl.features.en;
   const styleName = (id) => t("styles")?.[id] || id;
