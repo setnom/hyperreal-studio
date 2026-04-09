@@ -69,7 +69,7 @@ export default async function handler(req, res) {
   const FAL_KEY = process.env.FAL_KEY;
   if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
-  const { type, prompt: rawPrompt, aspect_ratio, style_id, duration, audio,
+  const { type, prompt: rawPrompt, aspect_ratio, style_id, image_quality, duration, audio,
           image_urls, start_frame, end_frame, multishot, user_token } = req.body || {};
 
   // Validate style_id against allowed values only
@@ -150,7 +150,15 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to deduct credit. Please try again." });
   }
 
-  const imageResolution = RESOLUTION_MAP[userPlan] || "1K";
+  const imageResolution = (() => {
+    const planMax = RESOLUTION_MAP[userPlan] || "1K";
+    const ORDER = ["1K", "2K", "4K"];
+    const requestedRes = ["1K", "2K", "4K"].includes(image_quality) ? image_quality : "1K";
+    // Never exceed plan max
+    const maxIdx = ORDER.indexOf(planMax);
+    const reqIdx = ORDER.indexOf(requestedRes);
+    return ORDER[Math.min(reqIdx, maxIdx)];
+  })();
   const allowedDuration = Math.min(typeof duration === "number" ? duration : 5, MAX_DURATION[userPlan] || 5);
 
   try {

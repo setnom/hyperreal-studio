@@ -477,6 +477,67 @@ function PlanCard({ pl, onAction, actionLabel, isDesk, lang, features }) {
 }
 
 // ─── APP ───
+function CarouselSection({ lang, isDesk }) {
+  const slides = [
+    { src: "/images/carousel_realismo.webp",  tag: lang === "en" ? "Ultra Realism"  : "Ultra Realismo",  color: "#00f0ff",  angle: -25 },
+    { src: "/images/carousel_restaurar.webp", tag: lang === "en" ? "Photo Restore"  : "Restauración",    color: "#b44aff",  angle: -25 },
+    { src: "/images/carousel_anuncio1.webp",  tag: lang === "en" ? "Winning Ad"     : "Anuncio",          color: "#ffb800",  angle: -25 },
+    { src: "/images/carousel_anuncio2.webp",  tag: lang === "en" ? "Winning Ad"     : "Anuncio",          color: "#ffb800",  angle: -25 },
+    { src: "/images/carousel_animado.webp",   tag: lang === "en" ? "Animated Style" : "Estilo Animado",   color: "#ff6b2b",  angle: -25 },
+  ];
+  const [idx, setIdx] = useState(0);
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setFading(true);
+      setTimeout(() => {
+        setIdx(i => (i + 1) % slides.length);
+        setFading(false);
+      }, 400);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const go = (n) => {
+    setFading(true);
+    setTimeout(() => { setIdx(n); setFading(false); }, 300);
+  };
+
+  const s = slides[idx];
+  return (
+    <div style={{ marginBottom: isDesk ? 56 : 36, userSelect: "none" }}>
+      <div style={{ position: "relative", borderRadius: 20, overflow: "hidden", maxWidth: isDesk ? 700 : "100%", margin: "0 auto", boxShadow: "0 24px 64px rgba(0,0,0,.5)" }}>
+        {/* Image */}
+        <img src={s.src} alt={s.tag} style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", display: "block", opacity: fading ? 0 : 1, transition: "opacity .4s ease" }} />
+
+        {/* Tag diagonal */}
+        <div style={{ position: "absolute", top: 22, left: -28, width: 160, textAlign: "center", transform: "rotate(-35deg)", background: s.color, color: "#06060e", fontSize: 11, fontWeight: 800, padding: "5px 0", letterSpacing: 0.5, textTransform: "uppercase", boxShadow: `0 2px 12px ${s.color}66`, zIndex: 2 }}>
+          {s.tag}
+        </div>
+
+        {/* Gradient bottom */}
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 80, background: "linear-gradient(transparent, rgba(6,6,14,.7))" }} />
+
+        {/* Dots */}
+        <div style={{ position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 7, zIndex: 2 }}>
+          {slides.map((_, i) => (
+            <button key={i} onClick={() => go(i)} style={{ width: i === idx ? 22 : 8, height: 8, borderRadius: 4, border: "none", background: i === idx ? s.color : "rgba(255,255,255,.3)", cursor: "pointer", padding: 0, transition: "all .3s" }} />
+          ))}
+        </div>
+
+        {/* Prev/Next arrows */}
+        {isDesk && (
+          <>
+            <button onClick={() => go((idx - 1 + slides.length) % slides.length)} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.5)", border: "1px solid rgba(255,255,255,.15)", borderRadius: "50%", width: 38, height: 38, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>‹</button>
+            <button onClick={() => go((idx + 1) % slides.length)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.5)", border: "1px solid rgba(255,255,255,.15)", borderRadius: "50%", width: 38, height: 38, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>›</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const w = useW();
   const isDesk = w >= 768;
@@ -502,6 +563,7 @@ export default function App() {
   const [prompt, setPrompt] = useState("");
   const [style, setStyle] = useState("photorealistic");
   const [ratio, setRatio] = useState("1:1");
+  const [imgQuality, setImgQuality] = useState("1K");
   const [vidDur, setVidDur] = useState(5);
   const [vidRatio, setVidRatio] = useState("16:9");
   const [genning, setGenning] = useState(false);
@@ -1131,6 +1193,7 @@ export default function App() {
           prompt: buildStyledPrompt(prompt, tab === T.IMG ? style : "cinematic"),
           style_id: tab === T.IMG ? style : "cinematic",
           aspect_ratio: isVid ? vidRatio : ratio,
+          image_quality: !isVid ? imgQuality : undefined,
           plan: profile.plan || "basic",
           duration: isVid ? vidDur : undefined,
           audio: isVid ? audioOn : undefined,
@@ -1593,7 +1656,7 @@ export default function App() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: isDesk ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: isDesk ? 16 : 8, marginBottom: isDesk ? 80 : 44 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isDesk ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: isDesk ? 16 : 8, marginBottom: isDesk ? 56 : 36 }}>
         {[{ v: "97%", l: t("stat_save") }, { v: "300×", l: t("stat_fast") }, { v: "$0.25", l: t("stat_price") }, ...(isDesk ? [{ v: "5s", l: "Videos IA" }] : [])].map((s, i) => (
           <div key={i} style={{ padding: isDesk ? "24px 16px" : "16px 8px", background: "rgba(255,255,255,.02)", borderRadius: 14, border: "1px solid rgba(255,255,255,.04)", textAlign: "center" }}>
             <p style={{ fontSize: isDesk ? 28 : 20, fontWeight: 800, margin: 0, fontFamily: "'JetBrains Mono',monospace", background: "linear-gradient(135deg, #00f0ff, #b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{s.v}</p>
@@ -1601,6 +1664,8 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      <CarouselSection lang={lang} isDesk={isDesk} />
 
       {/* Pricing */}
       <h2 style={{ fontSize: isDesk ? 28 : 20, fontWeight: 700, textAlign: "center", marginBottom: 6 }}>{t("plans_title")}</h2>
@@ -1616,7 +1681,6 @@ export default function App() {
         <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ padding: "10px 28px", fontSize: 12, fontWeight: 700, color: "#e0e0f0", background: "transparent", border: "1px solid rgba(0,240,255,.25)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("learn_cta")}</button>
       </div>
 
-      <p style={{ textAlign: "center", fontSize: 9, color: "#2a2a3a", marginTop: 32, fontFamily: "'JetBrains Mono',monospace" }}>© 2026 NanoBanano Studio · Powered by HyperReal AI Lab</p>
       <Footer />
       <CancelModal />
     </>
@@ -1877,6 +1941,26 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+
+                  {/* Quality selector — options depend on plan */}
+                  {(() => {
+                    const planQualities = { test: ["1K"], basic: ["1K"], pro: ["1K", "2K"], creator: ["1K", "2K", "4K"] };
+                    const available = planQualities[profile?.plan] || ["1K"];
+                    if (available.length <= 1) return null; // Only show if plan has options
+                    return (
+                      <div style={{ marginBottom: 12 }}>
+                        <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "en" ? "Quality" : "Calidad"}</p>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {available.map(q => (
+                            <button key={q} onClick={() => setImgQuality(q)}
+                              style={{ flex: 1, padding: "8px 0", fontSize: 10, fontWeight: imgQuality === q ? 700 : 400, color: imgQuality === q ? "#00f0ff" : "#5a5a70", background: imgQuality === q ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: imgQuality === q ? "1px solid rgba(0,240,255,.2)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>
+                              {q}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Reference images upload */}
                   <div style={{ marginBottom: 14, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.04)" }}>
