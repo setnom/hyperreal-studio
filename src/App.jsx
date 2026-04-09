@@ -64,7 +64,7 @@ const TEXTS = {
     hero_title_1: "Crea contenido que ",
     hero_title_2: "vende",
     hero_title_3: "",
-    hero_sub: "Imágenes y videos de calidad profesional en segundos. Sin equipos. Sin estudios. Sin esperas.",
+    hero_sub: "Genera contenido profesional en segundos que vende todos los días sin cámara, sin equipo y sin saber diseñar.",
     start: "Iniciar →",
     start_now: "Comenzar ahora →",
     stat_save: "Ahorro vs tradicional",
@@ -181,7 +181,7 @@ const TEXTS = {
     hero_title_1: "Create content that ",
     hero_title_2: "sells",
     hero_title_3: "",
-    hero_sub: "Professional-quality images and videos in seconds. No equipment. No studios. No waiting.",
+    hero_sub: "Generate professional content in seconds that sells every day — no camera, no equipment, no design skills needed.",
     start: "Start →",
     start_now: "Get started →",
     stat_save: "Savings vs traditional",
@@ -1698,6 +1698,11 @@ export default function App() {
       <CarouselSection lang={lang} isDesk={isDesk} />
 
       {/* Pricing */}
+      <p style={{ fontSize: isDesk ? 14 : 12, color: "#5a5a70", textAlign: "center", marginBottom: isDesk ? 20 : 14, fontStyle: "italic" }}>
+        {lang === "en"
+          ? "Creating this type of content normally costs $500–$2,000 per video with agencies."
+          : "Crear este tipo de contenido normalmente cuesta $500–$2,000 por video con agencias."}
+      </p>
       <h2 style={{ fontSize: isDesk ? 28 : 20, fontWeight: 700, textAlign: "center", marginBottom: 6 }}>{t("plans_title")}</h2>
       <p style={{ fontSize: isDesk ? 14 : 12, color: "#5a5a70", textAlign: "center", marginBottom: isDesk ? 32 : 18 }}>{t("plans_sub")}</p>
       <div style={{ display: "flex", flexDirection: isDesk ? "row" : "column", gap: isDesk ? 16 : 10, marginBottom: isDesk ? 60 : 36, alignItems: isDesk ? "stretch" : "unset" }}>
