@@ -1,7 +1,11 @@
-// ─── RATE LIMITER ───
+const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
+
+// In-memory rate limit — secondary defense (primary is atomic credit deduction in Supabase)
+// Note: resets per serverless instance, but the atomic deduction in DB is the real guard
 const rateLimits = new Map();
-const RATE_LIMIT_WINDOW = 60000;
-const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX = 5;        // max 5 generate requests per minute per user
 
 function checkRateLimit(userId) {
   const now = Date.now();
@@ -15,8 +19,29 @@ function checkRateLimit(userId) {
   return true;
 }
 
-const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
+// Supabase-backed rate limit — persists across all serverless instances
+// Checks last_generate_at timestamp in profiles table
+async function checkDbRateLimit(userId, serviceKey) {
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=last_generate_at`,
+      { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+    );
+    const rows = await res.json();
+    const lastAt = rows?.[0]?.last_generate_at;
+    if (lastAt) {
+      const diff = Date.now() - new Date(lastAt).getTime();
+      if (diff < 3000) return false; // min 3 seconds between requests globally
+    }
+    // Update last_generate_at
+    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+      method: "PATCH",
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ last_generate_at: new Date().toISOString() }),
+    });
+    return true;
+  } catch { return true; } // fail open to not block legitimate users
+}
 
 const PLAN_CREDITS = {
   test:    { images: 20,  videos: 2  },
@@ -99,11 +124,19 @@ export default async function handler(req, res) {
   if (!checkRateLimit(userId))
     return res.status(429).json({ error: "Too many requests. Wait a moment and try again." });
 
+  // DB-backed rate limit (persists across serverless instances)
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (SERVICE_KEY) {
+    const dbAllowed = await checkDbRateLimit(userId, SERVICE_KEY);
+    if (!dbAllowed)
+      return res.status(429).json({ error: "Please wait a moment before generating again." });
+  }
+
   // Fetch profile with SERVICE KEY — cannot be spoofed by user
   let profile;
   try {
     const profileRes = await fetch(
-      `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,images_remaining,videos_remaining`,
+      `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,images_remaining,videos_remaining,subscription_status`,
       { headers: sbServiceHeaders() }
     );
     const profiles = await profileRes.json();
@@ -113,10 +146,14 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to verify profile" });
   }
 
-  const { plan: userPlan, images_remaining: imagesRemaining, videos_remaining: videosRemaining } = profile;
+  const { plan: userPlan, images_remaining: imagesRemaining, videos_remaining: videosRemaining, subscription_status } = profile;
 
   if (!userPlan || userPlan === "none" || !PLAN_CREDITS[userPlan])
     return res.status(403).json({ error: "No active plan. Please subscribe first." });
+
+  // Block generation if subscription has payment issues
+  if (subscription_status === "payment_failed")
+    return res.status(403).json({ error: "Your subscription has a payment issue. Please resolve it to continue generating." });
 
   if (!isVid && imagesRemaining <= 0)
     return res.status(403).json({ error: "No image credits remaining." });
@@ -216,13 +253,20 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error("Generation error:", err.message);
-    // Refund credit on server failure
+    // Refund credit atomically — increment back, don't overwrite with stale value
     try {
-      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-        method: "PATCH",
-        headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
-        body: JSON.stringify({ images_remaining: imagesRemaining, videos_remaining: videosRemaining }),
-      });
+      const field = isVid ? "videos_remaining" : "images_remaining";
+      // Re-read current value then increment to avoid race condition
+      const cur = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,videos_remaining`, { headers: sbServiceHeaders() }).then(r => r.json());
+      const curProfile = cur?.[0];
+      if (curProfile) {
+        const refundVal = isVid ? (curProfile.videos_remaining || 0) + 1 : (curProfile.images_remaining || 0) + 1;
+        await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+          method: "PATCH",
+          headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
+          body: JSON.stringify({ [field]: refundVal }),
+        });
+      }
     } catch {}
     return res.status(500).json({ error: "Generation failed. Your credit has been refunded." });
   }

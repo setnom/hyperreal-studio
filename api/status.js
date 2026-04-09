@@ -54,6 +54,23 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Invalid or expired session" });
   }
 
+  // Verify this request_id belongs to this user (prevent polling other users' generations)
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (SERVICE_KEY) {
+    try {
+      const searchKey = encodeURIComponent(request_id + "|" + endpoint);
+      const ownerRes = await fetch(
+        `${SB_URL}/rest/v1/generations?result_url=eq.${searchKey}&select=user_id&limit=1`,
+        { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
+      );
+      const ownerRows = await ownerRes.json();
+      if (Array.isArray(ownerRows) && ownerRows.length > 0 && ownerRows[0].user_id !== userId) {
+        console.warn(`Ownership violation: userId=${userId} tried to poll request owned by ${ownerRows[0].user_id}`);
+        return res.status(403).json({ error: "Access denied" });
+      }
+    } catch { /* if check fails, allow — don't block legitimate polling */ }
+  }
+
   // 🔴 FIX: Validate status_url and response_url — reject if not from fal.run
   const safeStatusUrl = isSafeUrl(status_url)
     ? status_url
