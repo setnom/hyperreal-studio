@@ -479,11 +479,11 @@ function PlanCard({ pl, onAction, actionLabel, isDesk, lang, features }) {
 // ─── APP ───
 function CarouselSection({ lang, isDesk }) {
   const slides = [
-    { src: "/images/carousel_realismo.webp",  tag: lang === "en" ? "Ultra Realism"  : "Ultra Realismo",  color: "#00f0ff" },
-    { src: "/images/carousel_restaurar.webp", tag: lang === "en" ? "Photo Restore"  : "Restauración",    color: "#b44aff" },
-    { src: "/images/carousel_anuncio1.webp",  tag: lang === "en" ? "Winning Ad"     : "Anuncio",          color: "#ffb800" },
-    { src: "/images/carousel_anuncio2.webp",  tag: lang === "en" ? "Winning Ad"     : "Anuncio",          color: "#ffb800" },
-    { src: "/images/carousel_animado.webp",   tag: lang === "en" ? "Animated Style" : "Estilo Animado",   color: "#ff6b2b" },
+    { src: "/images/carousel_realismo.webp",  tag: lang === "en" ? "Ultra\nRealism"    : "Ultra\nRealismo",    color: "#00f0ff" },
+    { src: "/images/carousel_restaurar.webp", tag: lang === "en" ? "Photo\nRestore"   : "Restauración",       color: "#b44aff" },
+    { src: "/images/carousel_anuncio1.webp",  tag: lang === "en" ? "Winning\nAd"      : "Anuncio",             color: "#ffb800" },
+    { src: "/images/carousel_anuncio2.webp",  tag: lang === "en" ? "Winning\nAd"      : "Anuncio",             color: "#ffb800" },
+    { src: "/images/carousel_animado.webp",   tag: lang === "en" ? "Animated\nStyle"  : "Estilo\nAnimado",     color: "#ff6b2b" },
   ];
   const [idx, setIdx] = useState(0);
   const [prev, setPrev] = useState(null);
@@ -520,7 +520,7 @@ function CarouselSection({ lang, isDesk }) {
 
         {/* Ribbon — outside overflow so it shows fully, clipped by wrapper */}
         <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 3, overflow: "hidden" }}>
-          <div key={idx} style={{ position: "absolute", top: 28, left: -36, width: 180, textAlign: "center", transform: "rotate(-35deg)", background: s.color, color: "#06060e", fontSize: 10, fontWeight: 900, padding: "6px 0", letterSpacing: 1, textTransform: "uppercase", boxShadow: `0 2px 14px ${s.color}88`, whiteSpace: "nowrap", opacity: transitioning ? 0 : 1, transition: "opacity .3s ease" }}>
+          <div key={idx} style={{ position: "absolute", top: 24, left: -40, width: 180, textAlign: "center", transform: "rotate(-35deg)", background: s.color, color: "#06060e", fontSize: 9, fontWeight: 900, padding: "7px 0", letterSpacing: 1, textTransform: "uppercase", boxShadow: `0 2px 14px ${s.color}88`, whiteSpace: "pre-line", lineHeight: 1.3, opacity: transitioning ? 0 : 1, transition: "opacity .3s ease" }}>
             {s.tag}
           </div>
         </div>
@@ -548,8 +548,8 @@ function CarouselSection({ lang, isDesk }) {
       <div style={{ textAlign: "center", marginTop: isDesk ? 28 : 20, padding: "0 16px" }}>
         <p style={{ fontSize: isDesk ? 22 : 17, fontWeight: 800, lineHeight: 1.3, margin: "0 0 8px", letterSpacing: -0.5 }}>
           {lang === "en"
-            ? <>No experience needed.<br /><span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Just describe it — AI does the rest.</span></>
-            : <>Sin experiencia. Sin prompts complicados.<br /><span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Solo describilo — la IA hace el resto.</span></>}
+            ? <>All this was generated with no experience.<br /><span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>No complex prompts. Just describe it — AI does the rest.</span></>
+            : <>Todo esto fue generado sin experiencia.<br /><span style={{ background: "linear-gradient(135deg,#00f0ff,#b44aff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Sin prompts complicados. Solo describelo — la IA hace el resto.</span></>}
         </p>
         <p style={{ fontSize: isDesk ? 13 : 12, color: "#5a5a70", margin: 0, maxWidth: 480, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
           {lang === "en"
