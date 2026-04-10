@@ -1,37 +1,28 @@
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
-const ALLOWED_FAL_HOSTS = ["queue.fal.run", "fal.run", "storage.googleapis.com"];
+const ALLOWED_FAL_HOSTS = ["queue.fal.run","fal.run","storage.googleapis.com"];
 function isSafeUrl(url) {
   if (!url || typeof url !== "string") return false;
   try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" &&
-      ALLOWED_FAL_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith("." + h));
+    const p = new URL(url);
+    return p.protocol === "https:" && ALLOWED_FAL_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("."+h));
   } catch { return false; }
 }
 
 async function verifyToken(user_token) {
   const anonKey = process.env.SUPABASE_ANON_KEY;
-  if (!anonKey) throw new Error("SUPABASE_ANON_KEY not configured");
-  const res = await fetch(`${SB_URL}/auth/v1/user`, {
-    headers: { apikey: anonKey, Authorization: `Bearer ${user_token}` },
-  });
+  const res = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: anonKey, Authorization: `Bearer ${user_token}` } });
   const user = await res.json();
   if (!user?.id) throw new Error("Invalid session");
   return user.id;
 }
 
-// Extract video URL from any fal.ai model response format
 function extractVideoUrl(result) {
   if (!result) return null;
-  // Standard format: { video: { url: "..." } }
   if (result.video?.url) return result.video.url;
-  // Array format: { videos: [{ url: "..." }] }
   if (result.videos?.[0]?.url) return result.videos[0].url;
-  // Direct url field
   if (typeof result.url === "string" && result.url.startsWith("http")) return result.url;
-  // Output field: { output: { video: { url: "..." } } }
   if (result.output?.video?.url) return result.output.video.url;
   return null;
 }
@@ -42,6 +33,68 @@ function extractImageUrl(result) {
   if (result.image?.url) return result.image.url;
   if (typeof result.url === "string" && result.url.startsWith("http")) return result.url;
   return null;
+}
+
+// Extract human-readable error from fal.ai error responses
+function extractErrorMessage(data) {
+  // Common fal.ai error formats
+  if (data?.detail) {
+    if (typeof data.detail === "string") return data.detail;
+    if (Array.isArray(data.detail)) return data.detail.map(d => d.msg || d.message || JSON.stringify(d)).join("; ");
+  }
+  if (data?.error) return typeof data.error === "string" ? data.error : JSON.stringify(data.error);
+  if (data?.message) return data.message;
+  if (data?.logs) {
+    const errLog = data.logs.find(l => l.level === "ERROR" || l.message?.includes("sensitive") || l.message?.includes("error"));
+    if (errLog) return errLog.message;
+  }
+  return "Generation failed";
+}
+
+// Refund credits in Supabase
+async function refundCredits(userId, endpoint, reqId, serviceKey) {
+  try {
+    const searchKey = encodeURIComponent(reqId + "|" + endpoint);
+    const findRes = await fetch(
+      `${SB_URL}/rest/v1/generations?result_url=eq.${searchKey}&select=id,type&limit=1`,
+      { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+    );
+    const found = await findRes.json();
+    if (!found?.[0]) return;
+
+    const genType = found[0].type;
+    const genId = found[0].id;
+
+    // Mark generation as failed in DB
+    await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, {
+      method: "PATCH",
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ status: "failed", result_url: null }),
+    });
+
+    // Get current credits and refund
+    const profRes = await fetch(
+      `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,videos_remaining`,
+      { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+    );
+    const prof = (await profRes.json())?.[0];
+    if (!prof) return;
+
+    // Refund 1 image credit or 2 video credits (minimum)
+    const patch = genType === "image"
+      ? { images_remaining: (prof.images_remaining || 0) + 1 }
+      : { videos_remaining: (prof.videos_remaining || 0) + 2 }; // refund 2 video credits minimum
+
+    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+      method: "PATCH",
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(patch),
+    });
+
+    console.log(`✓ Refunded credits for user ${userId} gen ${genId} type=${genType}`);
+  } catch (e) {
+    console.error("Refund error:", e.message);
+  }
 }
 
 export default async function handler(req, res) {
@@ -59,22 +112,17 @@ export default async function handler(req, res) {
 
   const { request_id, endpoint, type, user_token, status_url, response_url } = req.body || {};
 
-  // Relaxed validation — Seedance IDs may contain dots and other chars
   if (!request_id || typeof request_id !== "string" || request_id.length > 200)
     return res.status(400).json({ error: "Invalid request_id" });
-
-  if (!user_token || typeof user_token !== "string")
-    return res.status(401).json({ error: "Authentication required" });
+  if (!user_token) return res.status(401).json({ error: "Authentication required" });
 
   let userId;
-  try {
-    userId = await verifyToken(user_token);
-  } catch {
-    return res.status(401).json({ error: "Invalid or expired session" });
-  }
+  try { userId = await verifyToken(user_token); }
+  catch { return res.status(401).json({ error: "Invalid or expired session" }); }
 
-  // Ownership check — allow if not found (don't block legitimate polling)
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+  // Ownership check
   if (SERVICE_KEY) {
     try {
       const searchKey = encodeURIComponent(request_id + "|" + endpoint);
@@ -84,13 +132,11 @@ export default async function handler(req, res) {
       );
       const ownerRows = await ownerRes.json();
       if (Array.isArray(ownerRows) && ownerRows.length > 0 && ownerRows[0].user_id !== userId) {
-        console.warn(`Ownership violation: ${userId} tried to poll request owned by ${ownerRows[0].user_id}`);
         return res.status(403).json({ error: "Access denied" });
       }
-    } catch { /* allow if check fails */ }
+    } catch {}
   }
 
-  // Build fal.ai URLs
   const safeStatusUrl = isSafeUrl(status_url)
     ? status_url
     : (endpoint ? `https://queue.fal.run/${endpoint}/requests/${request_id}/status` : null);
@@ -113,18 +159,30 @@ export default async function handler(req, res) {
       if (!safeResultUrl) return res.status(400).json({ error: "Invalid result URL" });
 
       const resultRes = await fetch(safeResultUrl, { method: "GET", headers });
-      if (!resultRes.ok)
-        return res.status(200).json({ status: "COMPLETED", error: "Could not fetch result" });
+      if (!resultRes.ok) return res.status(200).json({ status: "COMPLETED", error: "Could not fetch result" });
 
       const result = await resultRes.json();
 
-      // Support all model output formats
-      const url = type === "image" ? extractImageUrl(result) : extractVideoUrl(result);
+      // Check if result itself contains an error (e.g. sensitive content)
+      if (result?.detail || (result?.status === "FAILED")) {
+        const errMsg = extractErrorMessage(result);
+        console.error(`Generation error in result: ${errMsg}`);
+        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+        return res.status(200).json({ status: "FAILED", error: errMsg });
+      }
 
+      const url = type === "image" ? extractImageUrl(result) : extractVideoUrl(result);
       console.log(`Status COMPLETED: endpoint=${endpoint} url=${url} type=${type}`);
 
-      // Update DB
-      if (url && endpoint && SERVICE_KEY) {
+      if (!url) {
+        // No URL in result — treat as failure
+        const errMsg = extractErrorMessage(result) || "No output URL in result";
+        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+        return res.status(200).json({ status: "FAILED", error: errMsg });
+      }
+
+      // Update DB with completed URL
+      if (SERVICE_KEY) {
         try {
           const searchKey = encodeURIComponent(request_id + "|" + endpoint);
           const findRes = await fetch(
@@ -138,7 +196,6 @@ export default async function handler(req, res) {
               headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
               body: JSON.stringify({ result_url: url, status: "completed" }),
             });
-            console.log(`DB updated: gen ${found[0].id} → ${url}`);
           }
         } catch (e) { console.error("DB update error:", e.message); }
       }
@@ -146,8 +203,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: "COMPLETED", url, type });
     }
 
-    if (falStatus === "FAILED")
-      return res.status(200).json({ status: "FAILED", error: statusData.error || "Generation failed" });
+    if (falStatus === "FAILED") {
+      const errMsg = extractErrorMessage(statusData);
+      console.error(`Generation FAILED: ${errMsg} endpoint=${endpoint}`);
+      // Refund credits
+      if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+      return res.status(200).json({ status: "FAILED", error: errMsg });
+    }
 
     return res.status(200).json({ status: statusData.status || "IN_PROGRESS", position: statusData.queue_position });
 

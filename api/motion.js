@@ -86,7 +86,7 @@ export default async function handler(req, res) {
   if (videoDurSec > maxDur + 0.5) {
     return res.status(403).json({ error: `Video duration (${videoDurSec.toFixed(1)}s) exceeds plan limit (${maxDur}s).` });
   }
-  const creditsNeeded = (plan === "creator" && videoDurSec > 8) ? 3 : 2;
+  const creditsNeeded = videoDurSec > 10 ? 3 : 2; // 5-10s = 2 credits, 11-15s = 3 credits
 
   if ((videos_remaining ?? 0) < creditsNeeded)
     return res.status(403).json({ error: `Not enough credits. Need ${creditsNeeded}, have ${videos_remaining}.` });
@@ -130,7 +130,7 @@ export default async function handler(req, res) {
         method: "POST", headers: sbHeaders(SERVICE_KEY),
         body: JSON.stringify({
           user_id: userId, type: "video",
-          prompt: prompt?.trim() || "Motion Control",
+          prompt: (prompt?.trim() || "Motion Control").slice(0, 3500),
           style: "motion_control", status: "processing",
           result_url: request_id + "|" + FAL_ENDPOINT,
         }),

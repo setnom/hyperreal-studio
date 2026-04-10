@@ -947,7 +947,7 @@ export default function App() {
                 return; // done — no spinner, no polling
               }
 
-              if (statusData.status === "FAILED") {
+              if (statusData.status === "FAILED") { // with error refresh
                 setGens(prev => prev.filter(gen => gen.id !== pending.id));
                 return;
               }
@@ -970,7 +970,10 @@ export default function App() {
                       setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
                       setGenResult({ type: genType, url: d.url });
                       playDoneSound();
-                    } else if (d.status !== "FAILED") {
+                    } else if (d.status === "FAILED") {
+                      // Refresh credits after failure
+                      try { const u2 = await sb.getUser(s.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, s.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {}
+                    } else {
                       setTimeout(() => bgPoll(attempts + 1), 3000);
                     }
                   } catch { setTimeout(() => bgPoll(attempts + 1), 5000); }
@@ -1358,7 +1361,7 @@ export default function App() {
             return;
           }
 
-          if (statusData.status === "FAILED") {
+          if (statusData.status === "FAILED") { // with error refresh
             setGenError("La generación falló. Intenta con otro prompt.");
             setGenning(false);
             setGenStatus({ phase: "idle", position: null, elapsed: 0 });
@@ -2340,7 +2343,7 @@ export default function App() {
             const isMotionEligible = ["basic","pro","creator"].includes(profile?.plan);
             const isTestPlan = profile?.plan === "test" || !profile?.plan;
             const motionMaxDur = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
-            const motionCredits = (profile?.plan === "creator" && motionVideoDuration > 8) ? 3 : 2;
+            const motionCredits = motionVideoDuration > 10 ? 3 : 2; // 5-10s = 2 credits, 11-15s = 3 credits
             const canGenMotion = isMotionEligible && motionImageUrl && motionVideoUrl && !genning && !motionUploadProgress.img && !motionUploadProgress.vid && (profile?.videos_remaining ?? 0) >= motionCredits;
 
             const uploadMotionFile = async (file, isImg) => {
@@ -2508,7 +2511,7 @@ export default function App() {
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError(lang === "es" ? "Generación fallida. Tu crédito fue devuelto." : "Generation failed. Credit refunded."); return; }
+                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {} return; }
                     setGenStatus({ phase: (sd.position ?? 0) > 0 ? "queued" : "generating", position: sd.position || null, elapsed });
                     setTimeout(poll, 4000);
                   } catch { setTimeout(poll, 5000); }
@@ -2615,8 +2618,8 @@ export default function App() {
                       </p>
                       <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>
                         {lang === "es"
-                          ? `Límite de tu plan: máx ${motionMaxDur}s · ${motionCredits} crédito${motionCredits > 1 ? "s" : ""} de video`
-                          : `Your plan limit: max ${motionMaxDur}s · ${motionCredits} video credit${motionCredits > 1 ? "s" : ""}`}
+                          ? `Límite de tu plan: máx ${motionMaxDur}s · ${motionCredits} crédito${motionCredits > 1 ? "s" : ""} de video · (5-10s = 2 · 11-15s = 3)`
+                          : `Your plan limit: max ${motionMaxDur}s · ${motionCredits} video credit${motionCredits > 1 ? "s" : ""} · (5-10s = 2 · 11-15s = 3)`}
                         {motionVideoDuration > 0 && <span style={{ color: "#00f0ff", marginLeft: 8 }}>· {lang === "es" ? "Video detectado:" : "Detected:"} {motionVideoDuration.toFixed(1)}s ✓</span>}
                       </p>
                     </div>
@@ -2826,7 +2829,7 @@ export default function App() {
                       const sd = await sr.json();
                       const elapsed = Math.round((Date.now() - pollStart) / 1000);
                       if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                      if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError(lang === "es" ? "Generación fallida. Tu crédito fue devuelto." : "Generation failed. Credit refunded."); return; }
+                      if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {} return; }
                       setGenStatus({ phase: (sd.position ?? 0) > 0 ? "queued" : "generating", position: sd.position || null, elapsed });
                       setTimeout(poll, 4000);
                     } catch { setTimeout(poll, 5000); }

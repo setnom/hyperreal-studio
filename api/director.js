@@ -126,7 +126,7 @@ export default async function handler(req, res) {
         method: "POST", headers: sbHeaders(SERVICE_KEY),
         body: JSON.stringify({
           user_id: userId, type: "video",
-          prompt: prompt.trim().slice(0, 200),
+          prompt: prompt.trim().slice(0, 3500),
           style: "director", status: "processing",
           result_url: falData.request_id + "|" + FAL_ENDPOINT,
         }),
