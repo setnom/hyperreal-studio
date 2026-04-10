@@ -2715,8 +2715,22 @@ export default function App() {
                 if (data.error) { setGenError(data.error); setGenning(false); return; }
                 if (data.completed && data.url) { await saveGenResult(true, data); return; }
                 if (data.request_id) {
-                  setGenType(T.VID);
-                  pollResult(data.request_id, data.endpoint || "bytedance/seedance-2.0/reference-to-video", true);
+                  const { request_id, endpoint, status_url, response_url } = data;
+                  const pollStart = Date.now(); let attempts = 0;
+                  const poll = async () => {
+                    attempts++;
+                    if (attempts > 150) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+                    try {
+                      const sr = await fetch("/api/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id, endpoint, type: "video", user_token: session?.access_token, status_url, response_url }) });
+                      const sd = await sr.json();
+                      const elapsed = Math.round((Date.now() - pollStart) / 1000);
+                      if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
+                      if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError(lang === "es" ? "Generación fallida. Tu crédito fue devuelto." : "Generation failed. Credit refunded."); return; }
+                      setGenStatus({ phase: (sd.position ?? 0) > 0 ? "queued" : "generating", position: sd.position || null, elapsed });
+                      setTimeout(poll, 4000);
+                    } catch { setTimeout(poll, 5000); }
+                  };
+                  setTimeout(poll, 3000);
                 }
               } catch(e) { setGenError(e.message); setGenning(false); }
             };
