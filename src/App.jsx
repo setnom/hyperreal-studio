@@ -2266,7 +2266,7 @@ export default function App() {
               setMotionUploadProgress(p => ({ ...p, [fieldKey]: true }));
 
               try {
-                const MAX_BASE64 = 10 * 1024 * 1024; // 10MB threshold — use direct upload above this
+                const MAX_BASE64 = 3 * 1024 * 1024; // 3MB — Vercel serverless body limit is ~4.5MB, base64 adds 33% overhead
 
                 if (file.size > MAX_BASE64) {
                   // Large file — use presigned URL direct upload to fal.ai storage

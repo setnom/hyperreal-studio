@@ -5,7 +5,7 @@ export const config = {
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const ALLOWED_MIME   = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "video/mp4", "video/quicktime", "video/webm", "video/x-m4v"];
-const MAX_B64_SIZE   = 20 * 1024 * 1024; // 20MB base64 string (~15MB actual file)
+const MAX_B64_SIZE   = 4 * 1024 * 1024; // ~3MB actual file (base64 adds 33% overhead, Vercel limit ~4.5MB body)
 
 async function verifyToken(user_token) {
   const anonKey = process.env.SUPABASE_ANON_KEY;
