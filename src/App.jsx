@@ -2252,7 +2252,24 @@ export default function App() {
               const fieldKey = isImg ? "img" : "vid";
               setMotionUploadError(null);
 
-              // Show preview immediately from local file
+              // Videos: validate 10MB hard limit (fal.ai model limit) + smart guidance
+              if (!isImg && file.size > 10 * 1024 * 1024) {
+                const mb = (file.size / 1024 / 1024).toFixed(1);
+                const isIphone = /iPhone|iPad/i.test(navigator.userAgent);
+                const isMobile = /Android/i.test(navigator.userAgent);
+                const tip = isIphone
+                  ? (lang === "es" ? " En iPhone: Ajustes → Cámara → Formato → Compatible. Grabá en 1080p." : " On iPhone: Settings → Camera → Format → Most Compatible. Record in 1080p.")
+                  : isMobile
+                    ? (lang === "es" ? " Comprimí con la app VidCompact o grabá en 1080p." : " Compress with VidCompact app or record in 1080p.")
+                    : (lang === "es" ? " Comprimí con Handbrake (gratis) o exportá en calidad media." : " Compress with Handbrake (free) or export at medium quality.");
+                setMotionUploadError((lang === "es" ? `Video muy pesado (${mb}MB). Máx 10MB.` : `Video too large (${mb}MB). Max 10MB.`) + tip);
+                return;
+              }
+
+              // Images: any size — canvas will compress automatically
+              // No size rejection for images
+
+              // Show preview immediately
               if (isImg) {
                 setMotionImage(file);
                 if (motionImagePreview) URL.revokeObjectURL(motionImagePreview);
@@ -2266,43 +2283,65 @@ export default function App() {
               setMotionUploadProgress(p => ({ ...p, [fieldKey]: true }));
 
               try {
-                const MAX_BASE64 = 3 * 1024 * 1024; // 3MB — Vercel serverless body limit is ~4.5MB, base64 adds 33% overhead
+                let dataUrl;
 
-                if (file.size > MAX_BASE64) {
-                  // Large file — use presigned URL direct upload to fal.ai storage
-                  const initR = await fetch("/api/upload-init", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mime_type: file.type, file_name: file.name, user_token: session?.access_token }),
+                if (isImg) {
+                  // Compress image with canvas — instantaneous, no libraries
+                  // Limits to 1800px max dimension, JPEG quality 0.88
+                  dataUrl = await new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => {
+                      try {
+                        const MAX_PX = 1800;
+                        let w = img.width, h = img.height;
+                        if (w > MAX_PX || h > MAX_PX) {
+                          if (w > h) { h = Math.round((h/w)*MAX_PX); w = MAX_PX; }
+                          else { w = Math.round((w/h)*MAX_PX); h = MAX_PX; }
+                        }
+                        const canvas = document.createElement("canvas");
+                        canvas.width = w; canvas.height = h;
+                        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+                        resolve(canvas.toDataURL("image/jpeg", 0.88));
+                      } catch(e) { reject(e); }
+                    };
+                    img.onerror = () => reject(new Error("Cannot load image"));
+                    img.src = URL.createObjectURL(file);
                   });
-                  const initD = await initR.json();
-                  if (!initD.upload_url) throw new Error(initD.error || "No upload URL received");
-                  const putRes = await fetch(initD.upload_url, {
-                    method: "PUT",
-                    headers: { "Content-Type": file.type },
-                    body: file,
-                  });
-                  if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
-                  if (isImg) setMotionImageUrl(initD.file_url);
-                  else setMotionVideoUrl(initD.file_url);
                 } else {
-                  // Small file — base64 via existing upload endpoint
-                  const base64 = await new Promise((resolve, reject) => {
+                  // Video — read as-is (already validated ≤10MB)
+                  dataUrl = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onload = () => resolve(reader.result);
                     reader.onerror = reject;
                     reader.readAsDataURL(file);
                   });
+                }
+
+                // If result fits Vercel body limit (~3MB base64) → /api/upload
+                if (dataUrl.length <= 3 * 1024 * 1024) {
                   const r = await fetch("/api/upload", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ data_url: base64, user_token: session?.access_token }),
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }),
                   });
                   const d = await r.json();
                   if (d.error) throw new Error(d.error);
-                  if (!d.url) throw new Error("No URL returned from upload");
+                  if (!d.url) throw new Error("No URL returned");
                   if (isImg) setMotionImageUrl(d.url);
                   else setMotionVideoUrl(d.url);
+                } else {
+                  // Larger — presigned PUT directly to fal.ai storage (CSP allows it)
+                  const mime = isImg ? "image/jpeg" : file.type;
+                  const initR = await fetch("/api/upload-init", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mime_type: mime, file_name: `motion.${isImg ? "jpg" : file.name.split(".").pop()}`, user_token: session?.access_token }),
+                  });
+                  const initD = await initR.json();
+                  if (!initD.upload_url) throw new Error(initD.error || "No upload URL");
+                  const blob = isImg ? await (await fetch(dataUrl)).blob() : file;
+                  const putRes = await fetch(initD.upload_url, { method: "PUT", headers: { "Content-Type": mime }, body: blob });
+                  if (!putRes.ok) throw new Error(`PUT failed: ${putRes.status}`);
+                  if (isImg) setMotionImageUrl(initD.file_url);
+                  else setMotionVideoUrl(initD.file_url);
                 }
               } catch (e) {
                 console.error("Upload error:", e.message);
@@ -2424,8 +2463,9 @@ export default function App() {
                         </label>
                       </div>
                     </div>
-
-                    {/* Orientation — the only real parameter that affects background */}
+                    <p style={{ fontSize: 9, color: "#3a3a50", margin: "-8px 0 14px", textAlign: "center" }}>
+                      {lang === "es" ? "📎 Máx 10MB por archivo · jpg, png, webp · mp4, mov, webm" : "📎 Max 10MB per file · jpg, png, webp · mp4, mov, webm"}
+                    </p> — the only real parameter that affects background */}
                     <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.05)" }}>
                       <p style={{ fontSize: 11, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>{lang === "es" ? "Modo de orientación:" : "Orientation mode:"}</p>
                       <p style={{ fontSize: 9, color: "#5a5a70", margin: "0 0 10px" }}>
