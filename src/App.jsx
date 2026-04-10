@@ -385,7 +385,7 @@ const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"];
 const SAMPLE = ["Luxury perfume bottle on black marble, volumetric lighting, 8K", "Latin woman CEO in modern office, golden hour, shallow DOF", "Gourmet burger floating, ingredients exploding, dark bg, studio light", "Futuristic car in neon-lit Tokyo street, rain reflections, cinematic"];
 
 const P = { LAND: 0, AUTH: 1, DASH: 2, PLANS: 3 };
-const T = { IMG: 0, VID: 1, GAL: 2, MOT: 3 };
+const T = { IMG: 0, VID: 1, GAL: 2, MOT: 3, DIR: 4 };
 
 // ─── HOOKS ───
 function useW() {
@@ -418,8 +418,8 @@ function Generating({ type, duration, lang, genStatus }) {
   const phase = genStatus?.phase || "generating";
   const pos = genStatus?.position;
   const elapsed = genStatus?.elapsed || 0;
-  const estMin = type === T.VID ? (duration === 10 ? "2" : duration === 8 ? "1:30" : "1") : "0:15";
-  const estMax = type === T.VID ? (duration === 10 ? "4" : duration === 8 ? "3" : "2") : "1";
+  const estMin = type === T.VID ? "5" : "0:15";
+  const estMax = type === T.VID ? "10" : "1";
 
   const phaseColor = phase === "queued" ? "#ffb800" : phase === "done" ? "#00ff88" : "#00f0ff";
   const phaseLabel = phase === "queued"
@@ -613,6 +613,17 @@ export default function App() {
   const [motionImagePreview, setMotionImagePreview] = useState(null); // blob URL for preview
   const [motionVideoPreview, setMotionVideoPreview] = useState(null); // blob URL for preview
   const [motionVideoDuration, setMotionVideoDuration] = useState(0); // actual duration of uploaded video
+  // Director tab states
+  const [dirImage, setDirImage] = useState(null);
+  const [dirImageUrl, setDirImageUrl] = useState(null);
+  const [dirImagePreview, setDirImagePreview] = useState(null);
+  const [dirAudio, setDirAudio] = useState(null);
+  const [dirAudioUrl, setDirAudioUrl] = useState(null);
+  const [dirPrompt, setDirPrompt] = useState("");
+  const [dirDuration, setDirDuration] = useState(5);
+  const [dirAspect, setDirAspect] = useState("9:16");
+  const [dirUploading, setDirUploading] = useState({ img: false, aud: false });
+  const [dirUploadError, setDirUploadError] = useState(null);
   const [genning, setGenning] = useState(false);
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
@@ -1669,7 +1680,10 @@ export default function App() {
   );
 
   // ═══ LANDING ═══
-  if (page === P.LAND) return wrap(
+  if (page === P.LAND) {
+    // Auto-redirect logged-in users to dashboard
+    if (session && profile) { setPage(P.DASH); return null; }
+    return wrap(
     <>
       {/* Nav */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: isDesk ? 80 : 44 }}>
@@ -1689,6 +1703,7 @@ export default function App() {
           </h1>
           <p style={{ fontSize: isDesk ? 17 : 14, color: "#6a6a80", lineHeight: 1.6, maxWidth: isDesk ? 460 : 380, margin: isDesk ? "0" : "0 auto 24px" }}>{t("hero_sub")}</p>
           {isDesk && <button onClick={() => setPage(session ? P.DASH : P.AUTH)} style={{ marginTop: 24, padding: "14px 36px", fontSize: 15, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 30px rgba(0,240,255,.25)" }}>{session ? (lang === "en" ? "Generate now →" : "Generar ahora →") : t("start_now")}</button>}
+          {!isDesk && <button onClick={() => setPage(session ? P.DASH : P.AUTH)} style={{ marginTop: 8, padding: "14px 32px", fontSize: 15, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 24px rgba(0,240,255,.25)", width: "100%" }}>{session ? (lang === "en" ? "⚡ Generate now →" : "⚡ Generar ahora →") : t("start_now")}</button>}
         </div>
         {isDesk && (
           <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
@@ -1754,6 +1769,7 @@ export default function App() {
       <CancelModal />
     </>
   );
+  } // end P.LAND
 
   // ═══ AUTH ═══
   if (page === P.AUTH) return wrap(
@@ -1981,10 +1997,11 @@ export default function App() {
             {[
               { k: T.IMG, l: t("tab_image") },
               { k: T.VID, l: t("tab_video") },
-              ...( ["basic","pro","creator"].includes(profile?.plan) ? [{ k: T.MOT, l: t("tab_motion") }] : [] ),
+              { k: T.MOT, l: t("tab_motion") },
+              { k: T.DIR, l: t("tab_director") },
               ...(!isDesk ? [{ k: T.GAL, l: t("tab_gallery") }] : []),
             ].map(tb => (
-              <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
+              <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : tb.k === T.DIR ? "rgba(0,240,255,.1)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : tab === tb.k && tb.k === T.DIR ? "1px solid rgba(0,240,255,.2)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
             ))}
           </div>
 
@@ -2252,6 +2269,7 @@ export default function App() {
           {/* ═══ MOTION CONTROL TAB ═══ */}
           {tab === T.MOT && (() => {
             const isMotionEligible = ["basic","pro","creator"].includes(profile?.plan);
+            const isTestPlan = profile?.plan === "test" || !profile?.plan;
             const motionMaxDur = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
             const motionCredits = (profile?.plan === "creator" && motionVideoDuration > 8) ? 3 : 2;
             const canGenMotion = isMotionEligible && motionImageUrl && motionVideoUrl && !genning && !motionUploadProgress.img && !motionUploadProgress.vid && (profile?.videos_remaining ?? 0) >= motionCredits;
@@ -2432,18 +2450,24 @@ export default function App() {
 
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
-                {/* Plan restriction notice */}
-                {!isMotionEligible && (
-                  <div style={{ textAlign: "center", padding: "24px 16px", borderRadius: 12, background: "rgba(255,107,43,.05)", border: "1px solid rgba(255,107,43,.15)" }}>
-                    <p style={{ fontSize: 22, marginBottom: 8 }}>🎭</p>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", marginBottom: 4 }}>{lang === "es" ? "Motion Control — Basic, Pro y Creator" : "Motion Control — Basic, Pro & Creator"}</p>
-                    <p style={{ fontSize: 11, color: "#5a5a70", marginBottom: 14 }}>{lang === "es" ? "Transfiere movimientos de un video a cualquier imagen" : "Transfer movements from a video to any image"}</p>
-                    <button onClick={() => setPage(P.PLANS)} style={{ padding: "10px 24px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ff6b2b,#ffb800)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{lang === "es" ? "Ver planes →" : "See plans →"}</button>
-                  </div>
-                )}
-
-                {isMotionEligible && (
-                  <>
+                {/* Upgrade overlay for Test plan users */}
+                <div style={{ position: "relative" }}>
+                  {isTestPlan && (
+                    <div style={{ position: "absolute", inset: 0, zIndex: 10, borderRadius: 14, background: "rgba(6,6,14,.82)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 20px", textAlign: "center" }}>
+                      <div style={{ fontSize: 36, marginBottom: 10 }}>🎭</div>
+                      <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: "0 0 8px" }}>{lang === "es" ? "Función exclusiva" : "Exclusive feature"}</p>
+                      <p style={{ fontSize: 11, color: "#a0a0b8", margin: "0 0 6px", lineHeight: 1.5 }}>
+                        {lang === "es" ? "Motion Control está disponible para planes Basic, Pro y Creator." : "Motion Control is available on Basic, Pro & Creator plans."}
+                      </p>
+                      <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 18px" }}>
+                        {lang === "es" ? "Transferí movimientos reales a tus imágenes con IA." : "Transfer real movements to your images with AI."}
+                      </p>
+                      <button onClick={() => setPage(P.PLANS)} style={{ padding: "12px 28px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ff6b2b,#ffb800)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 20px rgba(255,107,43,.4)" }}>
+                        {lang === "es" ? "🚀 Cambiar de plan" : "🚀 Upgrade plan"}
+                      </button>
+                    </div>
+                  )}
+                  <div style={{ opacity: isTestPlan ? 0.25 : 1, pointerEvents: isTestPlan ? "none" : "auto" }}>
                     {/* Header */}
                     <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 10, background: "rgba(255,107,43,.05)", border: "1px solid rgba(255,107,43,.12)" }}>
                       <p style={{ fontSize: 11, fontWeight: 700, color: "#ff6b2b", margin: "0 0 2px" }}>🎭 Motion Control Premium</p>
@@ -2566,8 +2590,242 @@ export default function App() {
                         </div>
                       </div>
                     )}
-                  </>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Director tab */}
+          {tab === T.DIR && (() => {
+            const dirCredits = dirDuration <= 5 ? 3 : dirDuration <= 10 ? 4 : 5;
+            const isDirEligible = ["pro","creator"].includes(profile?.plan);
+            const isDirLocked = !isDirEligible;
+            const canGenDir = isDirEligible && dirImageUrl && dirPrompt.trim() && !genning && (profile?.videos_remaining ?? 0) >= dirCredits;
+
+            const uploadDirFile = async (file, isImg) => {
+              const key = isImg ? "img" : "aud";
+              setDirUploadError(null);
+              setDirUploading(p => ({ ...p, [key]: true }));
+              try {
+                // Compress image with canvas
+                let dataUrl;
+                if (isImg) {
+                  dataUrl = await new Promise((res, rej) => {
+                    const img = new Image();
+                    img.onload = () => {
+                      try {
+                        const MAX_PX = 1800;
+                        let w = img.width, h = img.height;
+                        if (w > MAX_PX || h > MAX_PX) {
+                          if (w > h) { h = Math.round((h/w)*MAX_PX); w = MAX_PX; }
+                          else { w = Math.round((w/h)*MAX_PX); h = MAX_PX; }
+                        }
+                        const canvas = document.createElement("canvas");
+                        canvas.width = w; canvas.height = h;
+                        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+                        res(canvas.toDataURL("image/jpeg", 0.88));
+                      } catch(e) { rej(e); }
+                    };
+                    img.onerror = () => rej(new Error("Cannot load image"));
+                    img.src = URL.createObjectURL(file);
+                  });
+                } else {
+                  dataUrl = await new Promise((res, rej) => {
+                    const reader = new FileReader();
+                    reader.onload = () => res(reader.result);
+                    reader.onerror = rej;
+                    reader.readAsDataURL(file);
+                  });
+                }
+                // Upload
+                if (dataUrl.length <= 3 * 1024 * 1024) {
+                  const r = await fetch("/api/upload", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }),
+                  });
+                  const d = await r.json();
+                  if (d.error) throw new Error(d.error);
+                  if (isImg) { setDirImage(file); setDirImageUrl(d.url); setDirImagePreview(URL.createObjectURL(file)); }
+                  else { setDirAudio(file); setDirAudioUrl(d.url); }
+                } else {
+                  const mime = isImg ? "image/jpeg" : file.type;
+                  const initR = await fetch("/api/upload-init", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mime_type: mime, file_name: `dir.${isImg ? "jpg" : file.name.split(".").pop()}`, user_token: session?.access_token }),
+                  });
+                  const initD = await initR.json();
+                  if (!initD.upload_url) throw new Error(initD.error || "No upload URL");
+                  const blob = isImg ? await (await fetch(dataUrl)).blob() : file;
+                  const putRes = await fetch(initD.upload_url, { method: "PUT", headers: { "Content-Type": mime }, body: blob });
+                  if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+                  if (isImg) { setDirImage(file); setDirImageUrl(initD.file_url); setDirImagePreview(URL.createObjectURL(file)); }
+                  else { setDirAudio(file); setDirAudioUrl(initD.file_url); }
+                }
+              } catch(e) {
+                setDirUploadError(e.message);
+              } finally {
+                setDirUploading(p => ({ ...p, [key]: false }));
+              }
+            };
+
+            const handleDirGen = async () => {
+              if (!canGenDir) return;
+              setGenning(true); setGenError(null);
+              setGenStatus({ phase: "queued", position: null, elapsed: 0 });
+              try {
+                const r = await fetch("/api/director", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    image_url: dirImageUrl,
+                    audio_url: dirAudioUrl || undefined,
+                    prompt: dirPrompt.trim(),
+                    duration: dirDuration,
+                    aspect_ratio: dirAspect,
+                    user_token: session?.access_token,
+                  }),
+                });
+                const data = await r.json();
+                if (data.error) { setGenError(data.error); setGenning(false); return; }
+                if (data.completed && data.url) { await saveGenResult(true, data); return; }
+                if (data.request_id) {
+                  setGenType(T.VID);
+                  pollResult(data.request_id, data.endpoint || "bytedance/seedance-2.0/reference-to-video", true);
+                }
+              } catch(e) { setGenError(e.message); setGenning(false); }
+            };
+
+            return (
+              <div style={{ animation: "fadeUp .4s ease" }}>
+                {/* Upgrade overlay for non-eligible users */}
+                <div style={{ position: "relative" }}>
+                  {isDirLocked && (
+                    <div style={{ position: "absolute", inset: 0, zIndex: 10, borderRadius: 14, background: "rgba(6,6,14,.82)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 20px", textAlign: "center" }}>
+                      <div style={{ fontSize: 36, marginBottom: 10 }}>🎬</div>
+                      <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: "0 0 8px" }}>{lang === "es" ? "Función exclusiva" : "Exclusive feature"}</p>
+                      <p style={{ fontSize: 11, color: "#a0a0b8", margin: "0 0 6px", lineHeight: 1.5 }}>
+                        {lang === "es" ? "Director está disponible para planes Pro y Creator." : "Director is available on Pro & Creator plans."}
+                      </p>
+                      <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 18px" }}>
+                        {lang === "es" ? "Generación cinematográfica con Seedance 2.0 y audio nativo." : "Cinematic generation with Seedance 2.0 and native audio."}
+                      </p>
+                      <button onClick={() => setPage(P.PLANS)} style={{ padding: "12px 28px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#00f0ff,#b44aff)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 20px rgba(0,240,255,.3)" }}>
+                        {lang === "es" ? "🚀 Cambiar de plan" : "🚀 Upgrade plan"}
+                      </button>
+                    </div>
+                  )}
+                  <div style={{ opacity: isDirLocked ? 0.25 : 1, pointerEvents: isDirLocked ? "none" : "auto" }}>
+                {/* Header */}
+                <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 10, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.1)" }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", margin: "0 0 2px" }}>🎬 Director Premium</p>
+                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Seedance 2.0 · IA cinematográfica con audio nativo · Solo imagen de referencia" : "Seedance 2.0 · Cinematic AI with native audio · Reference image only"}</p>
+                </div>
+
+                {/* Upload area - image + audio side by side */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                  {/* Reference image */}
+                  <div>
+                    <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "🖼️ Imagen de referencia *" : "🖼️ Reference image *"}</p>
+                    <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 130, borderRadius: 12, border: dirImagePreview ? "1px solid rgba(0,240,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: dirImagePreview ? "rgba(0,240,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
+                      {dirImagePreview
+                        ? <>
+                            <img src={dirImagePreview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            {dirUploading.img && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}><div style={{ width: 20, height: 20, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /></div>}
+                            {!dirUploading.img && dirImageUrl && <div style={{ position: "absolute", top: 4, left: 4, background: "rgba(0,240,255,.85)", borderRadius: 4, padding: "2px 5px", fontSize: 8, color: "#06060e", fontWeight: 700 }}>✓</div>}
+                          </>
+                        : <><span style={{ fontSize: 22, marginBottom: 4 }}>🖼️</span><span style={{ fontSize: 9, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Frame inicial / personaje" : "Start frame / character"}</span></>}
+                      {dirImagePreview && !dirUploading.img && <button onClick={e => { e.preventDefault(); setDirImage(null); setDirImageUrl(null); setDirImagePreview(null); }} style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 10, cursor: "pointer" }}>×</button>}
+                      <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadDirFile(e.target.files[0], true)} />
+                    </label>
+                  </div>
+
+                  {/* Audio */}
+                  <div>
+                    <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "🎵 Audio (opcional)" : "🎵 Audio (optional)"}</p>
+                    <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 130, borderRadius: 12, border: dirAudio ? "1px solid rgba(180,74,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: dirAudio ? "rgba(180,74,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
+                      {dirAudio
+                        ? <>
+                            <span style={{ fontSize: 28 }}>🎵</span>
+                            <span style={{ fontSize: 9, color: "#b44aff", marginTop: 4, textAlign: "center", padding: "0 6px" }}>{dirAudio.name.slice(0, 20)}</span>
+                            {dirUploading.aud && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 20, height: 20, border: "2px solid rgba(180,74,255,.3)", borderTop: "2px solid #b44aff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /></div>}
+                            {!dirUploading.aud && dirAudioUrl && <div style={{ position: "absolute", top: 4, left: 4, background: "rgba(180,74,255,.85)", borderRadius: 4, padding: "2px 5px", fontSize: 8, color: "#fff", fontWeight: 700 }}>✓</div>}
+                          </>
+                        : <><span style={{ fontSize: 22, marginBottom: 4 }}>🎵</span><span style={{ fontSize: 9, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Música / voz (opcional)" : "Music / voice (optional)"}</span></>}
+                      {dirAudio && !dirUploading.aud && <button onClick={e => { e.preventDefault(); setDirAudio(null); setDirAudioUrl(null); }} style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 10, cursor: "pointer" }}>×</button>}
+                      <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac" style={{ display: "none" }} onChange={e => uploadDirFile(e.target.files[0], false)} />
+                    </label>
+                  </div>
+                </div>
+                <p style={{ fontSize: 9, color: "#3a3a50", margin: "-4px 0 14px", textAlign: "center" }}>
+                  {lang === "es" ? "📎 Solo imagen · jpg, png, webp · Audio: mp3, wav, m4a" : "📎 Image only · jpg, png, webp · Audio: mp3, wav, m4a"}
+                </p>
+
+                {dirUploadError && (
+                  <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", display: "flex", justifyContent: "space-between" }}>
+                    <span>{dirUploadError}</span>
+                    <button onClick={() => setDirUploadError(null)} style={{ background: "none", border: "none", color: "#ff4d6a", cursor: "pointer" }}>×</button>
+                  </div>
                 )}
+
+                {/* Prompt */}
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena *" : "Scene description *"}</p>
+                  <textarea value={dirPrompt} onChange={e => setDirPrompt(e.target.value)}
+                    placeholder={lang === "es" ? "Describe la escena en detalle. Usá @image1 para referenciar tu imagen. Ej: @image1 camina por una calle de noche con luces de neón, cámara lenta, lluvia..." : "Describe the scene in detail. Use @image1 to reference your image. E.g. @image1 walks down a neon-lit street at night, slow motion, rain..."}
+                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={800} />
+                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{dirPrompt.length}/800</p>
+                </div>
+
+                {/* Aspect ratio */}
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Formato" : "Aspect ratio"}</p>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {[["9:16","📱 9:16"],["16:9","🖥️ 16:9"],["1:1","⬛ 1:1"]].map(([v,l]) => (
+                      <button key={v} onClick={() => setDirAspect(v)} style={{ flex: 1, padding: "8px 4px", fontSize: 10, fontWeight: dirAspect === v ? 700 : 400, color: dirAspect === v ? "#00f0ff" : "#5a5a70", background: dirAspect === v ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: dirAspect === v ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Duration + credits */}
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
+                    {lang === "es" ? `Duración — ${dirDuration}s` : `Duration — ${dirDuration}s`} <span style={{ color: "#00f0ff", fontWeight: 700 }}>({dirCredits} {lang === "es" ? "créditos" : "credits"})</span>
+                  </p>
+                  <div style={{ display: "flex", gap: 5 }}>
+                    {[5,7,10,15].map(d => (
+                      <button key={d} onClick={() => setDirDuration(d)} style={{ flex: 1, padding: "8px 0", fontSize: 11, fontWeight: dirDuration === d ? 700 : 400, color: dirDuration === d ? "#00f0ff" : "#5a5a70", background: dirDuration === d ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: dirDuration === d ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{d}s</button>
+                    ))}
+                  </div>
+                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "4px 0 0" }}>
+                    {lang === "es" ? "5s = 3 créditos · 6-10s = 4 créditos · 11-15s = 5 créditos" : "5s = 3 credits · 6-10s = 4 credits · 11-15s = 5 credits"}
+                  </p>
+                </div>
+
+                {(profile?.videos_remaining ?? 0) < dirCredits && (
+                  <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>
+                    {lang === "es" ? `Necesitás ${dirCredits} créditos. Tenés ${profile?.videos_remaining ?? 0}.` : `You need ${dirCredits} credits. You have ${profile?.videos_remaining ?? 0}.`}
+                  </div>
+                )}
+
+                <button onClick={handleDirGen} disabled={!canGenDir}
+                  style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGenDir ? "#06060e" : "#3a3a50", background: canGenDir ? "linear-gradient(135deg,#00f0ff,#b44aff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGenDir ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGenDir ? "0 0 22px rgba(0,240,255,.25)" : "none", transition: "all .2s" }}>
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : !dirImageUrl ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !dirPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.videos_remaining ?? 0) < dirCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎬 Generar Director (${dirCredits} créditos)` : `🎬 Generate Director (${dirCredits} credits)`)}
+                </button>
+
+                {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={dirDuration} lang={lang} genStatus={genStatus} /></div>}
+                {genError && <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>{genError}</div>}
+
+                {genResult && !genning && tab === T.DIR && (
+                  <div style={{ marginTop: 14, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)" }}>
+                    <video src={genResult.url} controls playsInline style={{ width: "100%", display: "block", maxHeight: 300, objectFit: "contain", background: "#000" }} />
+                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
+                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ Director Premium</span>
+                      <button onClick={() => downloadFile(genResult.url, `director-${Date.now()}.mp4`)} style={{ fontSize: 10, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.15)", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
+                    </div>
+                  </div>
+                )}
+                  </div>
+                </div>
               </div>
             );
           })()}

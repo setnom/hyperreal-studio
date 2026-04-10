@@ -11,7 +11,8 @@
     "api/sync.js":         { "maxDuration": 60  },
     "api/motion.js":          { "maxDuration": 300 },
     "api/upload-init.js":     { "maxDuration": 15  },
-    "api/motion-upload.js":   { "maxDuration": 60  }
+    "api/motion-upload.js":   { "maxDuration": 60  },
+    "api/director.js":        { "maxDuration": 300 }
   },
   "crons": [
     { "path": "/api/sync", "schedule": "0 8 * * *"  },
