@@ -624,6 +624,7 @@ export default function App() {
   const [dirPrompt, setDirPrompt] = useState("");
   const [dirDuration, setDirDuration] = useState(5);
   const [dirAspect, setDirAspect] = useState("9:16");
+  const [dirKeepFrame, setDirKeepFrame] = useState(false);
   const [dirUploading, setDirUploading] = useState({ img: false, aud: false });
   const [dirUploadError, setDirUploadError] = useState(null);
   const [genning, setGenning] = useState(false);
@@ -879,23 +880,49 @@ export default function App() {
           const [reqId, ep] = pending.result_url.split("|");
           const genType = pending.type;
           const pendingAge = Date.now() - new Date(pending.created_at).getTime(); // ms since created
-          const MAX_POLL_AGE = 30 * 60 * 1000; // 30 minutes max
+          const MAX_POLL_AGE = 6 * 60 * 60 * 1000; // 6 hours max
 
           console.log("Pending generation found, age:", Math.round(pendingAge / 1000) + "s");
 
-          // If older than 30 minutes — mark as failed silently, don't show spinner
-          if (pendingAge > MAX_POLL_AGE) {
-            console.log("Pending generation too old, skipping");
-            // Mark as failed in DB silently
+          // Always check fal.ai at least once — even if old — before giving up
+          // The generation may have completed while the tab was closed
+          const checkOnce = async () => {
             try {
-              await fetch(`${SB_URL}/rest/v1/generations?id=eq.${pending.id}`, {
-                method: "PATCH",
-                headers: { ...hdr(s.access_token), Prefer: "return=minimal" },
-                body: JSON.stringify({ status: "failed" }),
+              const statusRes = await fetch("/api/status", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
               });
-            } catch {}
-            setGens(prev => prev.filter(gen => gen.id !== pending.id));
-            return; // don't start polling
+              const statusData = await statusRes.json();
+              if (statusData.status === "COMPLETED" && statusData.url) {
+                const newGen = { ...pending, url: statusData.url, status: "completed", result_url: statusData.url };
+                setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
+                setGenResult({ type: genType, url: statusData.url });
+                console.log("Pending generation recovered:", statusData.url);
+                if (Notification.permission === "granted") {
+                  new Notification("NanoBanano Studio", { body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista", icon: "/favicon.png" });
+                }
+                return true;
+              }
+              return false;
+            } catch { return false; }
+          };
+
+          // If older than 30 minutes — check once then give up
+          if (pendingAge > MAX_POLL_AGE) {
+            console.log("Generation too old — checking fal.ai one last time before giving up");
+            const recovered = await checkOnce();
+            if (!recovered) {
+              // Mark as failed in DB silently
+              try {
+                await fetch(`${SB_URL}/rest/v1/generations?id=eq.${pending.id}`, {
+                  method: "PATCH",
+                  headers: { ...hdr(s.access_token), Prefer: "return=minimal" },
+                  body: JSON.stringify({ status: "failed" }),
+                });
+              } catch {}
+              setGens(prev => prev.filter(gen => gen.id !== pending.id));
+            }
+            return;
           }
 
           // Check fal.ai status once immediately
@@ -931,7 +958,7 @@ export default function App() {
                 // Too old to show spinner — poll quietly in background
                 console.log("Polling silently in background (age > 5min)");
                 const bgPoll = async (attempts = 0) => {
-                  if (attempts > 40) return; // give up after ~2 more minutes
+                  if (attempts > 150) return; // give up after ~7 minutes
                   try {
                     const r = await fetch("/api/status", {
                       method: "POST", headers: { "Content-Type": "application/json" },
@@ -2721,7 +2748,7 @@ export default function App() {
                   body: JSON.stringify({
                     image_url: dirImageUrl,
                     audio_url: dirAudioUrl || undefined,
-                    prompt: dirPrompt.trim(),
+                    prompt: dirPrompt.trim() + (dirKeepFrame ? " Mantain the exact initial frame as provided." : ""),
                     duration: dirDuration,
                     aspect_ratio: dirAspect,
                     user_token: session?.access_token,
@@ -2839,6 +2866,17 @@ export default function App() {
                     {[["9:16","📱 9:16"],["16:9","🖥️ 16:9"],["1:1","⬛ 1:1"]].map(([v,l]) => (
                       <button key={v} onClick={() => setDirAspect(v)} style={{ flex: 1, padding: "8px 4px", fontSize: 10, fontWeight: dirAspect === v ? 700 : 400, color: dirAspect === v ? "#00f0ff" : "#5a5a70", background: dirAspect === v ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: dirAspect === v ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Keep initial frame toggle */}
+                <div style={{ marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: "rgba(0,240,255,.03)", border: "1px solid rgba(0,240,255,.08)" }}>
+                  <div>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "#e0e0f0", margin: "0 0 2px" }}>{lang === "es" ? "🎯 Mantener frame inicial" : "🎯 Keep initial frame"}</p>
+                    <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "El video comienza exactamente con tu imagen" : "Video starts exactly with your image"}</p>
+                  </div>
+                  <div onClick={() => setDirKeepFrame(v => !v)} style={{ width: 44, height: 24, borderRadius: 12, background: dirKeepFrame ? "#00f0ff" : "rgba(255,255,255,.1)", cursor: "pointer", position: "relative", transition: "background .2s", flexShrink: 0 }}>
+                    <div style={{ position: "absolute", top: 3, left: dirKeepFrame ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
                   </div>
                 </div>
 
