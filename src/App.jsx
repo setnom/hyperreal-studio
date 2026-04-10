@@ -2326,24 +2326,8 @@ export default function App() {
                   const d = await r.json();
                   if (d.error) throw new Error(d.error);
                   if (!d.url) throw new Error("No URL returned");
-                  // If backend returned a data URL (fal.ai was down), use presigned upload instead
-                  if (d.url.startsWith("data:")) {
-                    const mime = isImg ? "image/jpeg" : file.type;
-                    const initR = await fetch("/api/upload-init", {
-                      method: "POST", headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ mime_type: mime, file_name: `motion.${isImg ? "jpg" : file.name.split(".").pop()}`, user_token: session?.access_token }),
-                    });
-                    const initD = await initR.json();
-                    if (!initD.upload_url) throw new Error(initD.error || "No upload URL");
-                    const blob = await (await fetch(dataUrl)).blob();
-                    const putRes = await fetch(initD.upload_url, { method: "PUT", headers: { "Content-Type": mime }, body: blob });
-                    if (!putRes.ok) throw new Error(`PUT failed: ${putRes.status}`);
-                    if (isImg) setMotionImageUrl(initD.file_url);
-                    else setMotionVideoUrl(initD.file_url);
-                  } else {
-                    if (isImg) setMotionImageUrl(d.url);
-                    else setMotionVideoUrl(d.url);
-                  }
+                  if (isImg) setMotionImageUrl(d.url);
+                  else setMotionVideoUrl(d.url);
                 } else {
                   // Larger — presigned PUT directly to fal.ai storage (CSP allows it)
                   const mime = isImg ? "image/jpeg" : file.type;
@@ -2481,7 +2465,8 @@ export default function App() {
                     </div>
                     <p style={{ fontSize: 9, color: "#3a3a50", margin: "-8px 0 14px", textAlign: "center" }}>
                       {lang === "es" ? "📎 Máx 10MB por archivo · jpg, png, webp · mp4, mov, webm" : "📎 Max 10MB per file · jpg, png, webp · mp4, mov, webm"}
-                    </p> — the only real parameter that affects background */}
+                    </p>
+                    {/* Orientation — the only real parameter that affects background */}
                     <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.05)" }}>
                       <p style={{ fontSize: 11, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>{lang === "es" ? "Modo de orientación:" : "Orientation mode:"}</p>
                       <p style={{ fontSize: 9, color: "#5a5a70", margin: "0 0 10px" }}>
