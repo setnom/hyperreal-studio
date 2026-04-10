@@ -2,7 +2,8 @@
 // Credits: 5s=3, 6-10s=4, 11-15s=5
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
-const FAL_ENDPOINT = "bytedance/seedance-2.0/reference-to-video";
+const FAL_ENDPOINT_REF = "bytedance/seedance-2.0/reference-to-video";
+const FAL_ENDPOINT_I2V = "bytedance/seedance-2.0/image-to-video";
 
 const ALLOWED_HOSTS = [
   "pygcsyqahhdtmwmqklnl.supabase.co","storage.googleapis.com",
@@ -36,7 +37,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { image_url, audio_url, prompt, duration, aspect_ratio, user_token } = req.body || {};
+  const { image_url, audio_url, prompt, duration, aspect_ratio, keep_frame, user_token } = req.body || {};
+  const FAL_ENDPOINT = keep_frame ? FAL_ENDPOINT_I2V : FAL_ENDPOINT_REF;
   const FAL_KEY = process.env.FAL_KEY;
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
   if (!FAL_KEY || !SERVICE_KEY) return res.status(500).json({ error: "Server misconfiguration" });
@@ -82,17 +84,30 @@ export default async function handler(req, res) {
   console.log(`Director: plan=${plan} dur=${safeDuration}s credits=${creditsNeeded} user=${userId}`);
 
   try {
-    const falBody = {
-      prompt: prompt.trim().slice(0, 3500),
-      image_url,
-      duration: String(safeDuration),
-      aspect_ratio: safeAspect,
-      resolution: "720p",
-      generate_audio: !audio_url, // generate audio if no custom audio provided
-      enable_safety_checker: true,
-      end_user_id: userId, // required by Seedance 2.0 terms
-    };
-    if (audio_url) falBody.audio_url = audio_url;
+    const falBody = keep_frame
+      ? {
+          // image-to-video: just image + prompt, no audio, no references
+          prompt: prompt.trim().slice(0, 3500),
+          image_url,
+          duration: String(safeDuration),
+          aspect_ratio: safeAspect,
+          resolution: "720p",
+          generate_audio: true,
+          enable_safety_checker: true,
+          end_user_id: userId,
+        }
+      : {
+          // reference-to-video: image + optional audio + prompt with @image1
+          prompt: prompt.trim().slice(0, 3500),
+          image_url,
+          duration: String(safeDuration),
+          aspect_ratio: safeAspect,
+          resolution: "720p",
+          generate_audio: !audio_url,
+          enable_safety_checker: true,
+          end_user_id: userId,
+          ...(audio_url ? { audio_url } : {}),
+        };
 
     const falRes = await fetch(`https://queue.fal.run/${FAL_ENDPOINT}`, {
       method: "POST",

@@ -2637,11 +2637,52 @@ export default function App() {
                     )}
 
                     {/* Credits warning */}
-                    {(profile?.videos_remaining ?? 0) < motionCredits && (
-                      <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>
-                        {lang === "es" ? `Necesitas ${motionCredits} créditos de video. Tienes ${profile?.videos_remaining ?? 0}.` : `You need ${motionCredits} video credits. You have ${profile?.videos_remaining ?? 0}.`}
-                      </div>
-                    )}
+                {/* Video pack section when credits = 0 */}
+                {hasPlan && (profile?.videos_remaining ?? 0) < motionCredits && (() => {
+                  const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
+                  const vidPacks = [
+                    { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
+                    { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 },
+                    { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 },
+                  ];
+                  return (
+                    <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>
+                        {lang === "es" ? "🎬 Sin créditos de video" : "🎬 Out of video credits"}
+                      </p>
+                      {isPackEligible ? (
+                        <>
+                          <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 10px" }}>
+                            {lang === "es" ? "Agrega créditos extra" : "Add extra credits"}
+                          </p>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {vidPacks.map(pk => (
+                              <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)}
+                                style={{ flex: 1, padding: "10px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
+                                <p style={{ fontSize: 10, fontWeight: 600, color: "#8a8aaa", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: 1 }}>{pk.label}</p>
+                                <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount}</p>
+                                <p style={{ fontSize: 9, color: "#8a8aaa", margin: "0 0 4px" }}>{lang === "es" ? "videos" : "videos"}</p>
+                                <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
+                              </button>
+                            ))}
+                          </div>
+                          <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", marginTop: 7, padding: "7px", fontSize: 10, color: "#5a5a70", background: "transparent", border: "1px solid rgba(255,255,255,.06)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
+                            {lang === "es" ? "O actualiza tu plan →" : "Or upgrade plan →"}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 10px" }}>
+                            {lang === "es" ? "Actualiza a Básico o superior para comprar packs extra" : "Upgrade to Basic or higher to buy extra packs"}
+                          </p>
+                          <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", padding: "10px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
+                            {lang === "es" ? "Actualizar plan →" : "Upgrade plan →"}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
 
                     {/* Generate button */}
                     <button onClick={handleMotionGen} disabled={!canGenMotion}
@@ -2675,6 +2716,22 @@ export default function App() {
             const uploadDirFile = async (file, isImg) => {
               const key = isImg ? "img" : "aud";
               setDirUploadError(null);
+
+              // Block video files entirely — Director only accepts images and audio
+              if (file.type.startsWith("video/")) {
+                setDirUploadError(lang === "es"
+                  ? "❌ No se permiten videos en Director. Solo imágenes (jpg, png, webp) y audio (mp3, wav, m4a)."
+                  : "❌ Videos are not allowed in Director. Only images (jpg, png, webp) and audio (mp3, wav, m4a).");
+                return;
+              }
+
+              // In keepFrame mode, don't allow audio
+              if (!isImg && dirKeepFrame) {
+                setDirUploadError(lang === "es"
+                  ? "⚠️ En modo 'Mantener frame inicial' no se puede agregar audio. Desactivá el interruptor para usar audio."
+                  : "⚠️ Audio is not available in 'Keep initial frame' mode. Disable the toggle to use audio.");
+                return;
+              }
               setDirUploading(p => ({ ...p, [key]: true }));
               try {
                 // Compress image with canvas
@@ -2747,10 +2804,11 @@ export default function App() {
                   method: "POST", headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     image_url: dirImageUrl,
-                    audio_url: dirAudioUrl || undefined,
+                    audio_url: (!dirKeepFrame && dirAudioUrl) ? dirAudioUrl : undefined,
                     prompt: dirPrompt.trim() + (dirKeepFrame ? " Mantain the exact initial frame as provided." : ""),
                     duration: dirDuration,
                     aspect_ratio: dirAspect,
+                    keep_frame: dirKeepFrame,
                     user_token: session?.access_token,
                   }),
                 });
@@ -2822,7 +2880,8 @@ export default function App() {
                     </label>
                   </div>
 
-                  {/* Audio */}
+                  {/* Audio — hidden in keepFrame mode */}
+                  {!dirKeepFrame && (
                   <div>
                     <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "🎵 Audio (opcional)" : "🎵 Audio (optional)"}</p>
                     <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 130, borderRadius: 12, border: dirAudio ? "1px solid rgba(180,74,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: dirAudio ? "rgba(180,74,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
@@ -2838,9 +2897,12 @@ export default function App() {
                       <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac" style={{ display: "none" }} onChange={e => uploadDirFile(e.target.files[0], false)} />
                     </label>
                   </div>
+                  )}
                 </div>
                 <p style={{ fontSize: 9, color: "#3a3a50", margin: "-4px 0 14px", textAlign: "center" }}>
-                  {lang === "es" ? "📎 Solo imagen · jpg, png, webp · Audio: mp3, wav, m4a" : "📎 Image only · jpg, png, webp · Audio: mp3, wav, m4a"}
+                  {dirKeepFrame
+                    ? (lang === "es" ? "📎 Solo imagen · jpg, png, webp · El video comenzará exactamente con tu frame" : "📎 Image only · jpg, png, webp · Video will start exactly with your frame")
+                    : (lang === "es" ? "📎 Solo imagen · jpg, png, webp · Audio: mp3, wav, m4a" : "📎 Image only · jpg, png, webp · Audio: mp3, wav, m4a")}
                 </p>
 
                 {dirUploadError && (
@@ -2904,11 +2966,52 @@ export default function App() {
                   </p>
                 </div>
 
-                {(profile?.videos_remaining ?? 0) < dirCredits && (
-                  <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>
-                    {lang === "es" ? `Necesitás ${dirCredits} créditos. Tenés ${profile?.videos_remaining ?? 0}.` : `You need ${dirCredits} credits. You have ${profile?.videos_remaining ?? 0}.`}
-                  </div>
-                )}
+                {/* Video pack section when credits insufficient */}
+                {hasPlan && (profile?.videos_remaining ?? 0) < dirCredits && (() => {
+                  const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
+                  const vidPacks = [
+                    { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
+                    { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 },
+                    { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 },
+                  ];
+                  return (
+                    <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>
+                        {lang === "es" ? "🎬 Sin créditos de video" : "🎬 Out of video credits"}
+                      </p>
+                      {isPackEligible ? (
+                        <>
+                          <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 10px" }}>
+                            {lang === "es" ? "Agrega créditos extra" : "Add extra credits"}
+                          </p>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {vidPacks.map(pk => (
+                              <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)}
+                                style={{ flex: 1, padding: "10px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
+                                <p style={{ fontSize: 10, fontWeight: 600, color: "#8a8aaa", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: 1 }}>{pk.label}</p>
+                                <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount}</p>
+                                <p style={{ fontSize: 9, color: "#8a8aaa", margin: "0 0 4px" }}>videos</p>
+                                <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
+                              </button>
+                            ))}
+                          </div>
+                          <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", marginTop: 7, padding: "7px", fontSize: 10, color: "#5a5a70", background: "transparent", border: "1px solid rgba(255,255,255,.06)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
+                            {lang === "es" ? "O actualiza tu plan →" : "Or upgrade plan →"}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 10px" }}>
+                            {lang === "es" ? "Actualiza a Básico o superior para comprar packs extra" : "Upgrade to Basic or higher to buy extra packs"}
+                          </p>
+                          <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", padding: "10px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
+                            {lang === "es" ? "Actualizar plan →" : "Upgrade plan →"}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <button onClick={handleDirGen} disabled={!canGenDir}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGenDir ? "#06060e" : "#3a3a50", background: canGenDir ? "linear-gradient(135deg,#00f0ff,#b44aff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGenDir ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGenDir ? "0 0 22px rgba(0,240,255,.25)" : "none", transition: "all .2s" }}>
