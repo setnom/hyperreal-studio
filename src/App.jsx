@@ -1362,18 +1362,34 @@ export default function App() {
   };
 
   const saveGenResult = async (isVid, data) => {
-    // Backend already deducted credits and saved generation, just refresh profile
-    try {
-      const u = await sb.getUser(session.access_token);
-      if (u?.id) {
-        const p = await sb.getProfile(u.id, session.access_token);
-        if (p) setProfile(prev => ({ ...prev, images_remaining: p.images_remaining, videos_remaining: p.videos_remaining }));
-      }
-    } catch {}
-    setGens(prev => [{ id: Date.now(), type: isVid ? "video" : "image", prompt, style: tab === T.IMG ? style : "cinematic", created_at: new Date().toISOString(), url: data.url }, ...prev]);
+    // Update UI immediately with the result
     setGenResult({ type: isVid ? "video" : "image", url: data.url, resolution: data.resolution, audio: data.audio });
     setGenning(false);
     setTimeout(() => setGenStatus({ phase: "idle", position: null, elapsed: 0 }), 3000);
+
+    // Refresh everything from Supabase — profile credits + real generation history
+    // Small delay to ensure DB update from status.js has propagated
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      const u = await sb.getUser(session.access_token);
+      if (u?.id) {
+        // Update credits
+        const p = await sb.getProfile(u.id, session.access_token);
+        if (p) setProfile(prev => ({ ...prev, images_remaining: p.images_remaining, videos_remaining: p.videos_remaining }));
+        // Refresh real generation list from DB (has correct IDs and URLs)
+        const g = await sb.getGens(u.id, session.access_token);
+        if (Array.isArray(g) && g.length > 0) {
+          const mapped = g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url }));
+          setGens(mapped);
+        } else {
+          // Fallback — prepend locally if DB fetch fails
+          setGens(prev => [{ id: Date.now(), type: isVid ? "video" : "image", prompt, style: tab === T.IMG ? style : "cinematic", created_at: new Date().toISOString(), url: data.url }, ...prev]);
+        }
+      }
+    } catch {
+      // Fallback on any error
+      setGens(prev => [{ id: Date.now(), type: isVid ? "video" : "image", prompt, style: tab === T.IMG ? style : "cinematic", created_at: new Date().toISOString(), url: data.url }, ...prev]);
+    }
   };
 
   const STRIPE_PORTAL = "https://billing.stripe.com/p/login/14AdR90eK7q1eCjbQbeME00";
