@@ -83,7 +83,7 @@ export default async function handler(req, res) {
 
   try {
     const falBody = {
-      prompt: prompt.trim().slice(0, 800),
+      prompt: prompt.trim().slice(0, 3500),
       image_url,
       duration: String(safeDuration),
       aspect_ratio: safeAspect,

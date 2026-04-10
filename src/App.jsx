@@ -2733,7 +2733,7 @@ export default function App() {
                         {lang === "es" ? "Director está disponible para planes Pro y Creator." : "Director is available on Pro & Creator plans."}
                       </p>
                       <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 18px" }}>
-                        {lang === "es" ? "Generación cinematográfica con Seedance 2.0 y audio nativo." : "Cinematic generation with Seedance 2.0 and native audio."}
+                        {lang === "es" ? "Generación cinematográfica con IA de última generación y audio nativo." : "Cinematic generation with cutting-edge AI and native audio."}
                       </p>
                       <button onClick={() => setPage(P.PLANS)} style={{ padding: "12px 28px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#00f0ff,#b44aff)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 20px rgba(0,240,255,.3)" }}>
                         {lang === "es" ? "🚀 Cambiar de plan" : "🚀 Upgrade plan"}
@@ -2744,7 +2744,7 @@ export default function App() {
                 {/* Header */}
                 <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 10, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.1)" }}>
                   <p style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", margin: "0 0 2px" }}>🎬 Director Premium</p>
-                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Seedance 2.0 · IA cinematográfica con audio nativo · Solo imagen de referencia" : "Seedance 2.0 · Cinematic AI with native audio · Reference image only"}</p>
+                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "IA cinematográfica con audio nativo · Solo imagen de referencia" : "Cinematic AI with native audio · Reference image only"}</p>
                 </div>
 
                 {/* Upload area - image + audio side by side */}
@@ -2798,8 +2798,8 @@ export default function App() {
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena *" : "Scene description *"}</p>
                   <textarea value={dirPrompt} onChange={e => setDirPrompt(e.target.value)}
                     placeholder={lang === "es" ? "Describe la escena en detalle. Usá @image1 para referenciar tu imagen. Ej: @image1 camina por una calle de noche con luces de neón, cámara lenta, lluvia..." : "Describe the scene in detail. Use @image1 to reference your image. E.g. @image1 walks down a neon-lit street at night, slow motion, rain..."}
-                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={800} />
-                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{dirPrompt.length}/800</p>
+                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
+                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}><span style={{ color: dirPrompt.length > 3000 ? "#ffb800" : "#3a3a50" }}>{dirPrompt.length}</span>/3500</p>
                 </div>
 
                 {/* Aspect ratio */}
@@ -2812,18 +2812,27 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Duration + credits */}
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
-                    {lang === "es" ? `Duración — ${dirDuration}s` : `Duration — ${dirDuration}s`} <span style={{ color: "#00f0ff", fontWeight: 700 }}>({dirCredits} {lang === "es" ? "créditos" : "credits"})</span>
-                  </p>
-                  <div style={{ display: "flex", gap: 5 }}>
-                    {[5,7,10,15].map(d => (
-                      <button key={d} onClick={() => setDirDuration(d)} style={{ flex: 1, padding: "8px 0", fontSize: 11, fontWeight: dirDuration === d ? 700 : 400, color: dirDuration === d ? "#00f0ff" : "#5a5a70", background: dirDuration === d ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: dirDuration === d ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{d}s</button>
-                    ))}
+                {/* Duration + credits — slider 5-15s */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>{lang === "es" ? "Duración" : "Duration"}</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 16, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: "#00f0ff" }}>{dirDuration}s</span>
+                      <span style={{ fontSize: 10, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 5, padding: "2px 8px", fontWeight: 700 }}>{dirCredits} {lang === "es" ? "créditos" : "credits"}</span>
+                    </div>
                   </div>
-                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "4px 0 0" }}>
-                    {lang === "es" ? "5s = 3 créditos · 6-10s = 4 créditos · 11-15s = 5 créditos" : "5s = 3 credits · 6-10s = 4 credits · 11-15s = 5 credits"}
+                  <div style={{ position: "relative", paddingBottom: 4 }}>
+                    <input type="range" min={5} max={15} step={1} value={dirDuration}
+                      onChange={e => setDirDuration(Number(e.target.value))}
+                      style={{ width: "100%", accentColor: "#00f0ff", cursor: "pointer", height: 4 }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                      <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>5s</span>
+                      <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>10s</span>
+                      <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>15s</span>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "6px 0 0", textAlign: "center" }}>
+                    {lang === "es" ? "5s = 3 créditos · 6–10s = 4 créditos · 11–15s = 5 créditos" : "5s = 3 credits · 6–10s = 4 credits · 11–15s = 5 credits"}
                   </p>
                 </div>
 
