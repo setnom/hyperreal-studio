@@ -103,10 +103,28 @@ export default async function handler(req, res) {
     console.error("Upload method 2 failed:", e.message);
   }
 
-  // Method 3: Data URL fallback (small images only)
-  if (buffer.length < 2 * 1024 * 1024) {
+  // Method 3: Self-hosted presigned URL via fal.ai storage initiate (retry with longer timeout)
+  try {
+    const initRes2 = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
+      method: "POST",
+      headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content_type: mimeType, file_name: `upload_${Date.now()}.${ext}` }),
+    });
+    if (initRes2.ok) {
+      const { upload_url, file_url } = await initRes2.json();
+      if (upload_url) {
+        const putRes2 = await fetch(upload_url, { method: "PUT", headers: { "Content-Type": mimeType }, body: buffer });
+        if (putRes2.ok) return res.status(200).json({ success: true, url: file_url });
+      }
+    }
+  } catch (e) {
+    console.error("Upload method 3 failed:", e.message);
+  }
+
+  // Method 4: Return data URL as last resort (only safe for small files that fal.ai will accept inline)
+  if (buffer.length < 4 * 1024 * 1024) {
     return res.status(200).json({ success: true, url: data_url });
   }
 
-  return res.status(500).json({ error: "Failed to upload image. Try a smaller image." });
+  return res.status(500).json({ error: "Upload failed. All methods exhausted. Please try a smaller file." });
 }

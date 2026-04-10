@@ -12,6 +12,9 @@ const ALLOWED_HOSTS = [
   "nanobanano.studio",
 ];
 function isSafeUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  // Allow data URLs for inline image data (base64 encoded, image types only)
+  if (url.startsWith("data:image/")) return true;
   try {
     const p = new URL(url);
     return p.protocol === "https:" && ALLOWED_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("." + h));

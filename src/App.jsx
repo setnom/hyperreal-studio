@@ -2326,8 +2326,24 @@ export default function App() {
                   const d = await r.json();
                   if (d.error) throw new Error(d.error);
                   if (!d.url) throw new Error("No URL returned");
-                  if (isImg) setMotionImageUrl(d.url);
-                  else setMotionVideoUrl(d.url);
+                  // If backend returned a data URL (fal.ai was down), use presigned upload instead
+                  if (d.url.startsWith("data:")) {
+                    const mime = isImg ? "image/jpeg" : file.type;
+                    const initR = await fetch("/api/upload-init", {
+                      method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ mime_type: mime, file_name: `motion.${isImg ? "jpg" : file.name.split(".").pop()}`, user_token: session?.access_token }),
+                    });
+                    const initD = await initR.json();
+                    if (!initD.upload_url) throw new Error(initD.error || "No upload URL");
+                    const blob = await (await fetch(dataUrl)).blob();
+                    const putRes = await fetch(initD.upload_url, { method: "PUT", headers: { "Content-Type": mime }, body: blob });
+                    if (!putRes.ok) throw new Error(`PUT failed: ${putRes.status}`);
+                    if (isImg) setMotionImageUrl(initD.file_url);
+                    else setMotionVideoUrl(initD.file_url);
+                  } else {
+                    if (isImg) setMotionImageUrl(d.url);
+                    else setMotionVideoUrl(d.url);
+                  }
                 } else {
                   // Larger — presigned PUT directly to fal.ai storage (CSP allows it)
                   const mime = isImg ? "image/jpeg" : file.type;
