@@ -134,8 +134,8 @@ const TEXTS = {
     gen_video: "Generar Video",
     generating_img: "Generando imagen",
     generating_vid: "Generando video",
-    powered_img: "Imagen Premium IA",
-    powered_vid: "Video Premium IA",
+    powered_img: "Contenido premium directo de nuestros GPUs",
+    powered_vid: "Contenido premium directo de nuestros GPUs",
     est_time: "puede tardar de",
     est_to: "a",
     est_min: "min",
@@ -252,8 +252,8 @@ const TEXTS = {
     gen_video: "Generate Video",
     generating_img: "Generating image",
     generating_vid: "Generating video",
-    powered_img: "Imagen Premium IA",
-    powered_vid: "Video Premium IA",
+    powered_img: "Contenido premium directo de nuestros GPUs",
+    powered_vid: "Contenido premium directo de nuestros GPUs",
     est_time: "may take from",
     est_to: "to",
     est_min: "min",
@@ -432,7 +432,7 @@ function Generating({ type, duration, lang, genStatus }) {
     <div style={{ position: "absolute", inset: 0, background: "rgba(6,6,14,.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 10, borderRadius: 14, backdropFilter: "blur(8px)" }}>
       <div style={{ width: 40, height: 40, border: `3px solid rgba(0,240,255,.12)`, borderTop: `3px solid ${phaseColor}`, borderRadius: "50%", animation: phase === "done" ? "none" : "spin .8s linear infinite", marginBottom: 12 }} />
       <p style={{ color: "#e0e0f0", fontSize: 14, fontWeight: 600, margin: "0 0 3px" }}>{phaseLabel}{phase !== "done" && d}</p>
-      <p style={{ color: "#5a5a70", fontSize: 11, margin: "0 0 4px" }}>Video Premium IA</p>
+      <p style={{ color: "#5a5a70", fontSize: 11, margin: "0 0 4px" }}>Contenido premium directo de nuestros GPUs</p>
       <p style={{ color: "#3a3a50", fontSize: 10, margin: "0 0 10px", fontFamily: "'JetBrains Mono',monospace" }}>
         {elapsed > 0 ? formatTime(elapsed) : "—"} {phase === "generating" ? (isEn ? `· may take ${estMin}–${estMax} min` : `· puede tardar ${estMin}–${estMax} min`) : ""}
       </p>
@@ -2266,7 +2266,7 @@ export default function App() {
               setMotionUploadProgress(p => ({ ...p, [fieldKey]: true }));
 
               try {
-                const MAX_BASE64 = 4 * 1024 * 1024; // 4MB threshold
+                const MAX_BASE64 = 10 * 1024 * 1024; // 10MB threshold — use direct upload above this
 
                 if (file.size > MAX_BASE64) {
                   // Large file — use presigned URL direct upload to fal.ai storage

@@ -5,7 +5,7 @@ export const config = {
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const ALLOWED_MIME   = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "video/mp4", "video/quicktime", "video/webm", "video/x-m4v"];
-const MAX_B64_SIZE   = 8 * 1024 * 1024; // 8MB decoded
+const MAX_B64_SIZE   = 20 * 1024 * 1024; // 20MB base64 string (~15MB actual file)
 
 async function verifyToken(user_token) {
   const anonKey = process.env.SUPABASE_ANON_KEY;
@@ -51,12 +51,13 @@ export default async function handler(req, res) {
   if (!matches) return res.status(400).json({ error: "Invalid data URL format" });
 
   const mimeType = matches[1].toLowerCase();
+  console.log(`Upload: mime=${mimeType} b64size=${Math.round(base64Data.length/1024)}KB`);
   if (!ALLOWED_MIME.includes(mimeType))
     return res.status(400).json({ error: "Only image files (jpeg, png, webp, gif) and video files (mp4, mov, webm) are allowed" });
 
   const base64Data = matches[2];
   if (base64Data.length > MAX_B64_SIZE)
-    return res.status(400).json({ error: "Image too large. Max 8MB." });
+    return res.status(400).json({ error: "File too large for this upload method. Use a smaller file." });
 
   let buffer;
   try {
