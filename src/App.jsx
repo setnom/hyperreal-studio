@@ -607,7 +607,7 @@ export default function App() {
   const [motionOrientation, setMotionOrientation] = useState("video"); // "video" | "image"
   const [motionSceneFrom, setMotionSceneFrom] = useState("image"); // "image" | "video"
   const [motionPrompt, setMotionPrompt] = useState("");
-  const [motionDur, setMotionDur] = useState(8); // duration in seconds
+  const [motionDur, setMotionDur] = useState(5); // start at 5 — safe for all plans
   const [motionUploadProgress, setMotionUploadProgress] = useState({ img: false, vid: false });
   const [motionUploadError, setMotionUploadError] = useState(null);
   const [motionImagePreview, setMotionImagePreview] = useState(null); // blob URL for preview
@@ -653,6 +653,14 @@ export default function App() {
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, [userPanelOpen]);
+
+  // Clamp motionDur to plan max whenever tab changes to Motion or plan changes
+  useEffect(() => {
+    if (tab === T.MOT && profile?.plan) {
+      const maxDur = profile.plan === "basic" ? 5 : profile.plan === "pro" ? 8 : 15;
+      if (motionDur > maxDur) setMotionDur(maxDur);
+    }
+  }, [tab, profile?.plan]);
 
   useEffect(() => {
     const hash = window.location.hash;
@@ -2487,6 +2495,9 @@ export default function App() {
                       const planMax = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
                       const effectiveMax = Math.min(planMax, orientationMax);
                       const durations = profile?.plan === "basic" ? [5] : profile?.plan === "pro" ? [8] : [5,8,10,15].filter(d => d <= effectiveMax);
+                      // Auto-select if only one option or current selection is invalid
+                      if (durations.length === 1 && motionDur !== durations[0]) setMotionDur(durations[0]);
+                      else if (!durations.includes(motionDur)) setMotionDur(durations[0]);
                       return (
                         <div style={{ marginBottom: 12 }}>
                           <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
