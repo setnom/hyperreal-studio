@@ -46,7 +46,10 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const image_url = body.image_url || body.image_path;
   const video_url = body.video_url || body.video_path;
-  const { character_orientation, prompt, duration, user_token } = body;
+  const { character_orientation, prompt, video_duration, user_token } = body;
+
+  // video_duration sent by frontend after reading metadata
+  const videoDurSec = typeof video_duration === "number" && isFinite(video_duration) ? video_duration : 0;
 
   const FAL_KEY = process.env.FAL_KEY;
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -79,8 +82,11 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: "Your subscription has a payment issue." });
 
   const maxDur = MOTION_MAX_DUR[plan] || 5;
-  const finalDur = Math.min(safeDur, maxDur);
-  const creditsNeeded = (plan === "creator" && finalDur > 8) ? 3 : 2;
+  // If video is longer than plan allows, reject — frontend should have caught this
+  if (videoDurSec > maxDur + 0.5) {
+    return res.status(403).json({ error: `Video duration (${videoDurSec.toFixed(1)}s) exceeds plan limit (${maxDur}s).` });
+  }
+  const creditsNeeded = (plan === "creator" && videoDurSec > 8) ? 3 : 2;
 
   if ((videos_remaining ?? 0) < creditsNeeded)
     return res.status(403).json({ error: `Not enough credits. Need ${creditsNeeded}, have ${videos_remaining}.` });
@@ -105,7 +111,6 @@ export default async function handler(req, res) {
         image_url,
         video_url,
         character_orientation: safeOrientation,
-        duration: finalDur,
         cfg_scale: 0.8,
         generate_audio: false,
         ...(prompt?.trim() ? { prompt: prompt.trim().slice(0, 500) } : {}),

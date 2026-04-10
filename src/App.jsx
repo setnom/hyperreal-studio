@@ -612,6 +612,7 @@ export default function App() {
   const [motionUploadError, setMotionUploadError] = useState(null);
   const [motionImagePreview, setMotionImagePreview] = useState(null); // blob URL for preview
   const [motionVideoPreview, setMotionVideoPreview] = useState(null); // blob URL for preview
+  const [motionVideoDuration, setMotionVideoDuration] = useState(0); // actual duration of uploaded video
   const [genning, setGenning] = useState(false);
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
@@ -2252,7 +2253,7 @@ export default function App() {
           {tab === T.MOT && (() => {
             const isMotionEligible = ["basic","pro","creator"].includes(profile?.plan);
             const motionMaxDur = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
-            const motionCredits = (profile?.plan === "creator" && motionDur > 8) ? 3 : 2;
+            const motionCredits = (profile?.plan === "creator" && motionVideoDuration > 8) ? 3 : 2;
             const canGenMotion = isMotionEligible && motionImageUrl && motionVideoUrl && !genning && !motionUploadProgress.img && !motionUploadProgress.vid && (profile?.videos_remaining ?? 0) >= motionCredits;
 
             const uploadMotionFile = async (file, isImg) => {
@@ -2260,22 +2261,47 @@ export default function App() {
               const fieldKey = isImg ? "img" : "vid";
               setMotionUploadError(null);
 
-              // Videos: validate 10MB hard limit (fal.ai model limit) + smart guidance
-              if (!isImg && file.size > 10 * 1024 * 1024) {
-                const mb = (file.size / 1024 / 1024).toFixed(1);
-                const isIphone = /iPhone|iPad/i.test(navigator.userAgent);
-                const isMobile = /Android/i.test(navigator.userAgent);
-                const tip = isIphone
-                  ? (lang === "es" ? " En iPhone: Ajustes → Cámara → Formato → Compatible. Grabá en 1080p." : " On iPhone: Settings → Camera → Format → Most Compatible. Record in 1080p.")
-                  : isMobile
-                    ? (lang === "es" ? " Comprimí con la app VidCompact o grabá en 1080p." : " Compress with VidCompact app or record in 1080p.")
-                    : (lang === "es" ? " Comprimí con Handbrake (gratis) o exportá en calidad media." : " Compress with Handbrake (free) or export at medium quality.");
-                setMotionUploadError((lang === "es" ? `Video muy pesado (${mb}MB). Máx 10MB.` : `Video too large (${mb}MB). Max 10MB.`) + tip);
-                return;
-              }
+              // Videos: validate size AND duration before accepting
+              if (!isImg) {
+                // Size check
+                if (file.size > 10 * 1024 * 1024) {
+                  const mb = (file.size / 1024 / 1024).toFixed(1);
+                  const isIphone = /iPhone|iPad/i.test(navigator.userAgent);
+                  const isMobile = /Android/i.test(navigator.userAgent);
+                  const tip = isIphone
+                    ? (lang === "es" ? " En iPhone: Ajustes → Cámara → Formato → Compatible. Grabá en 1080p." : " On iPhone: Settings → Camera → Format → Most Compatible. Record in 1080p.")
+                    : isMobile
+                      ? (lang === "es" ? " Comprimí con VidCompact o grabá en 1080p." : " Compress with VidCompact or record in 1080p.")
+                      : (lang === "es" ? " Comprimí con Handbrake (gratis) o exportá en calidad media." : " Compress with Handbrake (free) or export at medium quality.");
+                  setMotionUploadError((lang === "es" ? `Video muy pesado (${mb}MB). Máx 10MB.` : `Video too large (${mb}MB). Max 10MB.`) + tip);
+                  return;
+                }
 
-              // Images: any size — canvas will compress automatically
-              // No size rejection for images
+                // Duration check — fal.ai generates the same duration as the reference video
+                // So we must limit the video duration to the plan max
+                const planMaxSec = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
+                try {
+                  const videoDuration = await new Promise((resolve, reject) => {
+                    const vid = document.createElement("video");
+                    vid.preload = "metadata";
+                    vid.onloadedmetadata = () => { URL.revokeObjectURL(vid.src); resolve(vid.duration); };
+                    vid.onerror = () => reject(new Error("Cannot read video metadata"));
+                    vid.src = URL.createObjectURL(file);
+                  });
+                  if (videoDuration > planMaxSec + 0.5) { // 0.5s tolerance
+                    setMotionUploadError(
+                      lang === "es"
+                        ? `Tu video dura ${videoDuration.toFixed(1)}s pero tu plan permite máximo ${planMaxSec}s. Recortá el video antes de subirlo.`
+                        : `Your video is ${videoDuration.toFixed(1)}s but your plan allows max ${planMaxSec}s. Please trim the video before uploading.`
+                    );
+                    return;
+                  }
+                  setMotionVideoDuration(videoDuration);
+                } catch (e) {
+                  console.warn("Could not read video duration:", e.message);
+                  // Continue anyway — backend will handle it
+                }
+              }
 
               // Show preview immediately
               if (isImg) {
@@ -2371,9 +2397,9 @@ export default function App() {
                   body: JSON.stringify({
                     image_url: motionImageUrl,
                     video_url: motionVideoUrl,
+                    video_duration: motionVideoDuration,
                     character_orientation: motionOrientation,
                     prompt: motionPrompt.trim() || undefined,
-                    duration: motionDur,
                     user_token: session?.access_token,
                   }),
                 });
@@ -2489,28 +2515,18 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Duration — depends on plan and orientation */}
-                    {(() => {
-                      const orientationMax = motionOrientation === "image" ? 10 : 30;
-                      const planMax = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
-                      const effectiveMax = Math.min(planMax, orientationMax);
-                      const durations = profile?.plan === "basic" ? [5] : profile?.plan === "pro" ? [8] : [5,8,10,15].filter(d => d <= effectiveMax);
-                      // Auto-select if only one option or current selection is invalid
-                      if (durations.length === 1 && motionDur !== durations[0]) setMotionDur(durations[0]);
-                      else if (!durations.includes(motionDur)) setMotionDur(durations[0]);
-                      return (
-                        <div style={{ marginBottom: 12 }}>
-                          <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
-                            {lang === "es" ? `Duración — ${motionDur}s` : `Duration — ${motionDur}s`} <span style={{ color: "#ff6b2b", fontWeight: 700 }}>({motionCredits} {lang === "es" ? "créditos" : "credits"})</span>
-                          </p>
-                          <div style={{ display: "flex", gap: 5 }}>
-                            {durations.map(d => (
-                              <button key={d} onClick={() => setMotionDur(d)} style={{ flex: 1, padding: "8px 0", fontSize: 11, fontWeight: motionDur === d ? 700 : 400, color: motionDur === d ? "#ff6b2b" : "#5a5a70", background: motionDur === d ? "rgba(255,107,43,.1)" : "rgba(255,255,255,.02)", border: motionDur === d ? "1px solid rgba(255,107,43,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{d}s</button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
+                    {/* Duration info — real duration comes from uploaded video */}
+                    <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,107,43,.05)", border: "1px solid rgba(255,107,43,.1)" }}>
+                      <p style={{ fontSize: 10, color: "#ff6b2b", fontWeight: 700, margin: "0 0 3px" }}>
+                        ⏱ {lang === "es" ? "Duración = duración del video que subiste" : "Duration = length of your uploaded video"}
+                      </p>
+                      <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>
+                        {lang === "es"
+                          ? `Límite de tu plan: máx ${motionMaxDur}s · ${motionCredits} crédito${motionCredits > 1 ? "s" : ""} de video`
+                          : `Your plan limit: max ${motionMaxDur}s · ${motionCredits} video credit${motionCredits > 1 ? "s" : ""}`}
+                        {motionVideoDuration > 0 && <span style={{ color: "#00f0ff", marginLeft: 8 }}>· {lang === "es" ? "Video detectado:" : "Detected:"} {motionVideoDuration.toFixed(1)}s ✓</span>}
+                      </p>
+                    </div>
 
                     {/* Additional prompt */}
                     <div style={{ marginBottom: 14 }}>
