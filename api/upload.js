@@ -1,5 +1,3 @@
-export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
-
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const ALLOWED_MIME = ["image/jpeg","image/jpg","image/png","image/webp","image/gif","video/mp4","video/quicktime","video/webm","video/x-m4v"];

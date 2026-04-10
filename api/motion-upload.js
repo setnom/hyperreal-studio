@@ -1,7 +1,5 @@
 // Uploads motion reference files to Supabase Storage (private bucket)
 // Files are deleted by motion.js after generation completes
-export const config = { api: { bodyParser: { sizeLimit: '200mb' } } };
-
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const BUCKET = "motion-refs";
