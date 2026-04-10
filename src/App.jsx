@@ -674,6 +674,11 @@ export default function App() {
     }
   }, [tab, profile?.plan]);
 
+  // Auto-redirect logged-in users away from landing page
+  useEffect(() => {
+    if (page === P.LAND && session) setPage(P.DASH);
+  }, [page, session]);
+
   useEffect(() => {
     const hash = window.location.hash;
     const params = new URLSearchParams(window.location.search);
@@ -1681,8 +1686,6 @@ export default function App() {
 
   // ═══ LANDING ═══
   if (page === P.LAND) {
-    // Auto-redirect logged-in users to dashboard
-    if (session && profile) { setPage(P.DASH); return null; }
     return wrap(
     <>
       {/* Nav */}
@@ -1992,18 +1995,39 @@ export default function App() {
 
         {/* Main area */}
         <div>
-          {/* Tabs (mobile shows gallery tab, desktop doesn't need it) */}
-          <div style={{ display: "flex", gap: 3, marginBottom: 16, background: "rgba(255,255,255,.02)", borderRadius: 9, padding: 3 }}>
-            {[
-              { k: T.IMG, l: t("tab_image") },
-              { k: T.VID, l: t("tab_video") },
-              { k: T.MOT, l: t("tab_motion") },
-              { k: T.DIR, l: t("tab_director") },
-              ...(!isDesk ? [{ k: T.GAL, l: t("tab_gallery") }] : []),
-            ].map(tb => (
-              <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : tb.k === T.DIR ? "rgba(0,240,255,.1)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : tab === tb.k && tb.k === T.DIR ? "1px solid rgba(0,240,255,.2)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
-            ))}
-          </div>
+          {/* Tabs */}
+          {isDesk ? (
+            <div style={{ display: "flex", gap: 3, marginBottom: 16, background: "rgba(255,255,255,.02)", borderRadius: 9, padding: 3 }}>
+              {[
+                { k: T.IMG, l: t("tab_image") },
+                { k: T.VID, l: t("tab_video") },
+                { k: T.MOT, l: t("tab_motion") },
+                { k: T.DIR, l: t("tab_director") },
+              ].map(tb => (
+                <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : tb.k === T.DIR ? "rgba(0,240,255,.1)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : tab === tb.k && tb.k === T.DIR ? "1px solid rgba(0,240,255,.2)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
+              ))}
+            </div>
+          ) : (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", gap: 3, marginBottom: 3, background: "rgba(255,255,255,.02)", borderRadius: 9, padding: 3 }}>
+                {[
+                  { k: T.IMG, l: lang === "es" ? "🖼️ Imagen" : "🖼️ Image" },
+                  { k: T.VID, l: lang === "es" ? "🎬 Video" : "🎬 Video" },
+                  { k: T.GAL, l: "📁" },
+                ].map(tb => (
+                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: tb.k === T.GAL ? "0 0 44px" : 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? "rgba(255,255,255,.06)" : "transparent", border: "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 3, background: "rgba(255,107,43,.03)", borderRadius: 9, padding: 3, border: "1px solid rgba(255,107,43,.08)" }}>
+                {[
+                  { k: T.MOT, l: "🎭 Motion" },
+                  { k: T.DIR, l: "🎬 Director" },
+                ].map(tb => (
+                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.15)" : "rgba(0,240,255,.1)") : "transparent", border: tab === tb.k ? (tb.k === T.MOT ? "1px solid rgba(255,107,43,.3)" : "1px solid rgba(0,240,255,.2)") : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(tab === T.IMG || tab === T.VID) && (
             <div style={{ animation: "fadeUp .4s ease" }}>
