@@ -2717,7 +2717,7 @@ export default function App() {
                 if (dirImages.length >= 1) { setDirUploadError(lang === "es" ? "⚠️ En modo frame inicial solo se permite 1 imagen." : "⚠️ Keep frame mode: only 1 image allowed."); return; }
               }
               // Limits
-              if (isImg && dirImages.length >= 5) { setDirUploadError(lang === "es" ? "Máx 5 imágenes." : "Max 5 images."); return; }
+              if (isImg && dirImages.length >= 9) { setDirUploadError(lang === "es" ? "Máx 9 imágenes." : "Max 9 images."); return; }
               if (!isImg && dirAudios.length >= 2) { setDirUploadError(lang === "es" ? "Máx 2 audios." : "Max 2 audios."); return; }
 
               setDirUploading(p => ({ ...p, [isImg ? "img" : "aud"]: true }));
@@ -2859,7 +2859,7 @@ export default function App() {
                       <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, margin: 0 }}>
                         {dirKeepFrame
                           ? (lang === "es" ? "🖼️ Frame inicial *" : "🖼️ Initial frame *")
-                          : (lang === "es" ? `🖼️ Imágenes de referencia * (${dirImages.length}/5)` : `🖼️ Reference images * (${dirImages.length}/5)`)}
+                          : (lang === "es" ? `🖼️ Imágenes de referencia * (${dirImages.length}/9)` : `🖼️ Reference images * (${dirImages.length}/9)`)}
                       </p>
                       {dirImages.length > 0 && !dirKeepFrame && (
                         <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>
@@ -2867,24 +2867,43 @@ export default function App() {
                         </p>
                       )}
                     </div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                       {dirImages.map((img, i) => (
-                        <div key={i} style={{ position: "relative", width: 80, height: 80, borderRadius: 9, overflow: "hidden", border: "1px solid rgba(0,240,255,.3)", flexShrink: 0 }}>
+                        <div key={i} style={{ position: "relative", width: 72, height: 72, borderRadius: 9, overflow: "hidden", border: "1px solid rgba(0,240,255,.25)", flexShrink: 0 }}>
                           <img src={img.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          {img.url && <div style={{ position: "absolute", top: 2, left: 2, background: "rgba(0,240,255,.85)", borderRadius: 3, padding: "1px 5px", fontSize: 8, color: "#06060e", fontWeight: 700 }}>@img{i+1}</div>}
-                          <button onClick={() => setDirImages(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 9, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                          <button onClick={() => setDirImages(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,.75)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                         </div>
                       ))}
                       {/* Add image button */}
-                      {((!dirKeepFrame && dirImages.length < 5) || (dirKeepFrame && dirImages.length === 0)) && (
-                        <label style={{ width: 80, height: 80, borderRadius: 9, border: "1px dashed rgba(255,255,255,.15)", background: "rgba(255,255,255,.02)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      {((!dirKeepFrame && dirImages.length < 9) || (dirKeepFrame && dirImages.length === 0)) && (
+                        <label style={{ width: 72, height: 72, borderRadius: 9, border: "1px dashed rgba(255,255,255,.12)", background: "rgba(255,255,255,.02)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                           {dirUploading.img
                             ? <div style={{ width: 18, height: 18, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
-                            : <><span style={{ fontSize: 20 }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>img</span></>}
-                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadDirFile(e.target.files[0], true)} />
+                            : <><span style={{ fontSize: 22, color: "#5a5a70" }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>img</span></>}
+                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => { e.target.value = ""; uploadDirFile(e.target.files[0], true); }} />
                         </label>
                       )}
                     </div>
+
+                    {/* @ chip bar — tap to insert tag in prompt */}
+                    {dirImages.length >= 1 && !dirKeepFrame && (
+                      <div style={{ marginTop: 8 }}>
+                        <p style={{ fontSize: 9, color: "#3a3a50", margin: "0 0 5px" }}>
+                          {lang === "es" ? "Tocá para insertar en el prompt:" : "Tap to insert in prompt:"}
+                        </p>
+                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                          {dirImages.map((img, i) => (
+                            <div key={i} onClick={() => { const tag = `@image${i+1}`; setDirPrompt(prev => prev ? prev + (prev.endsWith(" ") ? "" : " ") + tag : tag); }}
+                              style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px 4px 5px", borderRadius: 20, background: "rgba(0,240,255,.07)", border: "1px solid rgba(0,240,255,.18)", cursor: "pointer", userSelect: "none" }}
+                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,240,255,.14)"}
+                              onMouseLeave={e => e.currentTarget.style.background = "rgba(0,240,255,.07)"}>
+                              <img src={img.preview} alt="" style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(0,240,255,.3)" }} />
+                              <span style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace" }}>@image{i+1}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Audio section — hidden in keepFrame mode */}

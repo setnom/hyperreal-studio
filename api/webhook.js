@@ -1,12 +1,10 @@
 import Stripe from 'stripe';
 
 async function getRawBody(req) {
-  // If body was already parsed (string or object), re-serialize
   if (req.body) {
     const raw = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
     return Buffer.from(raw);
   }
-  // Stream the raw body
   const chunks = [];
   for await (const chunk of req) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
@@ -23,8 +21,16 @@ const PLAN_CREDITS = {
   creator: { images: 200, videos: 30 },
 };
 
+// Plan hierarchy — higher index = higher tier
+const PLAN_ORDER = ["none", "test", "basic", "pro", "creator"];
+
+function planRank(plan) {
+  const idx = PLAN_ORDER.indexOf(plan || "none");
+  return idx === -1 ? 0 : idx;
+}
+
 const PRICE_TO_PLAN = {
-  "price_1TJYG2EkbBokZiaivYSd44qP":  "test",
+  "price_1TJYG2EkbBokZiaivYSd44qP": "test",
   "price_1TJGutEkbBokZiaidisQbR4y": "basic",
   "price_1TJGvwEkbBokZiaisvzBQCeV": "pro",
   "price_1TJGwtEkbBokZiaiFpc24OZG": "creator",
@@ -41,63 +47,160 @@ function sbHeaders(key) {
   };
 }
 
-// Try to find user by email — case insensitive search
+async function getProfile(userId, serviceKey) {
+  const res = await fetch(
+    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=id,plan,images_remaining,videos_remaining,pending_plan,email&limit=1`,
+    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+  );
+  const data = await res.json();
+  return data?.[0] || null;
+}
+
 async function findUserByEmail(email, serviceKey) {
   if (!email) return null;
   const clean = email.toLowerCase().trim();
   const res = await fetch(
-    `${SB_URL}/rest/v1/profiles?email=ilike.${encodeURIComponent(clean)}&select=id,plan&limit=1`,
+    `${SB_URL}/rest/v1/profiles?email=ilike.${encodeURIComponent(clean)}&select=id,plan,images_remaining,videos_remaining,pending_plan&limit=1`,
     { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
   );
   const data = await res.json();
   if (data?.[0]) return data[0];
 
-  // Fallback: search auth.users table via admin API
   const authRes = await fetch(
     `${SB_URL}/auth/v1/admin/users?email=${encodeURIComponent(clean)}`,
     { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
   );
   const authData = await authRes.json();
   const authUser = authData?.users?.[0];
-  if (authUser?.id) return { id: authUser.id, plan: null };
+  if (authUser?.id) return { id: authUser.id, plan: null, images_remaining: 0, videos_remaining: 0, pending_plan: null };
   return null;
 }
 
-async function setPlan(userId, plan, email, serviceKey, periodEnd = null) {
-  const credits = PLAN_CREDITS[plan];
-  if (!credits) { console.error("Unknown plan:", plan); return; }
-  const res = await fetch(`${SB_URL}/rest/v1/profiles`, {
-    method: "POST",
-    headers: {
-      apikey: serviceKey,
-      Authorization: `Bearer ${serviceKey}`,
-      "Content-Type": "application/json",
-      "Prefer": "resolution=merge-duplicates,return=representation",
-    },
-    body: JSON.stringify({
-      id: userId,
-      email: email || "",
-      plan,
-      images_remaining: credits.images,
-      videos_remaining: credits.videos,
-      subscription_status: "active",
-      subscription_start: new Date().toISOString(),
-      subscription_end: periodEnd || null,
-    }),
-  });
-  const body = await res.text();
-  console.log(`setPlan ${plan} for ${userId}: status=${res.status}, body=${body.slice(0,100)}`);
-}
+// Core plan activation — handles upgrade/downgrade/first-time logic
+async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null, isRenewal = false) {
+  const credits = PLAN_CREDITS[newPlan];
+  if (!credits) { console.error("Unknown plan:", newPlan); return; }
 
-async function deactivatePlan(userId, serviceKey) {
+  // Get current profile state
+  const profile = await getProfile(userId, serviceKey);
+  const currentPlan = profile?.plan || "none";
+  const currentImages = profile?.images_remaining ?? 0;
+  const currentVideos = profile?.videos_remaining ?? 0;
+  const isFirstTime = currentPlan === "none" || currentPlan === null;
+
+  const isUpgrade = planRank(newPlan) > planRank(currentPlan);
+  const isDowngrade = planRank(newPlan) < planRank(currentPlan);
+
+  console.log(`activatePlan: ${currentPlan} → ${newPlan} | upgrade=${isUpgrade} downgrade=${isDowngrade} renewal=${isRenewal} firstTime=${isFirstTime}`);
+
+  if (isRenewal) {
+    // Monthly renewal — check if there's a pending downgrade to apply
+    const pendingPlan = profile?.pending_plan;
+    if (pendingPlan && VALID_PLANS.includes(pendingPlan)) {
+      const pendingCredits = PLAN_CREDITS[pendingPlan];
+      console.log(`Applying pending downgrade: ${currentPlan} → ${pendingPlan}`);
+      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+        method: "PATCH",
+        headers: sbHeaders(serviceKey),
+        body: JSON.stringify({
+          plan: pendingPlan,
+          images_remaining: pendingCredits.images,
+          videos_remaining: pendingCredits.videos,
+          subscription_status: "active",
+          subscription_start: new Date().toISOString(),
+          subscription_end: periodEnd || null,
+          pending_plan: null,
+        }),
+      });
+      console.log(`✓ Downgrade applied: ${pendingPlan} for ${email}`);
+    } else {
+      // Normal renewal — reset credits to current plan value
+      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+        method: "PATCH",
+        headers: sbHeaders(serviceKey),
+        body: JSON.stringify({
+          plan: currentPlan,
+          images_remaining: PLAN_CREDITS[currentPlan]?.images ?? credits.images,
+          videos_remaining: PLAN_CREDITS[currentPlan]?.videos ?? credits.videos,
+          subscription_status: "active",
+          subscription_start: new Date().toISOString(),
+          subscription_end: periodEnd || null,
+        }),
+      });
+      console.log(`✓ Renewal reset: ${currentPlan} credits for ${email}`);
+    }
+    return;
+  }
+
+  if (isFirstTime) {
+    // First purchase — assign full credits, activate plan immediately
+    await fetch(`${SB_URL}/rest/v1/profiles`, {
+      method: "POST",
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify({
+        id: userId,
+        email: email || "",
+        plan: newPlan,
+        images_remaining: credits.images,
+        videos_remaining: credits.videos,
+        subscription_status: "active",
+        subscription_start: new Date().toISOString(),
+        subscription_end: periodEnd || null,
+        pending_plan: null,
+      }),
+    });
+    console.log(`✓ First activation: ${newPlan} (${credits.images} imgs, ${credits.videos} vids) for ${email}`);
+    return;
+  }
+
+  if (isUpgrade) {
+    // Upgrade — apply immediately, ADD credits to existing balance, clear any pending downgrade
+    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+      method: "PATCH",
+      headers: sbHeaders(serviceKey),
+      body: JSON.stringify({
+        plan: newPlan,
+        images_remaining: currentImages + credits.images,
+        videos_remaining: currentVideos + credits.videos,
+        subscription_status: "active",
+        subscription_start: new Date().toISOString(),
+        subscription_end: periodEnd || null,
+        pending_plan: null,
+      }),
+    });
+    console.log(`✓ Upgrade: ${currentPlan} → ${newPlan} | imgs: ${currentImages}+${credits.images}=${currentImages + credits.images} | vids: ${currentVideos}+${credits.videos}=${currentVideos + credits.videos} for ${email}`);
+    return;
+  }
+
+  if (isDowngrade) {
+    // Downgrade — keep current plan & status, ADD the purchased credits, save pending_plan for next renewal
+    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+      method: "PATCH",
+      headers: sbHeaders(serviceKey),
+      body: JSON.stringify({
+        // Plan stays the same (currentPlan) until next renewal
+        images_remaining: currentImages + credits.images,
+        videos_remaining: currentVideos + credits.videos,
+        pending_plan: newPlan,  // will be applied on next subscription_cycle
+      }),
+    });
+    console.log(`✓ Downgrade scheduled: keeps ${currentPlan} until renewal | imgs: ${currentImages}+${credits.images} | pending: ${newPlan} for ${email}`);
+    return;
+  }
+
+  // Same plan — just add credits (user bought same tier again)
   await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
     method: "PATCH",
     headers: sbHeaders(serviceKey),
-    body: JSON.stringify({ plan: "none", subscription_status: "cancelled" }),
+    body: JSON.stringify({
+      images_remaining: currentImages + credits.images,
+      videos_remaining: currentVideos + credits.videos,
+      subscription_status: "active",
+    }),
   });
+  console.log(`✓ Same plan repurchase: +${credits.images} imgs, +${credits.videos} vids for ${email}`);
 }
 
-// Extract plan from a Stripe subscription object
 async function getPlanFromSubscription(stripe, sub) {
   const priceId = sub?.items?.data?.[0]?.price?.id;
   if (priceId && PRICE_TO_PLAN[priceId]) return PRICE_TO_PLAN[priceId];
@@ -131,139 +234,179 @@ export default async function handler(req, res) {
 
     console.log("Stripe event:", event.type);
 
-  // ─── checkout.session.completed ───
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    const email = session.customer_email || session.customer_details?.email;
-    console.log("checkout email:", email, "client_ref:", session.client_reference_id);
+    // ─── checkout.session.completed ───
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      const email = session.customer_email || session.customer_details?.email;
+      console.log("checkout email:", email, "client_ref:", session.client_reference_id);
 
-    // Try to get plan: 1) client_reference_id, 2) subscription price, 3) line items
-    let plan = VALID_PLANS.includes(session.client_reference_id) ? session.client_reference_id : null;
+      let plan = VALID_PLANS.includes(session.client_reference_id) ? session.client_reference_id : null;
 
-    if (!plan && session.subscription) {
-      try {
-        const sub = await stripe.subscriptions.retrieve(session.subscription);
-        plan = await getPlanFromSubscription(stripe, sub);
-        console.log("Plan from subscription:", plan);
-      } catch (e) { console.error("Sub lookup error:", e.message); }
-    }
-
-    if (!email) { console.error("No email in checkout session"); return res.status(200).json({ received: true }); }
-    if (!plan)  { console.error("Could not determine plan from price ID or client_reference_id"); return res.status(200).json({ received: true }); }
-
-    try {
-      const user = await findUserByEmail(email, SERVICE_KEY);
-      if (user) {
-        await setPlan(user.id, plan, email, SERVICE_KEY);
-        console.log(`✓ Activated ${plan} for ${email}`);
-      } else {
-        console.error(`User not found for email: ${email} — they may need to register first`);
+      if (!plan && session.subscription) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(session.subscription);
+          plan = await getPlanFromSubscription(stripe, sub);
+          console.log("Plan from subscription:", plan);
+        } catch (e) { console.error("Sub lookup error:", e.message); }
       }
-    } catch (err) {
-      console.error("Activation error:", err.message);
+
+      if (!email) { console.error("No email in checkout session"); return res.status(200).json({ received: true }); }
+      if (!plan)  { console.error("Could not determine plan"); return res.status(200).json({ received: true }); }
+
+      try {
+        const user = await findUserByEmail(email, SERVICE_KEY);
+        if (user) {
+          await activatePlan(user.id, plan, email, SERVICE_KEY);
+          console.log(`✓ checkout.session.completed processed for ${email} → ${plan}`);
+        } else {
+          console.error(`User not found for email: ${email}`);
+        }
+      } catch (err) { console.error("Activation error:", err.message); }
     }
-  }
 
-  // ─── invoice.payment_succeeded ───
-  if (event.type === "invoice.payment_succeeded") {
-    const invoice = event.data.object;
-    const reason = invoice.billing_reason;
-    console.log("invoice reason:", reason);
+    // ─── invoice.payment_succeeded ───
+    if (event.type === "invoice.payment_succeeded") {
+      const invoice = event.data.object;
+      const reason = invoice.billing_reason;
+      console.log("invoice reason:", reason);
 
-    if (reason === "subscription_create" || reason === "subscription_cycle") {
+      if (reason === "subscription_create" || reason === "subscription_cycle") {
+        try {
+          const customer = await stripe.customers.retrieve(invoice.customer);
+          const email = customer.email;
+          const priceId = invoice.lines?.data?.[0]?.price?.id;
+          const plan = PRICE_TO_PLAN[priceId];
+          console.log("invoice email:", email, "priceId:", priceId, "plan:", plan);
+
+          if (email && plan) {
+            const periodEnd = invoice.lines?.data?.[0]?.period?.end
+              ? new Date(invoice.lines.data[0].period.end * 1000).toISOString()
+              : null;
+            const user = await findUserByEmail(email, SERVICE_KEY);
+            if (user) {
+              const isRenewal = reason === "subscription_cycle";
+              // subscription_create is handled by checkout.session.completed — skip to avoid double credit
+              if (!isRenewal) {
+                console.log("subscription_create — skipping, handled by checkout.session.completed");
+              } else {
+                // Verify subscription still active before renewal
+                if (invoice.subscription) {
+                  const sub = await stripe.subscriptions.retrieve(invoice.subscription);
+                  if (sub.status !== "active") {
+                    console.warn(`Subscription not active (${sub.status}), skipping renewal for ${email}`);
+                    return res.status(200).json({ received: true });
+                  }
+                }
+                await activatePlan(user.id, plan, email, SERVICE_KEY, periodEnd, true);
+              }
+            } else {
+              console.error(`User not found for invoice: ${email}`);
+            }
+          }
+        } catch (e) { console.error("Invoice handler error:", e.message); }
+      }
+    }
+
+    // ─── invoice.payment_failed ───
+    if (event.type === "invoice.payment_failed") {
+      const invoice = event.data.object;
       try {
         const customer = await stripe.customers.retrieve(invoice.customer);
         const email = customer.email;
-        const priceId = invoice.lines?.data?.[0]?.price?.id;
-        const plan = PRICE_TO_PLAN[priceId];
-        console.log("invoice email:", email, "priceId:", priceId, "plan:", plan);
-
-        if (email && plan) {
-          // For renewals: verify subscription is still active in Stripe before resetting credits
-          if (reason === "subscription_cycle" && invoice.subscription) {
-            const sub = await stripe.subscriptions.retrieve(invoice.subscription);
-            console.log(`Renewal verification: sub status=${sub.status}`);
-            if (sub.status !== "active") {
-              console.warn(`Subscription not active (${sub.status}), skipping renewal for ${email}`);
-              return res.status(200).json({ received: true });
-            }
-          }
-
-          const periodEnd = invoice.lines?.data?.[0]?.period?.end
-            ? new Date(invoice.lines.data[0].period.end * 1000).toISOString()
-            : null;
+        console.log(`Payment failed for ${email}, attempt ${invoice.attempt_count}`);
+        if (email) {
           const user = await findUserByEmail(email, SERVICE_KEY);
           if (user) {
-            // Clear payment_failed status and reset credits
-            await setPlan(user.id, plan, email, SERVICE_KEY, periodEnd);
-            console.log(`✓ ${reason === "subscription_create" ? "First payment" : "Monthly renewal"}: ${plan} credits reset for ${email}`);
-          } else {
-            console.error(`User not found for invoice: ${email}`);
-          }
-        }
-      } catch (e) { console.error("Invoice handler error:", e.message); }
-    }
-  }
-
-  // ─── invoice.payment_failed ───
-  // Freeze account — block generation until payment is resolved
-  if (event.type === "invoice.payment_failed") {
-    const invoice = event.data.object;
-    try {
-      const customer = await stripe.customers.retrieve(invoice.customer);
-      const email = customer.email;
-      console.log(`Payment failed for ${email}, attempt ${invoice.attempt_count}`);
-      if (email) {
-        const user = await findUserByEmail(email, SERVICE_KEY);
-        if (user) {
-          await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, {
-            method: "PATCH",
-            headers: sbHeaders(SERVICE_KEY),
-            body: JSON.stringify({ subscription_status: "payment_failed" }),
-          });
-          console.warn(`✗ Account frozen for ${email} (attempt ${invoice.attempt_count})`);
-        }
-      }
-    } catch (e) { console.error("payment_failed error:", e.message); }
-  }
-
-  // ─── customer.subscription.updated ───
-  // Handle status changes: active→past_due, past_due→active, cancellations
-  if (event.type === "customer.subscription.updated") {
-    const sub = event.data.object;
-    try {
-      const customer = await stripe.customers.retrieve(sub.customer);
-      const email = customer.email;
-      const plan = await getPlanFromSubscription(stripe, sub);
-      console.log(`Sub updated: status=${sub.status} plan=${plan} email=${email}`);
-
-      if (email) {
-        const user = await findUserByEmail(email, SERVICE_KEY);
-        if (user) {
-          if (sub.status === "active") {
-            // Reactivated after payment issue — unfreeze if was frozen
-            if (plan) {
-              await setPlan(user.id, plan, email, SERVICE_KEY);
-              console.log(`✓ Reactivated ${plan} for ${email}`);
-            }
-          } else if (sub.status === "past_due" || sub.status === "unpaid") {
-            // Payment issue — freeze account
             await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, {
               method: "PATCH",
               headers: sbHeaders(SERVICE_KEY),
               body: JSON.stringify({ subscription_status: "payment_failed" }),
             });
-            console.warn(`✗ Frozen account for ${email} (sub status: ${sub.status})`);
+            console.warn(`✗ Account frozen for ${email} (attempt ${invoice.attempt_count})`);
           }
         }
-      }
-    } catch (e) { console.error("Sub update error:", e.message); }
-  }
+      } catch (e) { console.error("payment_failed error:", e.message); }
+    }
 
-  res.status(200).json({ received: true });
+    // ─── customer.subscription.updated ───
+    if (event.type === "customer.subscription.updated") {
+      const sub = event.data.object;
+      try {
+        const customer = await stripe.customers.retrieve(sub.customer);
+        const email = customer.email;
+        const plan = await getPlanFromSubscription(stripe, sub);
+        console.log(`Sub updated: status=${sub.status} plan=${plan} email=${email}`);
+
+        if (email) {
+          const user = await findUserByEmail(email, SERVICE_KEY);
+          if (user) {
+            if (sub.status === "active" && plan) {
+              // Only reactivate if was frozen due to payment issue
+              const profile = await getProfile(user.id, SERVICE_KEY);
+              if (profile?.subscription_status === "payment_failed") {
+                await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+                  method: "PATCH",
+                  headers: sbHeaders(SERVICE_KEY),
+                  body: JSON.stringify({ subscription_status: "active" }),
+                });
+                console.log(`✓ Unfrozen account for ${email}`);
+              }
+            } else if (sub.status === "past_due" || sub.status === "unpaid") {
+              await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+                method: "PATCH",
+                headers: sbHeaders(SERVICE_KEY),
+                body: JSON.stringify({ subscription_status: "payment_failed" }),
+              });
+              console.warn(`✗ Frozen account for ${email} (sub status: ${sub.status})`);
+            }
+          }
+        }
+      } catch (e) { console.error("Sub update error:", e.message); }
+    }
+
+    // ─── customer.subscription.deleted ───
+    if (event.type === "customer.subscription.deleted") {
+      const sub = event.data.object;
+      try {
+        const customer = await stripe.customers.retrieve(sub.customer);
+        const email = customer.email;
+        console.log(`Subscription cancelled for ${email}`);
+        if (email) {
+          const user = await findUserByEmail(email, SERVICE_KEY);
+          if (user) {
+            const profile = await getProfile(user.id, SERVICE_KEY);
+            // If there's a pending downgrade, apply it now
+            if (profile?.pending_plan && VALID_PLANS.includes(profile.pending_plan)) {
+              const pendingCredits = PLAN_CREDITS[profile.pending_plan];
+              await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+                method: "PATCH",
+                headers: sbHeaders(SERVICE_KEY),
+                body: JSON.stringify({
+                  plan: profile.pending_plan,
+                  images_remaining: pendingCredits.images,
+                  videos_remaining: pendingCredits.videos,
+                  subscription_status: "active",
+                  pending_plan: null,
+                }),
+              });
+              console.log(`✓ Pending downgrade applied on cancellation: ${profile.pending_plan} for ${email}`);
+            } else {
+              // No pending plan — deactivate
+              await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+                method: "PATCH",
+                headers: sbHeaders(SERVICE_KEY),
+                body: JSON.stringify({ plan: "none", subscription_status: "cancelled", pending_plan: null }),
+              });
+              console.log(`✓ Plan deactivated for ${email}`);
+            }
+          }
+        }
+      } catch (e) { console.error("Sub deleted error:", e.message); }
+    }
+
+    res.status(200).json({ received: true });
   } catch (outerErr) {
     console.error("Webhook handler crash:", outerErr.message);
-    // Always return 200 to prevent Stripe from retrying endlessly
     res.status(200).json({ received: true, error: outerErr.message });
   }
 }
