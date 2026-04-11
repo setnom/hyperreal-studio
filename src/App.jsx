@@ -622,6 +622,7 @@ export default function App() {
   const [dirUploading, setDirUploading] = useState({ img: false, aud: false });
   const [dirUploadError, setDirUploadError] = useState(null);
   const [dirPrompt, setDirPrompt] = useState("");
+  const [dirMention, setDirMention] = useState(null); // { query, start } when user types @image
   const [dirDuration, setDirDuration] = useState(5);
   const [dirAspect, setDirAspect] = useState("9:16");
   const [dirKeepFrame, setDirKeepFrame] = useState(false);
@@ -2871,6 +2872,8 @@ export default function App() {
                       {dirImages.map((img, i) => (
                         <div key={i} style={{ position: "relative", width: 72, height: 72, borderRadius: 9, overflow: "hidden", border: "1px solid rgba(0,240,255,.25)", flexShrink: 0 }}>
                           <img src={img.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          {/* Number badge */}
+                          <div style={{ position: "absolute", bottom: 3, left: 3, background: "rgba(0,0,0,.75)", borderRadius: 4, padding: "1px 5px", fontSize: 9, color: "#00f0ff", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", backdropFilter: "blur(4px)" }}>{i+1}</div>
                           <button onClick={() => setDirImages(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,.75)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                         </div>
                       ))}
@@ -2880,30 +2883,10 @@ export default function App() {
                           {dirUploading.img
                             ? <div style={{ width: 18, height: 18, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
                             : <><span style={{ fontSize: 22, color: "#5a5a70" }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>img</span></>}
-                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => { e.target.value = ""; uploadDirFile(e.target.files[0], true); }} />
+                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadDirFile(f, true); }} />
                         </label>
                       )}
                     </div>
-
-                    {/* @ chip bar — tap to insert tag in prompt */}
-                    {dirImages.length >= 1 && !dirKeepFrame && (
-                      <div style={{ marginTop: 8 }}>
-                        <p style={{ fontSize: 9, color: "#3a3a50", margin: "0 0 5px" }}>
-                          {lang === "es" ? "Tocá para insertar en el prompt:" : "Tap to insert in prompt:"}
-                        </p>
-                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                          {dirImages.map((img, i) => (
-                            <div key={i} onClick={() => { const tag = `@image${i+1}`; setDirPrompt(prev => prev ? prev + (prev.endsWith(" ") ? "" : " ") + tag : tag); }}
-                              style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px 4px 5px", borderRadius: 20, background: "rgba(0,240,255,.07)", border: "1px solid rgba(0,240,255,.18)", cursor: "pointer", userSelect: "none" }}
-                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,240,255,.14)"}
-                              onMouseLeave={e => e.currentTarget.style.background = "rgba(0,240,255,.07)"}>
-                              <img src={img.preview} alt="" style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(0,240,255,.3)" }} />
-                              <span style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace" }}>@image{i+1}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   {/* Audio section — hidden in keepFrame mode */}
@@ -2946,14 +2929,67 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Prompt */}
-                <div style={{ marginBottom: 12 }}>
+                {/* Prompt with @image autocomplete */}
+                <div style={{ marginBottom: 12, position: "relative" }}>
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena *" : "Scene description *"}</p>
-                  <textarea value={dirPrompt} onChange={e => setDirPrompt(e.target.value)}
+                  <textarea value={dirPrompt}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setDirPrompt(val);
+                      // Detect @image trigger — look for @image followed by optional digits at cursor
+                      const pos = e.target.selectionStart;
+                      const before = val.slice(0, pos);
+                      const match = before.match(/@image(\d*)$/);
+                      if (match && dirImages.length > 0 && !dirKeepFrame) {
+                        setDirMention({ query: match[1], start: pos - match[0].length });
+                      } else {
+                        setDirMention(null);
+                      }
+                    }}
+                    onKeyDown={e => {
+                      // Close mention dropdown on Escape
+                      if (e.key === "Escape" && dirMention) { setDirMention(null); e.preventDefault(); }
+                    }}
+                    onBlur={() => setTimeout(() => setDirMention(null), 150)}
                     placeholder={lang === "es"
-                      ? (dirImages.length > 1 ? "Describe la escena. Usá @image1, @image2... para referenciar tus imágenes. Ej: @image1 camina con la ropa de @image2..." : "Describe la escena. Usá @image1 para referenciar tu imagen. Ej: @image1 camina por una calle de noche...")
-                      : (dirImages.length > 1 ? "Describe the scene. Use @image1, @image2... to reference your images. E.g. @image1 walks wearing @image2's outfit..." : "Describe the scene. Use @image1 to reference your image. E.g. @image1 walks down a neon-lit street...")}
+                      ? (dirImages.length > 1 ? "Describe la escena. Escribí @image1, @image2... para referenciar tus imágenes..." : "Describe la escena. Escribí @image1 para referenciar tu imagen. Ej: @image1 camina por una calle de noche...")
+                      : (dirImages.length > 1 ? "Describe the scene. Type @image1, @image2... to reference your images..." : "Describe the scene. Type @image1 to reference your image. E.g. @image1 walks down a neon-lit street...")}
                     rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
+
+                  {/* Autocomplete dropdown */}
+                  {dirMention && dirImages.length > 0 && (() => {
+                    const filtered = dirImages
+                      .map((img, i) => ({ img, i, num: i+1 }))
+                      .filter(({ num }) => !dirMention.query || String(num).startsWith(dirMention.query));
+                    if (!filtered.length) return null;
+                    const insertMention = (num) => {
+                      const tag = `@image${num}`;
+                      const before = dirPrompt.slice(0, dirMention.start);
+                      const after = dirPrompt.slice(dirMention.start + 1 + "image".length + dirMention.query.length);
+                      setDirPrompt(before + tag + (after.startsWith(" ") ? "" : " ") + after);
+                      setDirMention(null);
+                    };
+                    return (
+                      <div style={{ position: "absolute", left: 0, right: 0, zIndex: 50, background: "#0e0e1e", border: "1px solid rgba(0,240,255,.25)", borderRadius: 10, padding: "6px", boxShadow: "0 8px 24px rgba(0,0,0,.5)", marginTop: 2 }}>
+                        <p style={{ fontSize: 9, color: "#3a3a50", margin: "0 0 6px 4px", letterSpacing: 1 }}>IMÁGENES</p>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {filtered.map(({ img, num }) => (
+                            <div key={num} onMouseDown={() => insertMention(num)}
+                              style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 5px", borderRadius: 8, background: "rgba(0,240,255,.06)", border: "1px solid rgba(0,240,255,.15)", cursor: "pointer" }}
+                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,240,255,.14)"}
+                              onMouseLeave={e => e.currentTarget.style.background = "rgba(0,240,255,.06)"}>
+                              <div style={{ position: "relative" }}>
+                                <img src={img.preview} alt="" style={{ width: 28, height: 28, borderRadius: 5, objectFit: "cover", display: "block" }} />
+                                <div style={{ position: "absolute", bottom: -2, right: -2, background: "#00f0ff", borderRadius: 3, padding: "0 3px", fontSize: 8, color: "#06060e", fontWeight: 800, lineHeight: "14px" }}>{num}</div>
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace" }}>@image{num}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}><span style={{ color: dirPrompt.length > 3000 ? "#ffb800" : "#3a3a50" }}>{dirPrompt.length}</span>/3500</p>
                 </div>
 
