@@ -94,7 +94,7 @@ export default async function handler(req, res) {
   const FAL_KEY = process.env.FAL_KEY;
   if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
-  const { type, prompt: rawPrompt, aspect_ratio, style_id, image_quality, duration, audio,
+  const { type, prompt: rawPrompt, user_prompt: rawUserPrompt, aspect_ratio, style_id, image_quality, duration, audio,
           image_urls, start_frame, end_frame, multishot, user_token } = req.body || {};
 
   // Validate style_id against allowed values only
@@ -249,7 +249,9 @@ export default async function handler(req, res) {
           method: "POST",
           headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
           body: JSON.stringify({
-            user_id: userId, type, prompt, style: safeStyleId,
+            user_id: userId, type,
+            prompt: sanitizePrompt(rawUserPrompt || rawPrompt).slice(0, 3500), // save user's raw input, not the styled version
+            style: safeStyleId,
             status: "processing", result_url: data.request_id + "|" + endpoint,
           }),
         });
