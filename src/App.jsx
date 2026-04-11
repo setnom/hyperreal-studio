@@ -627,6 +627,7 @@ export default function App() {
   const [dirAspect, setDirAspect] = useState("9:16");
   const [dirKeepFrame, setDirKeepFrame] = useState(false);
   const [genning, setGenning] = useState(false);
+  const [genBtnLocked, setGenBtnLocked] = useState(false); // prevents double-click for 5s after submit
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
   const [visibleCount, setVisibleCount] = useState(20);
@@ -994,6 +995,7 @@ export default function App() {
   const logout = () => { setSession(null); setProfile(null); setGens([]); setFavorites({}); try { sessionStorage.removeItem("hrs_s"); } catch {} setPage(P.LAND); };
   const [genResult, setGenResult] = useState(null);
   const [genError, setGenError] = useState("");
+  const [showConcurrentUpgrade, setShowConcurrentUpgrade] = useState(false);
   const [audioOn, setAudioOn] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
   const [previewIndex, setPreviewIndex] = useState(null);
@@ -1197,6 +1199,15 @@ export default function App() {
     const isVid = tab === T.VID;
     if (isVid && profile.videos_remaining <= 0) return;
     if (!isVid && profile.images_remaining <= 0) return;
+
+    // Restore & colorize require at least 1 reference image
+    if (!isVid && (style === "restore" || style === "colorize") && refImages.length === 0) {
+      setGenError(lang === "es"
+        ? `⚠️ El modo "${style === "restore" ? "Restaurar" : "Colorear"}" requiere subir al menos 1 imagen de referencia.`
+        : `⚠️ "${style === "restore" ? "Restore" : "Coloring Page"}" mode requires at least 1 reference image.`
+      );
+      return;
+    }
     // Block if payment failed
     if (profile.subscription_status === "payment_failed") {
       setPaymentFailedModal(true);
@@ -1211,9 +1222,13 @@ export default function App() {
         ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Tu plan ${profile.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}. Esperá que terminen.`
         : `⏳ You have ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Your ${profile.plan} plan allows max ${concurrentLimit} simultaneous. Wait for them to finish.`
       );
+      setShowConcurrentUpgrade(true);
       return;
     }
+    setShowConcurrentUpgrade(false);
     setGenning(true);
+    setGenBtnLocked(true);
+    setTimeout(() => setGenBtnLocked(false), 5000); // re-enable button after 5s
     setGenResult(null);
     setGenError("");
     setGenStatus({ phase: "queued", position: null, elapsed: 0 });
@@ -1350,6 +1365,7 @@ export default function App() {
       console.error("Generation error:", err);
       setGenError(err.message || "Error de conexión con el servidor.");
       setGenning(false);
+      setGenBtnLocked(false);
     }
   };
 
@@ -2260,13 +2276,23 @@ export default function App() {
                 );
               })()}
 
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genning || (!prompt.trim() && style !== "restore" && style !== "colorize") || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genning && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
-                {!hasPlan ? t("plan_for_gen") : genning ? (t("loading")) : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genBtnLocked && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
+                {!hasPlan ? t("plan_for_gen") : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube una imagen de referencia" : "Upload a reference image") : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
               </button>
               {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={tab} duration={vidDur} lang={lang} genStatus={genStatus} /></div>}
 
               {/* Error */}
-              {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>{genError}</div>}
+              {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>
+                {genError}
+                {showConcurrentUpgrade && (
+                  <div style={{ marginTop: 6 }}>
+                    <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
+                      style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+                      {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
+                    </button>
+                  </div>
+                )}
+              </div>}
 
               {/* Result preview */}
               {genResult && !genning && (
@@ -2436,8 +2462,10 @@ export default function App() {
               const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
               if (pendingCount >= concurrentLimit) {
                 setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
+                setShowConcurrentUpgrade(true);
                 return;
               }
+              setShowConcurrentUpgrade(false);
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
@@ -2652,7 +2680,17 @@ export default function App() {
                       {genning ? (lang === "es" ? "Generando..." : "Generating...") : (motionUploadProgress.img || motionUploadProgress.vid) ? (lang === "es" ? "⏳ Subiendo archivos..." : "⏳ Uploading files...") : !motionImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !motionVideo ? (lang === "es" ? "Sube un video de movimiento" : "Upload a motion video") : !motionImageUrl || !motionVideoUrl ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : (profile?.videos_remaining ?? 0) < motionCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Generar Motion (${motionCredits} créditos)` : `🎭 Generate Motion (${motionCredits} credits)`)}
                     </button>
                     {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={motionDur} lang={lang} genStatus={genStatus} /></div>}
-                    {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>{genError}</div>}
+                    {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>
+                {genError}
+                {showConcurrentUpgrade && (
+                  <div style={{ marginTop: 6 }}>
+                    <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
+                      style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+                      {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
+                    </button>
+                  </div>
+                )}
+              </div>}
                     {genResult && !genning && tab === T.MOT && (
                       <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,107,43,.2)", animation: "fadeUp .5s ease" }}>
                         <video src={genResult.url} controls autoPlay style={{ width: "100%", display: "block", borderRadius: 14 }} />
@@ -2755,8 +2793,10 @@ export default function App() {
               const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
               if (pendingCount >= concurrentLimit) {
                 setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
+                setShowConcurrentUpgrade(true);
                 return;
               }
+              setShowConcurrentUpgrade(false);
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
@@ -3073,7 +3113,17 @@ export default function App() {
                 </button>
 
                 {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={dirDuration} lang={lang} genStatus={genStatus} /></div>}
-                {genError && <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>{genError}</div>}
+                {genError && <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>
+                  {genError}
+                  {showConcurrentUpgrade && (
+                    <div style={{ marginTop: 6 }}>
+                      <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
+                        style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+                        {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
+                      </button>
+                    </div>
+                  )}
+                </div>}
 
                 {genResult && !genning && tab === T.DIR && (
                   <div style={{ marginTop: 14, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)" }}>
