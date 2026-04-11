@@ -161,6 +161,24 @@ export default async function handler(req, res) {
   if (isVid && videosRemaining <= 0)
     return res.status(403).json({ error: "No video credits remaining." });
 
+  // Concurrent generation limit per plan
+  const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+  const concurrentLimit = CONCURRENT_LIMITS[userPlan] || 1;
+  try {
+    const pendingRes = await fetch(
+      `${SB_URL}/rest/v1/generations?user_id=eq.${userId}&status=eq.processing&select=id`,
+      { headers: sbServiceHeaders() }
+    );
+    const pending = await pendingRes.json();
+    if (Array.isArray(pending) && pending.length >= concurrentLimit) {
+      return res.status(429).json({
+        error: `Límite de generaciones simultáneas alcanzado (${concurrentLimit} para plan ${userPlan}). Esperá que terminen las actuales.`,
+        concurrent_limit: concurrentLimit,
+        pending_count: pending.length,
+      });
+    }
+  } catch { /* if check fails, allow — don't block */ }
+
   // 🟡 FIX: Atomic credit deduction — only deduct if current value matches what we read
   // This prevents double-spend race conditions from concurrent requests
   try {

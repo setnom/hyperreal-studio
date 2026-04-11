@@ -91,6 +91,24 @@ export default async function handler(req, res) {
   if ((videos_remaining ?? 0) < creditsNeeded)
     return res.status(403).json({ error: `Not enough credits. Need ${creditsNeeded}, have ${videos_remaining}.` });
 
+  // Concurrent generation limit per plan
+  const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+  const concurrentLimit = CONCURRENT_LIMITS[plan] || 1;
+  try {
+    const pendingRes = await fetch(
+      `${SB_URL}/rest/v1/generations?user_id=eq.${userId}&status=eq.processing&select=id`,
+      { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
+    );
+    const pending = await pendingRes.json();
+    if (Array.isArray(pending) && pending.length >= concurrentLimit) {
+      return res.status(429).json({
+        error: `Límite de generaciones simultáneas alcanzado (${concurrentLimit} para plan ${plan}). Esperá que terminen las actuales.`,
+        concurrent_limit: concurrentLimit,
+        pending_count: pending.length,
+      });
+    }
+  } catch { /* allow if check fails */ }
+
   // Deduct credits atomically
   const deductRes = await fetch(
     `${SB_URL}/rest/v1/profiles?id=eq.${userId}&videos_remaining=eq.${videos_remaining}`,

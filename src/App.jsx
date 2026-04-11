@@ -1202,6 +1202,17 @@ export default function App() {
       setPaymentFailedModal(true);
       return;
     }
+    // Concurrent generation limit
+    const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+    const concurrentLimit = CONCURRENT_LIMITS[profile.plan] || 1;
+    const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
+    if (pendingCount >= concurrentLimit) {
+      setGenError(lang === "es"
+        ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Tu plan ${profile.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}. Esperá que terminen.`
+        : `⏳ You have ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Your ${profile.plan} plan allows max ${concurrentLimit} simultaneous. Wait for them to finish.`
+      );
+      return;
+    }
     setGenning(true);
     setGenResult(null);
     setGenError("");
@@ -2419,6 +2430,14 @@ export default function App() {
 
             const handleMotionGen = async () => {
               if (!canGenMotion) return;
+              // Concurrent limit check
+              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+              const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
+              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
+              if (pendingCount >= concurrentLimit) {
+                setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
+                return;
+              }
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
@@ -2730,6 +2749,14 @@ export default function App() {
 
             const handleDirGen = async () => {
               if (!canGenDir) return;
+              // Concurrent limit check
+              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+              const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
+              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
+              if (pendingCount >= concurrentLimit) {
+                setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
+                return;
+              }
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
