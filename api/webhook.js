@@ -1,12 +1,14 @@
 import Stripe from 'stripe';
 
-export const config = {
-  api: { bodyParser: false },
-};
-
-async function buffer(readable) {
+async function getRawBody(req) {
+  // If body was already parsed (string or object), re-serialize
+  if (req.body) {
+    const raw = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+    return Buffer.from(raw);
+  }
+  // Stream the raw body
   const chunks = [];
-  for await (const chunk of readable) {
+  for await (const chunk of req) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
   return Buffer.concat(chunks);
@@ -114,19 +116,20 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server misconfiguration" });
   }
 
-  const stripe = new Stripe(STRIPE_SECRET);
-  const buf = await buffer(req);
-  const sig = req.headers["stripe-signature"];
-
   let event;
   try {
-    event = stripe.webhooks.constructEvent(buf, sig, WEBHOOK_SECRET);
-  } catch (err) {
-    console.error("Webhook signature failed:", err.message);
-    return res.status(400).json({ error: "Invalid signature" });
-  }
+    const stripe = new Stripe(STRIPE_SECRET);
+    const buf = await getRawBody(req);
+    const sig = req.headers["stripe-signature"];
 
-  console.log("Stripe event:", event.type);
+    try {
+      event = stripe.webhooks.constructEvent(buf, sig, WEBHOOK_SECRET);
+    } catch (err) {
+      console.error("Webhook signature failed:", err.message);
+      return res.status(400).json({ error: "Invalid signature" });
+    }
+
+    console.log("Stripe event:", event.type);
 
   // ─── checkout.session.completed ───
   if (event.type === "checkout.session.completed") {
@@ -258,4 +261,9 @@ export default async function handler(req, res) {
   }
 
   res.status(200).json({ received: true });
+  } catch (outerErr) {
+    console.error("Webhook handler crash:", outerErr.message);
+    // Always return 200 to prevent Stripe from retrying endlessly
+    res.status(200).json({ received: true, error: outerErr.message });
+  }
 }
