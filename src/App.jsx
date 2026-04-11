@@ -616,17 +616,15 @@ export default function App() {
   const [motionVideoPreview, setMotionVideoPreview] = useState(null); // blob URL for preview
   const [motionVideoDuration, setMotionVideoDuration] = useState(0); // actual duration of uploaded video
   // Director tab states
-  const [dirImage, setDirImage] = useState(null);
-  const [dirImageUrl, setDirImageUrl] = useState(null);
-  const [dirImagePreview, setDirImagePreview] = useState(null);
-  const [dirAudio, setDirAudio] = useState(null);
-  const [dirAudioUrl, setDirAudioUrl] = useState(null);
+  // Director tab states — multi-image/multi-audio for reference-to-video mode
+  const [dirImages, setDirImages] = useState([]);        // array of { file, preview, url }
+  const [dirAudios, setDirAudios] = useState([]);        // array of { file, name, url }
+  const [dirUploading, setDirUploading] = useState({ img: false, aud: false });
+  const [dirUploadError, setDirUploadError] = useState(null);
   const [dirPrompt, setDirPrompt] = useState("");
   const [dirDuration, setDirDuration] = useState(5);
   const [dirAspect, setDirAspect] = useState("9:16");
   const [dirKeepFrame, setDirKeepFrame] = useState(false);
-  const [dirUploading, setDirUploading] = useState({ img: false, aud: false });
-  const [dirUploadError, setDirUploadError] = useState(null);
   const [genning, setGenning] = useState(false);
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
@@ -2714,30 +2712,30 @@ export default function App() {
             const dirCredits = dirDuration <= 5 ? 3 : dirDuration <= 10 ? 4 : 5;
             const isDirEligible = ["pro","creator"].includes(profile?.plan);
             const isDirLocked = !isDirEligible;
-            const canGenDir = isDirEligible && dirImageUrl && dirPrompt.trim() && !genning && (profile?.videos_remaining ?? 0) >= dirCredits;
+            const primaryImage = dirImages[0];
+            const canGenDir = isDirEligible && primaryImage?.url && dirPrompt.trim() && !genning && !dirUploading.img && !dirUploading.aud && (profile?.videos_remaining ?? 0) >= dirCredits;
 
+            // Upload helper — shared for both images and audios
             const uploadDirFile = async (file, isImg) => {
-              const key = isImg ? "img" : "aud";
+              if (!file) return;
               setDirUploadError(null);
 
-              // Block video files entirely — Director only accepts images and audio
+              // Block video files
               if (file.type.startsWith("video/")) {
-                setDirUploadError(lang === "es"
-                  ? "❌ No se permiten videos en Director. Solo imágenes (jpg, png, webp) y audio (mp3, wav, m4a)."
-                  : "❌ Videos are not allowed in Director. Only images (jpg, png, webp) and audio (mp3, wav, m4a).");
+                setDirUploadError(lang === "es" ? "❌ No se permiten videos en Director. Solo imágenes y audio." : "❌ Videos not allowed. Use images or audio only.");
                 return;
               }
+              // In keepFrame mode: only 1 image, no audio
+              if (dirKeepFrame) {
+                if (!isImg) { setDirUploadError(lang === "es" ? "⚠️ Desactivá 'Mantener frame' para usar audio." : "⚠️ Disable 'Keep frame' to add audio."); return; }
+                if (dirImages.length >= 1) { setDirUploadError(lang === "es" ? "⚠️ En modo frame inicial solo se permite 1 imagen." : "⚠️ Keep frame mode: only 1 image allowed."); return; }
+              }
+              // Limits
+              if (isImg && dirImages.length >= 5) { setDirUploadError(lang === "es" ? "Máx 5 imágenes." : "Max 5 images."); return; }
+              if (!isImg && dirAudios.length >= 2) { setDirUploadError(lang === "es" ? "Máx 2 audios." : "Max 2 audios."); return; }
 
-              // In keepFrame mode, don't allow audio
-              if (!isImg && dirKeepFrame) {
-                setDirUploadError(lang === "es"
-                  ? "⚠️ En modo 'Mantener frame inicial' no se puede agregar audio. Desactivá el interruptor para usar audio."
-                  : "⚠️ Audio is not available in 'Keep initial frame' mode. Disable the toggle to use audio.");
-                return;
-              }
-              setDirUploading(p => ({ ...p, [key]: true }));
+              setDirUploading(p => ({ ...p, [isImg ? "img" : "aud"]: true }));
               try {
-                // Compress image with canvas
                 let dataUrl;
                 if (isImg) {
                   dataUrl = await new Promise((res, rej) => {
@@ -2746,10 +2744,7 @@ export default function App() {
                       try {
                         const MAX_PX = 1800;
                         let w = img.width, h = img.height;
-                        if (w > MAX_PX || h > MAX_PX) {
-                          if (w > h) { h = Math.round((h/w)*MAX_PX); w = MAX_PX; }
-                          else { w = Math.round((w/h)*MAX_PX); h = MAX_PX; }
-                        }
+                        if (w > MAX_PX || h > MAX_PX) { if (w > h) { h = Math.round((h/w)*MAX_PX); w = MAX_PX; } else { w = Math.round((w/h)*MAX_PX); h = MAX_PX; } }
                         const canvas = document.createElement("canvas");
                         canvas.width = w; canvas.height = h;
                         canvas.getContext("2d").drawImage(img, 0, 0, w, h);
@@ -2760,41 +2755,34 @@ export default function App() {
                     img.src = URL.createObjectURL(file);
                   });
                 } else {
-                  dataUrl = await new Promise((res, rej) => {
-                    const reader = new FileReader();
-                    reader.onload = () => res(reader.result);
-                    reader.onerror = rej;
-                    reader.readAsDataURL(file);
-                  });
+                  dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
                 }
                 // Upload
+                let uploadedUrl;
                 if (dataUrl.length <= 3 * 1024 * 1024) {
-                  const r = await fetch("/api/upload", {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }),
-                  });
+                  const r = await fetch("/api/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }) });
                   const d = await r.json();
                   if (d.error) throw new Error(d.error);
-                  if (isImg) { setDirImage(file); setDirImageUrl(d.url); setDirImagePreview(URL.createObjectURL(file)); }
-                  else { setDirAudio(file); setDirAudioUrl(d.url); }
+                  uploadedUrl = d.url;
                 } else {
                   const mime = isImg ? "image/jpeg" : file.type;
-                  const initR = await fetch("/api/upload-init", {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ mime_type: mime, file_name: `dir.${isImg ? "jpg" : file.name.split(".").pop()}`, user_token: session?.access_token }),
-                  });
+                  const initR = await fetch("/api/upload-init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mime_type: mime, file_name: `dir.${isImg ? "jpg" : file.name.split(".").pop()}`, user_token: session?.access_token }) });
                   const initD = await initR.json();
                   if (!initD.upload_url) throw new Error(initD.error || "No upload URL");
                   const blob = isImg ? await (await fetch(dataUrl)).blob() : file;
                   const putRes = await fetch(initD.upload_url, { method: "PUT", headers: { "Content-Type": mime }, body: blob });
                   if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
-                  if (isImg) { setDirImage(file); setDirImageUrl(initD.file_url); setDirImagePreview(URL.createObjectURL(file)); }
-                  else { setDirAudio(file); setDirAudioUrl(initD.file_url); }
+                  uploadedUrl = initD.file_url;
+                }
+                if (isImg) {
+                  setDirImages(prev => [...prev, { file, preview: URL.createObjectURL(file), url: uploadedUrl }]);
+                } else {
+                  setDirAudios(prev => [...prev, { file, name: file.name, url: uploadedUrl }]);
                 }
               } catch(e) {
                 setDirUploadError(e.message);
               } finally {
-                setDirUploading(p => ({ ...p, [key]: false }));
+                setDirUploading(p => ({ ...p, [isImg ? "img" : "aud"]: false }));
               }
             };
 
@@ -2803,11 +2791,13 @@ export default function App() {
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
+                const imageUrls = dirImages.map(i => i.url).filter(Boolean);
+                const audioUrls = dirAudios.map(a => a.url).filter(Boolean);
                 const r = await fetch("/api/director", {
                   method: "POST", headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    image_url: dirImageUrl,
-                    audio_url: (!dirKeepFrame && dirAudioUrl) ? dirAudioUrl : undefined,
+                    image_urls: imageUrls,
+                    audio_urls: (!dirKeepFrame && audioUrls.length > 0) ? audioUrls : undefined,
                     prompt: dirPrompt.trim() + (dirKeepFrame ? " Mantain the exact initial frame as provided." : ""),
                     duration: dirDuration,
                     aspect_ratio: dirAspect,
@@ -2829,7 +2819,7 @@ export default function App() {
                       const sd = await sr.json();
                       const elapsed = Math.round((Date.now() - pollStart) / 1000);
                       if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                      if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {} return; }
+                      if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining })); } } catch {} return; }
                       setGenStatus({ phase: (sd.position ?? 0) > 0 ? "queued" : "generating", position: sd.position || null, elapsed });
                       setTimeout(poll, 4000);
                     } catch { setTimeout(poll, 5000); }
@@ -2865,47 +2855,73 @@ export default function App() {
                   <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "IA cinematográfica con audio nativo · Solo imagen de referencia" : "Cinematic AI with native audio · Reference image only"}</p>
                 </div>
 
-                {/* Upload area - image + audio side by side */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-                  {/* Reference image */}
-                  <div>
-                    <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "🖼️ Imagen de referencia *" : "🖼️ Reference image *"}</p>
-                    <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 130, borderRadius: 12, border: dirImagePreview ? "1px solid rgba(0,240,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: dirImagePreview ? "rgba(0,240,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
-                      {dirImagePreview
-                        ? <>
-                            <img src={dirImagePreview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            {dirUploading.img && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}><div style={{ width: 20, height: 20, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /></div>}
-                            {!dirUploading.img && dirImageUrl && <div style={{ position: "absolute", top: 4, left: 4, background: "rgba(0,240,255,.85)", borderRadius: 4, padding: "2px 5px", fontSize: 8, color: "#06060e", fontWeight: 700 }}>✓</div>}
-                          </>
-                        : <><span style={{ fontSize: 22, marginBottom: 4 }}>🖼️</span><span style={{ fontSize: 9, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Frame inicial / personaje" : "Start frame / character"}</span></>}
-                      {dirImagePreview && !dirUploading.img && <button onClick={e => { e.preventDefault(); setDirImage(null); setDirImageUrl(null); setDirImagePreview(null); }} style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 10, cursor: "pointer" }}>×</button>}
-                      <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadDirFile(e.target.files[0], true)} />
-                    </label>
+                {/* Upload area — multi-image + multi-audio */}
+                <div style={{ marginBottom: 10 }}>
+                  {/* Images section */}
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, margin: 0 }}>
+                        {dirKeepFrame
+                          ? (lang === "es" ? "🖼️ Frame inicial *" : "🖼️ Initial frame *")
+                          : (lang === "es" ? `🖼️ Imágenes de referencia * (${dirImages.length}/5)` : `🖼️ Reference images * (${dirImages.length}/5)`)}
+                      </p>
+                      {dirImages.length > 0 && !dirKeepFrame && (
+                        <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>
+                          {lang === "es" ? "Usá @image1, @image2... en el prompt" : "Use @image1, @image2... in prompt"}
+                        </p>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {dirImages.map((img, i) => (
+                        <div key={i} style={{ position: "relative", width: 80, height: 80, borderRadius: 9, overflow: "hidden", border: "1px solid rgba(0,240,255,.3)", flexShrink: 0 }}>
+                          <img src={img.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          {img.url && <div style={{ position: "absolute", top: 2, left: 2, background: "rgba(0,240,255,.85)", borderRadius: 3, padding: "1px 5px", fontSize: 8, color: "#06060e", fontWeight: 700 }}>@img{i+1}</div>}
+                          <button onClick={() => setDirImages(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 9, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                        </div>
+                      ))}
+                      {/* Add image button */}
+                      {((!dirKeepFrame && dirImages.length < 5) || (dirKeepFrame && dirImages.length === 0)) && (
+                        <label style={{ width: 80, height: 80, borderRadius: 9, border: "1px dashed rgba(255,255,255,.15)", background: "rgba(255,255,255,.02)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {dirUploading.img
+                            ? <div style={{ width: 18, height: 18, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
+                            : <><span style={{ fontSize: 20 }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>img</span></>}
+                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadDirFile(e.target.files[0], true)} />
+                        </label>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Audio — hidden in keepFrame mode */}
+                  {/* Audio section — hidden in keepFrame mode */}
                   {!dirKeepFrame && (
-                  <div>
-                    <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "🎵 Audio (opcional)" : "🎵 Audio (optional)"}</p>
-                    <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 130, borderRadius: 12, border: dirAudio ? "1px solid rgba(180,74,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: dirAudio ? "rgba(180,74,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
-                      {dirAudio
-                        ? <>
-                            <span style={{ fontSize: 28 }}>🎵</span>
-                            <span style={{ fontSize: 9, color: "#b44aff", marginTop: 4, textAlign: "center", padding: "0 6px" }}>{dirAudio.name.slice(0, 20)}</span>
-                            {dirUploading.aud && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 20, height: 20, border: "2px solid rgba(180,74,255,.3)", borderTop: "2px solid #b44aff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /></div>}
-                            {!dirUploading.aud && dirAudioUrl && <div style={{ position: "absolute", top: 4, left: 4, background: "rgba(180,74,255,.85)", borderRadius: 4, padding: "2px 5px", fontSize: 8, color: "#fff", fontWeight: 700 }}>✓</div>}
-                          </>
-                        : <><span style={{ fontSize: 22, marginBottom: 4 }}>🎵</span><span style={{ fontSize: 9, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Música / voz (opcional)" : "Music / voice (optional)"}</span></>}
-                      {dirAudio && !dirUploading.aud && <button onClick={e => { e.preventDefault(); setDirAudio(null); setDirAudioUrl(null); }} style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 10, cursor: "pointer" }}>×</button>}
-                      <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac" style={{ display: "none" }} onChange={e => uploadDirFile(e.target.files[0], false)} />
-                    </label>
-                  </div>
+                    <div>
+                      <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, marginBottom: 6 }}>
+                        {lang === "es" ? `🎵 Audio (opcional · ${dirAudios.length}/2)` : `🎵 Audio (optional · ${dirAudios.length}/2)`}
+                      </p>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {dirAudios.map((aud, i) => (
+                          <div key={i} style={{ position: "relative", height: 50, minWidth: 120, maxWidth: 160, borderRadius: 9, border: "1px solid rgba(180,74,255,.3)", background: "rgba(180,74,255,.04)", display: "flex", alignItems: "center", gap: 6, padding: "0 8px", flexShrink: 0 }}>
+                            <span style={{ fontSize: 16 }}>🎵</span>
+                            <span style={{ fontSize: 9, color: "#b44aff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{aud.name.slice(0, 16)}</span>
+                            <button onClick={() => setDirAudios(prev => prev.filter((_, j) => j !== i))} style={{ width: 14, height: 14, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>×</button>
+                          </div>
+                        ))}
+                        {dirAudios.length < 2 && (
+                          <label style={{ height: 50, minWidth: 80, borderRadius: 9, border: "1px dashed rgba(255,255,255,.12)", background: "rgba(255,255,255,.01)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 12px" }}>
+                            {dirUploading.aud
+                              ? <div style={{ width: 16, height: 16, border: "2px solid rgba(180,74,255,.3)", borderTop: "2px solid #b44aff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
+                              : <><span style={{ fontSize: 16 }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>audio</span></>}
+                            <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac" style={{ display: "none" }} onChange={e => uploadDirFile(e.target.files[0], false)} />
+                          </label>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
-                <p style={{ fontSize: 9, color: "#3a3a50", margin: "-4px 0 14px", textAlign: "center" }}>
+
+                <p style={{ fontSize: 9, color: "#3a3a50", margin: "0 0 14px", textAlign: "center" }}>
                   {dirKeepFrame
-                    ? (lang === "es" ? "📎 Solo imagen · jpg, png, webp · El video comenzará exactamente con tu frame" : "📎 Image only · jpg, png, webp · Video will start exactly with your frame")
-                    : (lang === "es" ? "📎 Solo imagen · jpg, png, webp · Audio: mp3, wav, m4a" : "📎 Image only · jpg, png, webp · Audio: mp3, wav, m4a")}
+                    ? (lang === "es" ? "📎 1 imagen · jpg, png, webp · El video comenzará exactamente con tu frame" : "📎 1 image · jpg, png, webp · Video starts exactly with your frame")
+                    : (lang === "es" ? "📎 Hasta 5 imgs · jpg, png, webp · Hasta 2 audios: mp3, wav, m4a" : "📎 Up to 5 imgs · jpg, png, webp · Up to 2 audios: mp3, wav, m4a")}
                 </p>
 
                 {dirUploadError && (
@@ -2919,7 +2935,9 @@ export default function App() {
                 <div style={{ marginBottom: 12 }}>
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena *" : "Scene description *"}</p>
                   <textarea value={dirPrompt} onChange={e => setDirPrompt(e.target.value)}
-                    placeholder={lang === "es" ? "Describe la escena en detalle. Usá @image1 para referenciar tu imagen. Ej: @image1 camina por una calle de noche con luces de neón, cámara lenta, lluvia..." : "Describe the scene in detail. Use @image1 to reference your image. E.g. @image1 walks down a neon-lit street at night, slow motion, rain..."}
+                    placeholder={lang === "es"
+                      ? (dirImages.length > 1 ? "Describe la escena. Usá @image1, @image2... para referenciar tus imágenes. Ej: @image1 camina con la ropa de @image2..." : "Describe la escena. Usá @image1 para referenciar tu imagen. Ej: @image1 camina por una calle de noche...")
+                      : (dirImages.length > 1 ? "Describe the scene. Use @image1, @image2... to reference your images. E.g. @image1 walks wearing @image2's outfit..." : "Describe the scene. Use @image1 to reference your image. E.g. @image1 walks down a neon-lit street...")}
                     rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
                   <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}><span style={{ color: dirPrompt.length > 3000 ? "#ffb800" : "#3a3a50" }}>{dirPrompt.length}</span>/3500</p>
                 </div>
@@ -2938,9 +2956,9 @@ export default function App() {
                 <div style={{ marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: "rgba(0,240,255,.03)", border: "1px solid rgba(0,240,255,.08)" }}>
                   <div>
                     <p style={{ fontSize: 11, fontWeight: 700, color: "#e0e0f0", margin: "0 0 2px" }}>{lang === "es" ? "🎯 Mantener frame inicial" : "🎯 Keep initial frame"}</p>
-                    <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "El video comienza exactamente con tu imagen" : "Video starts exactly with your image"}</p>
+                    <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "El video comienza exactamente con tu imagen · Solo 1 imagen · Sin audio" : "Video starts exactly with your image · 1 image only · No audio"}</p>
                   </div>
-                  <div onClick={() => setDirKeepFrame(v => !v)} style={{ width: 44, height: 24, borderRadius: 12, background: dirKeepFrame ? "#00f0ff" : "rgba(255,255,255,.1)", cursor: "pointer", position: "relative", transition: "background .2s", flexShrink: 0 }}>
+                  <div onClick={() => { setDirKeepFrame(v => !v); if (!dirKeepFrame) { setDirImages(prev => prev.slice(0,1)); setDirAudios([]); } }} style={{ width: 44, height: 24, borderRadius: 12, background: dirKeepFrame ? "#00f0ff" : "rgba(255,255,255,.1)", cursor: "pointer", position: "relative", transition: "background .2s", flexShrink: 0 }}>
                     <div style={{ position: "absolute", top: 3, left: dirKeepFrame ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
                   </div>
                 </div>
@@ -3018,7 +3036,7 @@ export default function App() {
 
                 <button onClick={handleDirGen} disabled={!canGenDir}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGenDir ? "#06060e" : "#3a3a50", background: canGenDir ? "linear-gradient(135deg,#00f0ff,#b44aff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGenDir ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGenDir ? "0 0 22px rgba(0,240,255,.25)" : "none", transition: "all .2s" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : !dirImageUrl ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !dirPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.videos_remaining ?? 0) < dirCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎬 Generar Director (${dirCredits} créditos)` : `🎬 Generate Director (${dirCredits} credits)`)}
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : (dirUploading.img || dirUploading.aud) ? (lang === "es" ? "⏳ Subiendo..." : "⏳ Uploading...") : !primaryImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !primaryImage.url ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : !dirPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.videos_remaining ?? 0) < dirCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎬 Generar Director (${dirCredits} créditos)` : `🎬 Generate Director (${dirCredits} credits)`)}
                 </button>
 
                 {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={dirDuration} lang={lang} genStatus={genStatus} /></div>}

@@ -43,9 +43,13 @@ export default async function handler(req, res) {
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
   if (!FAL_KEY || !SERVICE_KEY) return res.status(500).json({ error: "Server misconfiguration" });
   if (!user_token) return res.status(401).json({ error: "Auth required" });
-  if (!image_url || !isSafeUrl(image_url)) return res.status(400).json({ error: "Invalid image URL" });
+  if (!image_url || !isSafeUrl(image_url)) return res.status(400).json({ error: "Invalid or missing image URL" });
+  // Validate all image and audio URLs
+  for (const u of [...imageUrlsArr, ...audioUrlsArr]) {
+    if (!isSafeUrl(u)) return res.status(400).json({ error: `Unsafe URL: ${u}` });
+  }
   if (!prompt?.trim()) return res.status(400).json({ error: "Prompt required" });
-  if (audio_url && !isSafeUrl(audio_url)) return res.status(400).json({ error: "Invalid audio URL" });
+
 
   const safeDuration = [5,6,7,8,9,10,11,12,13,14,15].includes(Number(duration)) ? Number(duration) : 5;
   const safeAspect = ["9:16","16:9","1:1","4:3","3:4","21:9"].includes(aspect_ratio) ? aspect_ratio : "9:16";
@@ -86,7 +90,7 @@ export default async function handler(req, res) {
   try {
     const falBody = keep_frame
       ? {
-          // image-to-video: just image + prompt, no audio, no references
+          // image-to-video: single image as start frame, no audio, no references
           prompt: prompt.trim().slice(0, 3500),
           image_url,
           duration: String(safeDuration),
@@ -97,16 +101,16 @@ export default async function handler(req, res) {
           end_user_id: userId,
         }
       : {
-          // reference-to-video: image + optional audio + prompt with @image1
+          // reference-to-video: multiple images + optional audios + prompt with @image1..@imageN
           prompt: prompt.trim().slice(0, 3500),
-          image_url,
+          image_urls: imageUrlsArr,
           duration: String(safeDuration),
           aspect_ratio: safeAspect,
           resolution: "720p",
-          generate_audio: !audio_url,
+          generate_audio: audioUrlsArr.length === 0,
           enable_safety_checker: true,
           end_user_id: userId,
-          ...(audio_url ? { audio_url } : {}),
+          ...(audioUrlsArr.length > 0 ? { audio_urls: audioUrlsArr } : {}),
         };
 
     const falRes = await fetch(`https://queue.fal.run/${FAL_ENDPOINT}`, {
