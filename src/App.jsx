@@ -873,51 +873,68 @@ export default function App() {
         setGens(mapped);
         setVisibleCount(20);
 
-        // Resume polling for any pending generation (page was reloaded mid-generation)
-        const pending = g.find(gen => gen.status === "processing" && gen.result_url && gen.result_url.includes("|"));
-        if (pending) {
-          const [reqId, ep] = pending.result_url.split("|");
-          const genType = pending.type;
-          const pendingAge = Date.now() - new Date(pending.created_at).getTime(); // ms since created
-          const MAX_POLL_AGE = 6 * 60 * 60 * 1000; // 6 hours max
+        // ── Recover ALL pending generations silently ──────────────────────
+        const pendings = g.filter(gen =>
+          gen.status === "processing" &&
+          gen.result_url &&
+          gen.result_url.includes("|")
+        );
 
-          console.log("Pending generation found, age:", Math.round(pendingAge / 1000) + "s");
+        if (pendings.length > 0) {
+          console.log(`Found ${pendings.length} pending generation(s) to recover`);
 
-          // Always check fal.ai at least once — even if old — before giving up
-          // The generation may have completed while the tab was closed
-          const checkOnce = async () => {
+          const MAX_POLL_AGE = 6 * 60 * 60 * 1000; // 6 hours
+
+          const refreshCredits = async () => {
             try {
-              const statusRes = await fetch("/api/status", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
-              });
-              const statusData = await statusRes.json();
-              if (statusData.status === "COMPLETED" && statusData.url) {
-                const newGen = { ...pending, url: statusData.url, status: "completed", result_url: statusData.url };
-                setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
-                setGenResult({ type: genType, url: statusData.url });
-                console.log("Pending generation recovered:", statusData.url);
-                if (Notification.permission === "granted") {
-                  new Notification("NanoBanano Studio", { body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista", icon: "/favicon.png" });
-                }
-                return "completed";
+              const u2 = await sb.getUser(s.access_token);
+              if (u2?.id) {
+                const p2 = await sb.getProfile(u2.id, s.access_token);
+                if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining }));
               }
-              if (statusData.status === "FAILED") {
-                // Remove spinner, refresh credits (refund already done by status.js)
-                setGens(prev => prev.filter(gen => gen.id !== pending.id));
-                try { const u2 = await sb.getUser(s.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, s.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {}
-                return "failed";
-              }
-              return "pending";
-            } catch { return "pending"; }
+            } catch {}
           };
 
-          // If older than MAX_POLL_AGE — check once then give up
-          if (pendingAge > MAX_POLL_AGE) {
-            console.log("Generation too old — checking fal.ai one last time before giving up");
-            const result = await checkOnce();
-            if (result !== "completed" && result !== "failed") {
-              // Still pending after max age — mark as failed
+          const recoverOne = async (pending) => {
+            const parts = pending.result_url.split("|");
+            const reqId = parts[0];
+            const ep = parts.slice(1).join("|");
+            const genType = pending.type;
+            const age = Date.now() - new Date(pending.created_at).getTime();
+
+            const checkStatus = async () => {
+              try {
+                const res = await fetch("/api/status", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
+                });
+                return await res.json();
+              } catch { return { status: "IN_PROGRESS" }; }
+            };
+
+            const handleCompleted = (url) => {
+              console.log(`✓ Recovered gen ${pending.id}: ${url}`);
+              setGens(prev => prev.map(gen =>
+                gen.id === pending.id
+                  ? { ...gen, url, status: "completed", result_url: url }
+                  : gen
+              ));
+              if (Notification.permission === "granted") {
+                new Notification("NanoBanano Studio", {
+                  body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista",
+                  icon: "/favicon.png"
+                });
+              }
+            };
+
+            const handleFailed = () => {
+              console.log(`✗ Gen ${pending.id} failed — removing`);
+              setGens(prev => prev.filter(gen => gen.id !== pending.id));
+              refreshCredits();
+            };
+
+            const handleExpired = async () => {
+              console.log(`Gen ${pending.id} expired — marking failed`);
               try {
                 await fetch(`${SB_URL}/rest/v1/generations?id=eq.${pending.id}`, {
                   method: "PATCH",
@@ -926,86 +943,34 @@ export default function App() {
                 });
               } catch {}
               setGens(prev => prev.filter(gen => gen.id !== pending.id));
-            }
-            return;
-          }
+            };
 
-          // Check fal.ai status once immediately
-          const quickCheck = async () => {
-            try {
-              const result = await checkOnce();
-              if (result === "completed" || result === "failed") return;
+            // Always check once immediately regardless of age
+            const sd = await checkStatus();
+            if (sd.status === "COMPLETED" && sd.url) { handleCompleted(sd.url); return; }
+            if (sd.status === "FAILED") { handleFailed(); return; }
 
-              // Still processing — only show spinner if less than 5 minutes old
-              const SHOW_SPINNER_AGE = 5 * 60 * 1000;
-              if (pendingAge > SHOW_SPINNER_AGE) {
-                // Too old to show spinner — poll quietly in background
-                console.log("Polling silently in background (age > 5min)");
-                const bgPoll = async (attempts = 0) => {
-                  if (attempts > 150) return; // give up after ~7 minutes
-                  try {
-                    const r = await fetch("/api/status", {
-                      method: "POST", headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
-                    });
-                    const d = await r.json();
-                    if (d.status === "COMPLETED" && d.url) {
-                      const newGen = { ...pending, url: d.url, status: "completed", result_url: d.url };
-                      setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
-                      setGenResult({ type: genType, url: d.url });
-                      playDoneSound();
-                    } else if (d.status === "FAILED") {
-                      // Remove from UI and refresh credits
-                      setGens(prev => prev.filter(gen => gen.id !== pending.id));
-                      try { const u2 = await sb.getUser(s.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, s.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {}
-                    } else {
-                      setTimeout(() => bgPoll(attempts + 1), 3000);
-                    }
-                  } catch { setTimeout(() => bgPoll(attempts + 1), 5000); }
-                };
-                setTimeout(() => bgPoll(0), 3000);
-                return;
-              }
+            // If too old and still not done — give up
+            if (age > MAX_POLL_AGE) { await handleExpired(); return; }
 
-              // Less than 5 minutes old — show spinner and poll normally
-              setGenning(true);
-              setGenStatus({ phase: statusData.position > 0 ? "queued" : "generating", position: statusData.position || null, elapsed: Math.round(pendingAge / 1000) });
-              const pollStart = Date.now();
-              let attempts = 0;
-              const resumePoll = async () => {
-                attempts++;
-                if (attempts > 60) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
-                try {
-                  const r2 = await fetch("/api/status", {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
-                  });
-                  const d2 = await r2.json();
-                  const elapsed = Math.round((Date.now() - pollStart + pendingAge) / 1000);
-                  if (d2.status === "COMPLETED" && d2.url) {
-                    const newGen = { ...pending, url: d2.url, status: "completed", result_url: d2.url };
-                    setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
-                    setGenResult({ type: genType, url: d2.url });
-                    setGenning(false);
-                    setGenStatus({ phase: "done", position: null, elapsed });
-                    playDoneSound();
-                    if (document.hidden && Notification.permission === "granted") {
-                      new Notification("NanoBanano Studio", { body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista", icon: "/favicon.png" });
-                    }
-                    return;
-                  }
-                  if (d2.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGens(prev => prev.filter(gen => gen.id !== pending.id)); try { const u2 = await sb.getUser(s.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, s.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {}; return; }
-                  setGenStatus({ phase: d2.position > 0 ? "queued" : "generating", position: d2.position || null, elapsed });
-                  setTimeout(resumePoll, 3000);
-                } catch { setTimeout(resumePoll, 5000); }
-              };
-              setTimeout(resumePoll, 2000);
-
-            } catch { /* network error — ignore silently */ }
+            // Still IN_PROGRESS — poll silently in background (every 4s, up to 20 min)
+            const MAX_ATTEMPTS = Math.ceil((20 * 60 * 1000) / 4000); // ~300 attempts
+            let attempts = 0;
+            const poll = async () => {
+              attempts++;
+              if (attempts > MAX_ATTEMPTS) { await handleExpired(); return; }
+              const d = await checkStatus();
+              if (d.status === "COMPLETED" && d.url) { handleCompleted(d.url); playDoneSound(); return; }
+              if (d.status === "FAILED") { handleFailed(); return; }
+              setTimeout(poll, 4000);
+            };
+            setTimeout(poll, 4000);
           };
 
-          quickCheck();
+          // Process all pendings in parallel — don't await, run concurrently
+          pendings.forEach(p => recoverOne(p));
         }
+        // ── End recovery ──────────────────────────────────────────────────
       }
 
       loadFavorites(s.access_token);
