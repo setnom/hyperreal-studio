@@ -2045,17 +2045,6 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                  {/* Style influence preview */}
-                  {prompt.trim() && (
-                    <div style={{ marginBottom: 12, padding: "8px 10px", borderRadius: 8, background: "rgba(0,240,255,.03)", border: "1px solid rgba(0,240,255,.08)" }}>
-                      <p style={{ fontSize: 8, color: "#3a3a60", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 4px" }}>
-                        {lang === "en" ? "✦ prompt that will be sent" : "✦ prompt que se enviará"}
-                      </p>
-                      <p style={{ fontSize: 10, color: "#5a5a70", margin: 0, lineHeight: 1.5, fontFamily: "'JetBrains Mono',monospace", wordBreak: "break-word" }}>
-                        {buildStyledPrompt(prompt, style)}
-                      </p>
-                    </div>
-                  )}
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{t("ratio_label")}</p>
                   <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
                     {RATIOS.map(r => (
