@@ -37,7 +37,12 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { image_url, audio_url, prompt, duration, aspect_ratio, keep_frame, user_token } = req.body || {};
+  const { image_urls, audio_urls, prompt, duration, aspect_ratio, keep_frame, user_token } = req.body || {};
+  // Support both array format (new) and single URL (backward compat)
+  const imageUrlsArr = Array.isArray(image_urls) ? image_urls.filter(Boolean) : (image_urls ? [image_urls] : []);
+  const audioUrlsArr = Array.isArray(audio_urls) ? audio_urls.filter(Boolean) : (audio_urls ? [audio_urls] : []);
+  const image_url = imageUrlsArr[0]; // primary image (first in array)
+
   const FAL_ENDPOINT = keep_frame ? FAL_ENDPOINT_I2V : FAL_ENDPOINT_REF;
   const FAL_KEY = process.env.FAL_KEY;
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -45,7 +50,7 @@ export default async function handler(req, res) {
   if (!user_token) return res.status(401).json({ error: "Auth required" });
   if (!image_url || !isSafeUrl(image_url)) return res.status(400).json({ error: "Invalid or missing image URL" });
   // Validate all image and audio URLs
-  for (const u of [...imageUrlsArr, ...audioUrlsArr]) {
+  for (const u of [...imageUrlsArr.slice(1), ...audioUrlsArr]) {
     if (!isSafeUrl(u)) return res.status(400).json({ error: `Unsafe URL: ${u}` });
   }
   if (!prompt?.trim()) return res.status(400).json({ error: "Prompt required" });
