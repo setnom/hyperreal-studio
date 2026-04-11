@@ -3183,28 +3183,19 @@ export default function App() {
                 </div>
                 <button onClick={() => { setPreviewItem(null); setPreviewIndex(null); }} style={{ background: "none", border: "none", color: "#5a5a70", fontSize: 18, cursor: "pointer" }}>✕</button>
               </div>
-              {/* Prompt box — max 3 lines, copy button */}
+              {/* Prompt hidden from UI — copy button only, no visible text */}
               {previewItem.prompt && (
-                <div style={{ marginBottom: 12, borderRadius: 8, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                    <span style={{ fontSize: 9, color: "#3a3a50", letterSpacing: 1, textTransform: "uppercase" }}>Prompt</span>
-                    <button
-                      onClick={e => {
-                        navigator.clipboard?.writeText(previewItem.prompt).catch(() => {});
-                        const b = e.currentTarget;
-                        b.textContent = "✓";
-                        setTimeout(() => { b.textContent = lang === "en" ? "Copy" : "Copiar"; }, 1500);
-                      }}
-                      style={{ fontSize: 10, color: "#00f0ff", background: "rgba(0,240,255,.06)", border: "1px solid rgba(0,240,255,.15)", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
-                      {lang === "en" ? "Copy" : "Copiar"}
-                    </button>
-                  </div>
-                  <div style={{ maxHeight: 60, overflow: "hidden", position: "relative", padding: "8px 10px" }}>
-                    <p style={{ fontSize: 11, color: "#6a6a80", margin: 0, lineHeight: 1.55, fontFamily: "'JetBrains Mono',monospace", wordBreak: "break-word" }}>
-                      {previewItem.prompt}
-                    </p>
-                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 20, background: "linear-gradient(transparent, rgba(10,10,20,0.95))" }} />
-                  </div>
+                <div style={{ marginBottom: 12, display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={e => {
+                      navigator.clipboard?.writeText(previewItem.prompt).catch(() => {});
+                      const b = e.currentTarget;
+                      b.textContent = "✓ " + (lang === "en" ? "Copied!" : "¡Copiado!");
+                      setTimeout(() => { b.textContent = "📋 " + (lang === "en" ? "Copy prompt" : "Copiar prompt"); }, 1500);
+                    }}
+                    style={{ fontSize: 10, color: "#6a6a80", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                    📋 {lang === "en" ? "Copy prompt" : "Copiar prompt"}
+                  </button>
                 </div>
               )}
               <div style={{ display: "flex", gap: 8 }}>
