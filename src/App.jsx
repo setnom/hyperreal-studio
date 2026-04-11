@@ -2855,6 +2855,16 @@ export default function App() {
                   <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "IA cinematográfica con audio nativo · Solo imagen de referencia" : "Cinematic AI with native audio · Reference image only"}</p>
                 </div>
 
+                {/* Warning about real people restriction */}
+                <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 9, background: "rgba(255,184,0,.06)", border: "1px solid rgba(255,184,0,.2)", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <span style={{ fontSize: 14, flexShrink: 0 }}>⚠️</span>
+                  <p style={{ fontSize: 10, color: "#c8a020", margin: 0, lineHeight: 1.5 }}>
+                    {lang === "es"
+                      ? "El modelo no procesa imágenes que contengan rostros de personas reales reconocibles. Usá ilustraciones, personajes animados, productos o paisajes para mejores resultados."
+                      : "The model cannot process images containing recognizable real people's faces. Use illustrations, animated characters, products, or landscapes for best results."}
+                  </p>
+                </div>
+
                 {/* Upload area — multi-image + multi-audio */}
                 <div style={{ marginBottom: 10 }}>
                   {/* Images section */}

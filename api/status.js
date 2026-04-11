@@ -51,7 +51,22 @@ function extractErrorMessage(data) {
   return "Generation failed";
 }
 
-// Refund credits in Supabase
+// Translate technical fal.ai errors to user-friendly messages
+function humanizeError(msg) {
+  if (!msg) return msg;
+  const m = msg.toLowerCase();
+  if (m.includes("likenesses") || m.includes("real people") || m.includes("private information"))
+    return "La imagen contiene personas reales reconocibles. El modelo no puede procesar este contenido. Usá ilustraciones, personajes animados o imágenes sin personas. Tu crédito fue devuelto.";
+  if (m.includes("sensitive content") || m.includes("sensitive"))
+    return "Contenido sensible detectado en el output. El modelo bloqueó la generación. Tu crédito fue devuelto.";
+  if (m.includes("safety") || m.includes("harmful"))
+    return "El contenido generado fue bloqueado por las políticas de seguridad. Intentá con un prompt diferente. Tu crédito fue devuelto.";
+  if (m.includes("nsfw"))
+    return "Contenido NSFW detectado. Modificá la imagen o el prompt. Tu crédito fue devuelto.";
+  return msg;
+}
+
+
 async function refundCredits(userId, endpoint, reqId, serviceKey) {
   try {
     const searchKey = encodeURIComponent(reqId + "|" + endpoint);
@@ -165,7 +180,7 @@ export default async function handler(req, res) {
 
       // Check if result itself contains an error (e.g. sensitive content)
       if (result?.detail || (result?.status === "FAILED")) {
-        const errMsg = extractErrorMessage(result);
+        const errMsg = humanizeError(extractErrorMessage(result));
         console.error(`Generation error in result: ${errMsg}`);
         if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
         return res.status(200).json({ status: "FAILED", error: errMsg });
@@ -176,7 +191,7 @@ export default async function handler(req, res) {
 
       if (!url) {
         // No URL in result — treat as failure
-        const errMsg = extractErrorMessage(result) || "No output URL in result";
+        const errMsg = humanizeError(extractErrorMessage(result)) || "No output URL in result";
         if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
         return res.status(200).json({ status: "FAILED", error: errMsg });
       }
@@ -204,7 +219,7 @@ export default async function handler(req, res) {
     }
 
     if (falStatus === "FAILED") {
-      const errMsg = extractErrorMessage(statusData);
+      const errMsg = humanizeError(extractErrorMessage(statusData));
       console.error(`Generation FAILED: ${errMsg} endpoint=${endpoint}`);
       // Refund credits
       if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
