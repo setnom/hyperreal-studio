@@ -165,7 +165,18 @@ export default async function handler(req, res) {
 
   try {
     const statusRes = await fetch(safeStatusUrl, { method: "GET", headers });
-    if (!statusRes.ok) return res.status(200).json({ status: "IN_PROGRESS" });
+    
+    // If status endpoint itself returns error — check if it's a 422 (content error)
+    if (!statusRes.ok) {
+      if (statusRes.status === 422 || statusRes.status === 400) {
+        const errBody = await statusRes.json().catch(() => ({}));
+        const errMsg = humanizeError(extractErrorMessage(errBody));
+        console.error(`Status check error ${statusRes.status}: ${errMsg}`);
+        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+        return res.status(200).json({ status: "FAILED", error: errMsg });
+      }
+      return res.status(200).json({ status: "IN_PROGRESS" });
+    }
 
     const statusData = await statusRes.json();
     const falStatus = (statusData.status || "").toUpperCase();
@@ -174,12 +185,23 @@ export default async function handler(req, res) {
       if (!safeResultUrl) return res.status(400).json({ error: "Invalid result URL" });
 
       const resultRes = await fetch(safeResultUrl, { method: "GET", headers });
-      if (!resultRes.ok) return res.status(200).json({ status: "COMPLETED", error: "Could not fetch result" });
+      
+      // If result endpoint returns 422 — content was blocked
+      if (!resultRes.ok) {
+        if (resultRes.status === 422 || resultRes.status === 400) {
+          const errBody = await resultRes.json().catch(() => ({}));
+          const errMsg = humanizeError(extractErrorMessage(errBody));
+          console.error(`Result fetch error ${resultRes.status}: ${errMsg}`);
+          if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+          return res.status(200).json({ status: "FAILED", error: errMsg });
+        }
+        return res.status(200).json({ status: "COMPLETED", error: "Could not fetch result" });
+      }
 
       const result = await resultRes.json();
 
-      // Check if result itself contains an error (e.g. sensitive content)
-      if (result?.detail || (result?.status === "FAILED")) {
+      // Check if result itself contains an error (e.g. sensitive content, 422)
+      if (result?.detail || result?.error || (result?.status === "FAILED")) {
         const errMsg = humanizeError(extractErrorMessage(result));
         console.error(`Generation error in result: ${errMsg}`);
         if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
