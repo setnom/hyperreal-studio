@@ -118,11 +118,11 @@ export default async function handler(req, res) {
           ...(audioUrlsArr.length > 0 ? { audio_urls: audioUrlsArr } : {}),
         };
 
-    const WEBHOOK_URL = "https://nanobanano.studio/api/fal-webhook";
-    const falRes = await fetch(`https://queue.fal.run/${FAL_ENDPOINT}`, {
+    const WEBHOOK_URL = "https://nanobanano.studio/api/webhook?source=fal";
+    const falRes = await fetch(`https://queue.fal.run/${FAL_ENDPOINT}?fal_webhook=${encodeURIComponent(WEBHOOK_URL)}`, {
       method: "POST",
       headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ ...falBody, webhook_url: WEBHOOK_URL }),
+      body: JSON.stringify(falBody),
     });
     const falData = await falRes.json();
     if (!falRes.ok || !falData.request_id) {

@@ -210,9 +210,93 @@ async function getPlanFromSubscription(stripe, sub) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+  // ─── Route fal.ai webhooks (no Stripe signature) ───
+  if (req.query?.source === "fal" || !req.headers["stripe-signature"]) {
+    // Only handle if it looks like a fal.ai payload (has request_id)
+    const body = req.body;
+    if (body?.request_id) {
+      console.log(`fal-webhook: request_id=${body.request_id} status=${body.status}`);
+      if (!SERVICE_KEY) return res.status(200).json({ received: true });
+
+      const { request_id, status, payload, error: falError } = body;
+
+      // Extract URL from payload
+      const extractUrl = (p) => {
+        if (!p) return null;
+        if (p.images?.[0]?.url) return p.images[0].url;
+        if (p.video?.url) return p.video.url;
+        if (p.videos?.[0]?.url) return p.videos[0].url;
+        if (typeof p.url === "string") return p.url;
+        return null;
+      };
+
+      const sbH = (k) => ({ apikey: k, Authorization: `Bearer ${k}`, "Content-Type": "application/json" });
+
+      // Find generation in DB
+      let genRow = null;
+      try {
+        const r1 = await fetch(
+          `${SB_URL}/rest/v1/generations?result_url=like.${encodeURIComponent(request_id + "|%")}&select=id,user_id,type,status&limit=1`,
+          { headers: sbH(SERVICE_KEY) }
+        );
+        genRow = (await r1.json())?.[0] || null;
+        if (!genRow) {
+          const r2 = await fetch(
+            `${SB_URL}/rest/v1/generations?result_url=eq.${encodeURIComponent(request_id)}&select=id,user_id,type,status&limit=1`,
+            { headers: sbH(SERVICE_KEY) }
+          );
+          genRow = (await r2.json())?.[0] || null;
+        }
+        console.log(`fal-webhook lookup: ${genRow ? `found gen ${genRow.id}` : "not found"}`);
+      } catch (e) { console.error("fal-webhook lookup error:", e.message); }
+
+      if (genRow && genRow.status !== "completed") {
+        if (status === "OK") {
+          const url = extractUrl(payload);
+          if (url) {
+            try {
+              await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}`, {
+                method: "PATCH",
+                headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" },
+                body: JSON.stringify({ result_url: url, status: "completed" }),
+              });
+              console.log(`✓ fal-webhook: gen ${genRow.id} completed → ${url}`);
+            } catch (e) { console.error("fal-webhook update error:", e.message); }
+          }
+        } else if (status === "ERROR") {
+          console.error(`fal-webhook ERROR for ${request_id}: ${falError}`);
+          try {
+            await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}`, {
+              method: "PATCH",
+              headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" },
+              body: JSON.stringify({ result_url: null, status: "failed" }),
+            });
+            const profRes = await fetch(
+              `${SB_URL}/rest/v1/profiles?id=eq.${genRow.user_id}&select=images_remaining,videos_remaining`,
+              { headers: sbH(SERVICE_KEY) }
+            );
+            const prof = (await profRes.json())?.[0];
+            if (prof) {
+              const patch = genRow.type === "image"
+                ? { images_remaining: (prof.images_remaining || 0) + 1 }
+                : { videos_remaining: (prof.videos_remaining || 0) + 2 };
+              await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${genRow.user_id}`, {
+                method: "PATCH",
+                headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" },
+                body: JSON.stringify(patch),
+              });
+            }
+          } catch (e) { console.error("fal-webhook refund error:", e.message); }
+        }
+      }
+      return res.status(200).json({ received: true });
+    }
+  }
+
   const STRIPE_SECRET  = process.env.STRIPE_SECRET_KEY;
   const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
-  const SERVICE_KEY    = process.env.SUPABASE_SERVICE_KEY;
 
   if (!STRIPE_SECRET || !WEBHOOK_SECRET || !SERVICE_KEY) {
     console.error("Missing env vars");

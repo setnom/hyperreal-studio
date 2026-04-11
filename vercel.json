@@ -39,9 +39,6 @@
     },
     "api/director.js": {
       "maxDuration": 300
-    },
-    "api/fal-webhook.js": {
-      "maxDuration": 15
     }
   },
   "crons": [
