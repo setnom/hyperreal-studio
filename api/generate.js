@@ -236,10 +236,11 @@ export default async function handler(req, res) {
       if (multishot === true) body.multi_shot = true;
     }
 
+    const WEBHOOK_URL = "https://nanobanano.studio/api/fal-webhook";
     const falRes = await fetch(`https://queue.fal.run/${endpoint}`, {
       method: "POST",
       headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, webhook_url: WEBHOOK_URL }),
     });
     const data = await falRes.json();
 

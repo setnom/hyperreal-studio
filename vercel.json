@@ -4,32 +4,80 @@
   "installCommand": "npm install",
   "framework": null,
   "functions": {
-    "api/generate.js":      { "maxDuration": 300 },
-    "api/status.js":        { "maxDuration": 60  },
-    "api/upload.js":        { "maxDuration": 30  },
-    "api/webhook.js":       { "maxDuration": 60  },
-    "api/download.js":      { "maxDuration": 60  },
-    "api/favorites.js":     { "maxDuration": 10  },
-    "api/activate.js":      { "maxDuration": 30  },
-    "api/pack.js":          { "maxDuration": 30  },
-    "api/sync.js":          { "maxDuration": 60  },
-    "api/motion.js":        { "maxDuration": 300 },
-    "api/upload-init.js":   { "maxDuration": 15  },
-    "api/director.js":      { "maxDuration": 300 }
+    "api/generate.js": {
+      "maxDuration": 300
+    },
+    "api/status.js": {
+      "maxDuration": 60
+    },
+    "api/upload.js": {
+      "maxDuration": 30
+    },
+    "api/webhook.js": {
+      "maxDuration": 60
+    },
+    "api/download.js": {
+      "maxDuration": 60
+    },
+    "api/favorites.js": {
+      "maxDuration": 10
+    },
+    "api/activate.js": {
+      "maxDuration": 30
+    },
+    "api/pack.js": {
+      "maxDuration": 30
+    },
+    "api/sync.js": {
+      "maxDuration": 60
+    },
+    "api/motion.js": {
+      "maxDuration": 300
+    },
+    "api/upload-init.js": {
+      "maxDuration": 15
+    },
+    "api/director.js": {
+      "maxDuration": 300
+    },
+    "api/fal-webhook.js": {
+      "maxDuration": 15
+    }
   },
   "crons": [
-    { "path": "/api/sync", "schedule": "0 8 * * *"  },
-    { "path": "/api/sync", "schedule": "0 20 * * *" }
+    {
+      "path": "/api/sync",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/sync",
+      "schedule": "0 20 * * *"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options",  "value": "nosniff" },
-        { "key": "X-Frame-Options",         "value": "DENY" },
-        { "key": "X-XSS-Protection",        "value": "1; mode=block" },
-        { "key": "Referrer-Policy",         "value": "strict-origin-when-cross-origin" },
-        { "key": "Permissions-Policy",      "value": "camera=(), microphone=(), geolocation=()" },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; media-src 'self' https: blob:; connect-src 'self' https://pygcsyqahhdtmwmqklnl.supabase.co https://queue.fal.run https://fal.run https://billing.stripe.com https://v3b.fal.media https://v2.fal.media https://fal.media https://cdn.fal.run https://rest.alpha.fal.ai; frame-ancestors 'none'"
@@ -38,7 +86,13 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ]
 }

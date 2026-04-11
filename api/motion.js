@@ -102,6 +102,7 @@ export default async function handler(req, res) {
 
   console.log(`Motion: plan=${plan} dur=${finalDur}s credits=${creditsNeeded} user=${userId}`);
 
+  const WEBHOOK_URL = "https://nanobanano.studio/api/fal-webhook";
   try {
     // Submit to fal.ai
     const falRes = await fetch(`https://queue.fal.run/${FAL_ENDPOINT}`, {
@@ -114,6 +115,7 @@ export default async function handler(req, res) {
         cfg_scale: 0.8,
         generate_audio: false,
         ...(prompt?.trim() ? { prompt: prompt.trim().slice(0, 500) } : {}),
+        webhook_url: WEBHOOK_URL,
       }),
     });
     const falData = await falRes.json();
