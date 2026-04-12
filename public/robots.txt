@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://nanobanano.studio/sitemap.xml
+
+# Block dashboard and auth routes from indexing
+Disallow: /dashboard
+Disallow: /api/
+
+# Allow main landing page
+Allow: /$
