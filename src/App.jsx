@@ -652,6 +652,7 @@ export default function App() {
   const [multishot, setMultishot] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [userPanelOpen, setUserPanelOpen] = useState(false);
+  const [openFaqIdx, setOpenFaqIdx] = useState(null); // FAQ accordion for landing page
   const [cancelModal, setCancelModal] = useState(false);
   const [showTyC, setShowTyC] = useState(false);
 
@@ -1813,7 +1814,6 @@ export default function App() {
           { q: "How long does it take to generate a video?", a: "Images take 15 seconds to 1 minute. Videos can take 3 to 10 minutes. You can close the app and the video saves automatically when done — find it in your library when you return." },
           { q: "What's the difference between Image, Video, Motion, and Director modes?", a: "Image generates AI photos. Video generates cinematic clips from text. Motion Control animates an existing image using a reference motion video. Director is the most advanced — up to 9 reference images, audio, and full scene control with Seedance 2.0." },
         ];
-        const [openFaqIdx, setOpenFaqIdx] = React.useState(null);
         return (
           <div style={{ maxWidth: isDesk ? 720 : "100%", margin: "40px auto 16px", padding: isDesk ? "0" : "0 4px" }}>
             <h2 style={{ fontSize: isDesk ? 22 : 18, fontWeight: 800, color: "#e0e0f0", marginBottom: 20, textAlign: "center" }}>
