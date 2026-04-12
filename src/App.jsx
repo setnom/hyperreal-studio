@@ -1794,6 +1794,49 @@ export default function App() {
         <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ padding: "10px 28px", fontSize: 12, fontWeight: 700, color: "#e0e0f0", background: "transparent", border: "1px solid rgba(0,240,255,.25)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("learn_cta")}</button>
       </div>
 
+      {/* ── FAQ Section ── */}
+      {(() => {
+        const faqs = lang === "es" ? [
+          { q: "¿Necesito experiencia en diseño o IA para usar NanoBanano Studio?", a: "Para nada. Solo describís lo que querés en español, elegís el estilo y hacés clic en generar. La plataforma hace todo el trabajo técnico. En segundos tenés una imagen o video profesional listo para usar." },
+          { q: "¿Puedo cancelar mi suscripción en cualquier momento?", a: "Sí, sin condiciones ni penalizaciones. Cancelás desde tu panel cuando quieras y seguís teniendo acceso hasta que venza tu período actual. No se cobran períodos adicionales." },
+          { q: "¿Qué pasa si se me acaban los créditos antes de fin de mes?", a: "Podés comprar packs de créditos adicionales sin cambiar tu plan (disponible para planes Básico, Pro y Creador). Los créditos extras no vencen con el mes — se mantienen hasta que los uses." },
+          { q: "¿Las imágenes y videos que genero son míos? ¿Puedo usarlos comercialmente?", a: "Sí. Todo el contenido que generás con NanoBanano Studio te pertenece y podés usarlo con fines comerciales — para redes sociales, anuncios, productos, clientes, lo que necesités." },
+          { q: "¿Cómo restauro fotos antiguas con IA?", a: "En NanoBanano Studio seleccionás el estilo 'Restaurar', subís tu foto antigua y la IA la restaura automáticamente preservando los rasgos originales con calidad hasta 4K." },
+          { q: "¿Cuánto tarda en generarse un video?", a: "Las imágenes tardan entre 15 segundos y 1 minuto. Los videos pueden tardar entre 3 y 10 minutos. Podés cerrar la app y el video se guarda automáticamente cuando termina — lo encontrás en tu biblioteca al volver." },
+          { q: "¿Cuál es la diferencia entre Imagen, Video, Motion y Director?", a: "Imagen genera fotos con IA. Video genera clips cinematográficos desde texto. Motion Control anima una imagen usando un video de referencia de movimiento. Director es el modo más avanzado — hasta 9 imágenes de referencia, audio y control total de escena con Seedance 2.0." },
+        ] : [
+          { q: "Do I need design or AI experience to use NanoBanano Studio?", a: "Not at all. Just describe what you want in plain language, choose a style, and hit generate. The platform handles all the technical work. In seconds you have a professional image or video ready to use." },
+          { q: "Can I cancel my subscription at any time?", a: "Yes, with no conditions or penalties. Cancel from your dashboard at any time and keep access until your current period ends. No additional charges." },
+          { q: "What happens if I run out of credits before the end of the month?", a: "You can buy additional credit packs without changing your plan (available for Basic, Pro, and Creator plans). Extra credits don't expire at month end — they stay until you use them." },
+          { q: "Do I own the images and videos I generate? Can I use them commercially?", a: "Yes. All content you generate with NanoBanano Studio belongs to you and can be used commercially — for social media, ads, products, clients, whatever you need." },
+          { q: "How do I restore old photos with AI?", a: "In NanoBanano Studio select the 'Restore' style, upload your old photo and the AI restores it automatically preserving original features with up to 4K quality." },
+          { q: "How long does it take to generate a video?", a: "Images take 15 seconds to 1 minute. Videos can take 3 to 10 minutes. You can close the app and the video saves automatically when done — find it in your library when you return." },
+          { q: "What's the difference between Image, Video, Motion, and Director modes?", a: "Image generates AI photos. Video generates cinematic clips from text. Motion Control animates an existing image using a reference motion video. Director is the most advanced — up to 9 reference images, audio, and full scene control with Seedance 2.0." },
+        ];
+        const [openFaqIdx, setOpenFaqIdx] = React.useState(null);
+        return (
+          <div style={{ maxWidth: isDesk ? 720 : "100%", margin: "40px auto 16px", padding: isDesk ? "0" : "0 4px" }}>
+            <h2 style={{ fontSize: isDesk ? 22 : 18, fontWeight: 800, color: "#e0e0f0", marginBottom: 20, textAlign: "center" }}>
+              {lang === "es" ? "Preguntas frecuentes" : "Frequently asked questions"}
+            </h2>
+            {faqs.map((faq, i) => (
+              <div key={i} style={{ marginBottom: 8, borderRadius: 10, border: `1px solid ${openFaqIdx === i ? "rgba(0,240,255,.2)" : "rgba(255,255,255,.06)"}`, background: openFaqIdx === i ? "rgba(0,240,255,.03)" : "rgba(255,255,255,.02)", overflow: "hidden", transition: "border-color .2s" }}>
+                <button onClick={() => setOpenFaqIdx(openFaqIdx === i ? null : i)}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left", gap: 12 }}>
+                  <span style={{ fontSize: isDesk ? 13 : 12, fontWeight: 600, color: "#e0e0f0", lineHeight: 1.4 }}>{faq.q}</span>
+                  <span style={{ fontSize: 18, color: "#00f0ff", flexShrink: 0, transition: "transform .25s", transform: openFaqIdx === i ? "rotate(45deg)" : "rotate(0deg)", display: "inline-block" }}>+</span>
+                </button>
+                {openFaqIdx === i && (
+                  <div style={{ padding: "0 16px 14px", animation: "fadeUp .2s ease" }}>
+                    <p style={{ fontSize: isDesk ? 12 : 11, color: "#6a6a80", margin: 0, lineHeight: 1.65 }}>{faq.a}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       <Footer />
       <CancelModal />
     </>
@@ -1921,12 +1964,56 @@ export default function App() {
           return <PlanCard key={pl.id} pl={pl} onAction={() => openCheckout(pl.id)} actionLabel={cta} isDesk={isDesk} lang={lang} features={planFeatures(pl)} />;
         })}
       </div>
+
+      {/* ── FAQ Section ── */}
+      {(() => {
+        const faqs = lang === "es" ? [
+          { q: "¿Necesito experiencia en diseño o IA para usar NanoBanano Studio?", a: "Para nada. Solo describís lo que querés en español, elegís el estilo y hacés clic en generar. La plataforma hace todo el trabajo técnico. En segundos tenés una imagen o video profesional listo para usar." },
+          { q: "¿Puedo cancelar mi suscripción en cualquier momento?", a: "Sí, sin condiciones ni penalizaciones. Cancelás desde tu panel cuando quieras y seguís teniendo acceso hasta que venza tu período actual. No se cobran períodos adicionales." },
+          { q: "¿Qué pasa si se me acaban los créditos antes de fin de mes?", a: "Podés comprar packs de créditos adicionales sin cambiar tu plan (disponible para planes Básico, Pro y Creador). Los créditos extras no vencen con el mes — se mantienen hasta que los uses." },
+          { q: "¿Las imágenes y videos que genero son míos? ¿Puedo usarlos comercialmente?", a: "Sí. Todo el contenido que generás con NanoBanano Studio te pertenece y podés usarlo con fines comerciales — para redes sociales, anuncios, productos, clientes, lo que necesités." },
+          { q: "¿Por qué el modelo rechaza algunas imágenes en modo Director?", a: "El modelo de IA tiene restricciones de privacidad y no procesa rostros de personas reales reconocibles. Para mejores resultados usá ilustraciones, personajes animados, productos o paisajes. Si la generación falla, los créditos se devuelven automáticamente." },
+          { q: "¿Cuánto tarda en generarse un video?", a: "Las imágenes tardan entre 15 segundos y 1 minuto. Los videos pueden tardar entre 3 y 10 minutos. Podés cerrar la app y el video se guarda automáticamente cuando termina — lo encontrás en tu biblioteca al volver." },
+          { q: "¿Cuál es la diferencia entre Imagen, Video, Motion y Director?", a: "Imagen genera fotos con IA. Video genera clips cinematográficos desde texto. Motion Control anima una imagen usando un video de referencia de movimiento. Director es el modo más avanzado — hasta 9 imágenes de referencia, audio y control total de escena con Seedance 2.0." },
+        ] : [
+          { q: "Do I need design or AI experience to use NanoBanano Studio?", a: "Not at all. Just describe what you want in plain language, choose a style, and hit generate. The platform handles all the technical work. In seconds you have a professional image or video ready to use." },
+          { q: "Can I cancel my subscription at any time?", a: "Yes, with no conditions or penalties. Cancel from your dashboard at any time and keep access until your current period ends. No additional charges." },
+          { q: "What happens if I run out of credits before the end of the month?", a: "You can buy additional credit packs without changing your plan (available for Basic, Pro, and Creator plans). Extra credits don't expire at month end — they stay until you use them." },
+          { q: "Do I own the images and videos I generate? Can I use them commercially?", a: "Yes. All content you generate with NanoBanano Studio belongs to you and can be used commercially — for social media, ads, products, clients, whatever you need." },
+          { q: "Why does the model reject some images in Director mode?", a: "The AI model has privacy restrictions and cannot process recognizable real people's faces. For best results use illustrations, animated characters, products, or landscapes. If a generation fails, credits are automatically refunded." },
+          { q: "How long does it take to generate a video?", a: "Images take 15 seconds to 1 minute. Videos can take 3 to 10 minutes. You can close the app and the video saves automatically when done — find it in your library when you return." },
+          { q: "What's the difference between Image, Video, Motion, and Director modes?", a: "Image generates AI photos. Video generates cinematic clips from text. Motion Control animates an existing image using a reference motion video. Director is the most advanced — up to 9 reference images, audio, and full scene control with Seedance 2.0." },
+        ];
+
+        const [openIdx, setOpenIdx] = React.useState(null);
+
+        return (
+          <div style={{ maxWidth: isDesk ? 700 : "100%", margin: "0 auto 48px", padding: isDesk ? "0" : "0 4px" }}>
+            <h3 style={{ fontSize: isDesk ? 20 : 17, fontWeight: 800, color: "#e0e0f0", marginBottom: 20, textAlign: "center" }}>
+              {lang === "es" ? "Preguntas frecuentes" : "Frequently asked questions"}
+            </h3>
+            {faqs.map((faq, i) => (
+              <div key={i} style={{ marginBottom: 8, borderRadius: 10, border: `1px solid ${openIdx === i ? "rgba(0,240,255,.2)" : "rgba(255,255,255,.06)"}`, background: openIdx === i ? "rgba(0,240,255,.03)" : "rgba(255,255,255,.02)", overflow: "hidden", transition: "border-color .2s" }}>
+                <button onClick={() => setOpenIdx(openIdx === i ? null : i)}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left", gap: 12 }}>
+                  <span style={{ fontSize: isDesk ? 13 : 12, fontWeight: 600, color: "#e0e0f0", lineHeight: 1.4 }}>{faq.q}</span>
+                  <span style={{ fontSize: 18, color: "#00f0ff", flexShrink: 0, transition: "transform .25s", transform: openIdx === i ? "rotate(45deg)" : "rotate(0deg)", display: "inline-block" }}>+</span>
+                </button>
+                {openIdx === i && (
+                  <div style={{ padding: "0 16px 14px", animation: "fadeUp .2s ease" }}>
+                    <p style={{ fontSize: isDesk ? 12 : 11, color: "#6a6a80", margin: 0, lineHeight: 1.65 }}>{faq.a}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       <Footer />
       <CancelModal />
     </div>
   );
-
-  // ═══ DASHBOARD ═══
   const planData = PLANS.find(p => p.id === profile?.plan) || PLANS[0];
   const hasPlan = profile?.plan && profile.plan !== "none";
 
