@@ -34,7 +34,8 @@ const sb = {
   addGen: (uid, type, prompt, style, t) => fetch(`${SB_URL}/rest/v1/generations`, { method: "POST", headers: { ...hdr(t), Prefer: "return=representation" }, body: JSON.stringify({ user_id: uid, type, prompt, style, status: "completed" }) }).then(r => r.json()),
   getGens: (uid, t) => fetch(`${SB_URL}/rest/v1/generations?user_id=eq.${uid}&select=*&order=created_at.desc&limit=1000`, { headers: hdr(t) }).then(r => r.json()),
   googleSignIn: () => {
-    window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(window.location.origin)}`;
+    // flow=implicit forces #access_token response on all browsers including Windows Chrome/Edge
+    window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(window.location.origin)}&flow_type=implicit`;
   },
 };
 
@@ -701,13 +702,13 @@ export default function App() {
       }
     }
 
-    // ── PKCE flow: ?code= (Windows/Chrome/Edge) ──
+    // ── PKCE flow: ?code= — should not happen since we force implicit flow
+    // But handle gracefully if it does (e.g. Supabase dashboard forces PKCE)
     const oauthCode = params.get("code");
     if (oauthCode && !params.get("payment") && !params.get("pack")) {
       window.history.replaceState(null, "", window.location.pathname);
       (async () => {
         try {
-          // Exchange code for session via Supabase token endpoint
           const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=pkce`, {
             method: "POST",
             headers: { apikey: SB_KEY, "Content-Type": "application/json" },
@@ -719,15 +720,12 @@ export default function App() {
             try { sessionStorage.setItem("hrs_s", JSON.stringify(s)); } catch {}
             setSession(s);
             await loadProfile(s);
-          } else {
-            console.error("PKCE exchange failed:", data);
-            // Fallback — try to use existing session
-            const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
-            if (saved?.access_token) { setSession(saved); await loadProfile(saved); }
+            return;
           }
-        } catch (e) {
-          console.error("PKCE exchange error:", e.message);
-        }
+        } catch (e) { console.error("Code exchange error:", e.message); }
+        // Exchange failed — redirect back to landing so user can retry
+        setLoadingProfile(false);
+        setPage(P.LAND);
       })();
       return;
     }
