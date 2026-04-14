@@ -1,4 +1,27 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Component } from "react";
+
+// ─── ERROR BOUNDARY — prevents blank screen on any crash ───
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(err) { console.error("App crash:", err); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ minHeight: "100vh", background: "#06060e", color: "#e0e0f0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", padding: 24, textAlign: "center" }}>
+          <p style={{ fontSize: 32, marginBottom: 12 }}>⚠️</p>
+          <p style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Algo salió mal</p>
+          <p style={{ fontSize: 13, color: "#5a5a70", marginBottom: 24 }}>Something went wrong. Please reload the page.</p>
+          <button onClick={() => { this.setState({ error: null }); window.location.href = "/"; }}
+            style={{ padding: "12px 28px", fontSize: 14, fontWeight: 700, color: "#06060e", background: "#00f0ff", border: "none", borderRadius: 10, cursor: "pointer" }}>
+            🔄 Recargar
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── CONFIG ───
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
@@ -34,16 +57,23 @@ const sb = {
   addGen: (uid, type, prompt, style, t) => fetch(`${SB_URL}/rest/v1/generations`, { method: "POST", headers: { ...hdr(t), Prefer: "return=representation" }, body: JSON.stringify({ user_id: uid, type, prompt, style, status: "completed" }) }).then(r => r.json()),
   getGens: (uid, t) => fetch(`${SB_URL}/rest/v1/generations?user_id=eq.${uid}&select=*&order=created_at.desc&limit=1000`, { headers: hdr(t) }).then(r => r.json()),
   googleSignIn: () => {
-    window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(window.location.origin)}`;
+    // flow=implicit forces #access_token response on all browsers including Windows Chrome/Edge
+    window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(window.location.origin)}&flow_type=implicit`;
   },
 };
 
-function openCheckout(planId) {
+function openCheckout(planId, userEmail) {
   const plan = PRICES[planId];
-  if (plan?.link) {
-    const successReturn = encodeURIComponent(window.location.origin + "?payment=success&plan=" + planId);
-    window.location.href = plan.link + "?prefilled_email=" + encodeURIComponent("") + "&client_reference_id=" + planId;
-  }
+  if (!plan?.link) return;
+  const successUrl = encodeURIComponent(
+    window.location.origin + "?payment=success&plan=" + planId
+  );
+  const cancelUrl = encodeURIComponent(window.location.origin);
+  window.location.href = plan.link
+    + "?prefilled_email=" + encodeURIComponent(userEmail || "")
+    + "&client_reference_id=" + planId
+    + "&success_url=" + successUrl
+    + "&cancel_url=" + cancelUrl;
 }
 
 function openPack(packId, userEmail) {
@@ -360,16 +390,16 @@ function buildStyledPrompt(userPrompt, styleId) {
 }
 const PLANS = [
   { id: "test", name: "Test", nameEn: "Test", price: 9.99, oldPrice: 29.99, images: 20, videos: 2, maxDuration: [5], resolution: "1K",
-    features: { es: ["20 imágenes premium (calidad 1K)/mes", "2 videos premium (5s)/mes", "Calidad de imagen 1K", "Soporte por email"], en: ["20 premium images (1K quality)/mo", "2 premium videos (5s)/mo", "1K image quality", "Email support"] },
+    features: { es: ["20 imágenes premium (calidad 1K)/mes", "2 videos premium (5s)/mes", "1 generación simultánea", "Calidad de imagen 1K", "Soporte por email"], en: ["20 premium images (1K quality)/mo", "2 premium videos (5s)/mo", "1 simultaneous generation", "1K image quality", "Email support"] },
     color: "#22c55e", popular: false },
   { id: "basic", name: "Básico", nameEn: "Basic", price: 19.99, oldPrice: 49.99, images: 40, videos: 8, maxDuration: [5], resolution: "1K",
-    features: { es: ["40 imágenes premium (calidad 1K)/mes", "8 videos premium (5s)/mes", "Calidad de imagen 1K", "Soporte por email"], en: ["40 premium images (1K quality)/mo", "8 premium videos (5s)/mo", "1K image quality", "Email support"] },
+    features: { es: ["40 imágenes premium (calidad 1K)/mes", "8 videos premium (5s)/mes", "2 generaciones simultáneas", "Calidad de imagen 1K", "Soporte por email"], en: ["40 premium images (1K quality)/mo", "8 premium videos (5s)/mo", "2 simultaneous generations", "1K image quality", "Email support"] },
     color: "#00f0ff", popular: false },
   { id: "pro", name: "Pro", nameEn: "Pro", price: 47.99, oldPrice: 99.99, images: 90, videos: 18, maxDuration: [5, 8], resolution: "2K",
-    features: { es: ["90 imágenes premium (calidad 2K)/mes", "18 videos premium (5-8s)/mes", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["90 premium images (2K quality)/mo", "18 premium videos (5-8s)/mo", "2K image quality", "Priority queue", "Priority support"] },
+    features: { es: ["90 imágenes premium (calidad 2K)/mes", "18 videos premium (5-8s)/mes", "4 generaciones simultáneas", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["90 premium images (2K quality)/mo", "18 premium videos (5-8s)/mo", "4 simultaneous generations", "2K image quality", "Priority queue", "Priority support"] },
     color: "#b44aff", popular: true },
   { id: "creator", name: "Creador", nameEn: "Creator", price: 99.99, oldPrice: 199, images: 200, videos: 30, maxDuration: [5, 8, 10], resolution: "4K",
-    features: { es: ["200 imágenes premium (calidad 4K)/mes", "30 videos premium (5-15s)/mes", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 premium images (4K quality)/mo", "30 premium videos (5-15s)/mo", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
+    features: { es: ["200 imágenes premium (calidad 4K)/mes", "30 videos premium (5-15s)/mes", "8 generaciones simultáneas", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 premium images (4K quality)/mo", "30 premium videos (5-15s)/mo", "8 simultaneous generations", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
     color: "#ff6b2b", popular: false },
 ];
 const STYLES = [
@@ -566,6 +596,28 @@ function CarouselSection({ lang, isDesk }) {
   );
 }
 
+export { ErrorBoundary };
+
+// Tiny SVG shape showing aspect ratio visually
+const RatioShape = ({ r, active, color = "#00f0ff" }) => {
+  const c = active ? color : "#6a6a80";
+  const shapes = {
+    "auto":  { w: 12, h: 12, rx: 2 },
+    "1:1":   { w: 12, h: 12, rx: 1 },
+    "16:9":  { w: 18, h: 10, rx: 1 },
+    "9:16":  { w: 10, h: 18, rx: 1 },
+    "4:3":   { w: 16, h: 12, rx: 1 },
+    "3:4":   { w: 12, h: 16, rx: 1 },
+    "21:9":  { w: 20, h: 9,  rx: 1 },
+  };
+  const s = shapes[r] || shapes["1:1"];
+  return (
+    <svg width={s.w} height={s.h} viewBox={`0 0 ${s.w} ${s.h}`} style={{ display: "block", flexShrink: 0, overflow: "visible" }}>
+      <rect x="1" y="1" width={s.w - 2} height={s.h - 2} rx={s.rx} fill="none" stroke={c} strokeWidth="1.5" />
+    </svg>
+  );
+};
+
 export default function App() {
   const w = useW();
   const isDesk = w >= 768;
@@ -593,6 +645,7 @@ export default function App() {
   const [authLoad, setAuthLoad] = useState(false);
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(false); // prevents race during OAuth
   const [tab, setTab] = useState(T.IMG);
   const [prompt, setPrompt] = useState("");
   const [style, setStyle] = useState("photorealistic");
@@ -627,6 +680,7 @@ export default function App() {
   const [dirAspect, setDirAspect] = useState("9:16");
   const [dirKeepFrame, setDirKeepFrame] = useState(false);
   const [genning, setGenning] = useState(false);
+  const [genBtnLocked, setGenBtnLocked] = useState(false); // prevents double-click for 5s after submit
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
   const [visibleCount, setVisibleCount] = useState(20);
@@ -651,6 +705,7 @@ export default function App() {
   const [multishot, setMultishot] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [userPanelOpen, setUserPanelOpen] = useState(false);
+  const [openFaqIdx, setOpenFaqIdx] = useState(null); // FAQ accordion for landing page
   const [cancelModal, setCancelModal] = useState(false);
   const [showTyC, setShowTyC] = useState(false);
 
@@ -676,29 +731,66 @@ export default function App() {
     }
   }, [tab, profile?.plan]);
 
-  // Auto-redirect logged-in users away from landing page
+  // Auto-redirect logged-in users away from landing page — only if not mid-load
   useEffect(() => {
-    if (page === P.LAND && session) setPage(P.DASH);
-  }, [page, session]);
+    if (page === P.LAND && session && !loadingProfile) setPage(P.DASH);
+  }, [page, session, loadingProfile]);
 
   useEffect(() => {
     const hash = window.location.hash;
     const params = new URLSearchParams(window.location.search);
+
+    // ── Implicit flow: #access_token (Mac/iOS/most browsers) ──
     if (hash && hash.includes("access_token")) {
       const hp = new URLSearchParams(hash.substring(1));
       const token = hp.get("access_token");
       if (token) {
         const s = { access_token: token, refresh_token: hp.get("refresh_token") };
-        try { sessionStorage.setItem("hrs_s", JSON.stringify(s)); } catch {} setSession(s); loadProfile(s);
-        window.history.replaceState(null, "", window.location.pathname); return;
+        try { sessionStorage.setItem("hrs_s", JSON.stringify(s)); } catch {}
+        setSession(s); loadProfile(s);
+        window.history.replaceState(null, "", window.location.pathname);
+        return;
       }
+    }
+
+    // ── PKCE flow: ?code= — should not happen since we force implicit flow
+    // But handle gracefully if it does (e.g. Supabase dashboard forces PKCE)
+    const oauthCode = params.get("code");
+    if (oauthCode && !params.get("payment") && !params.get("pack")) {
+      window.history.replaceState(null, "", window.location.pathname);
+      (async () => {
+        try {
+          const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=pkce`, {
+            method: "POST",
+            headers: { apikey: SB_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ auth_code: oauthCode }),
+          });
+          const data = await res.json();
+          if (data?.access_token) {
+            const s = { access_token: data.access_token, refresh_token: data.refresh_token };
+            try { sessionStorage.setItem("hrs_s", JSON.stringify(s)); } catch {}
+            setSession(s);
+            await loadProfile(s);
+            return;
+          }
+        } catch (e) { console.error("Code exchange error:", e.message); }
+        // Exchange failed — redirect back to landing so user can retry
+        setLoadingProfile(false);
+        setPage(P.LAND);
+      })();
+      return;
     }
     if (params.get("payment") === "success") {
       const planFromUrl = params.get("plan");
       setPayMsg("¡Pago recibido! Activando tu plan...");
       window.history.replaceState(null, "", window.location.pathname);
       const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
-      if (!saved?.access_token) return;
+      if (!saved?.access_token) {
+        // No session — user needs to log in first, then the webhook will have activated their plan
+        setPayMsg("✓ Pago recibido — iniciá sesión para ver tu plan activo");
+        setPage(P.AUTH);
+        return;
+      }
       setSession(saved);
 
       const goToDash = async () => {
@@ -854,14 +946,16 @@ export default function App() {
     } catch {}
   };
   const loadProfile = async (s) => {
+    setLoadingProfile(true);
     try {
       const u = await sb.getUser(s.access_token);
-      if (!u?.id) { setPage(P.DASH); return; }
+      if (!u?.id) { setPage(P.DASH); setLoadingProfile(false); return; }
 
       const p = await sb.getProfile(u.id, s.access_token);
 
       if (!p) {
         setPage(P.PLANS);
+        setLoadingProfile(false);
         return;
       }
 
@@ -982,6 +1076,8 @@ export default function App() {
     } catch (err) {
       console.error("loadProfile error:", err);
       setPage(P.DASH);
+    } finally {
+      setLoadingProfile(false);
     }
   };
   const handleAuth = async () => {
@@ -994,6 +1090,7 @@ export default function App() {
   const logout = () => { setSession(null); setProfile(null); setGens([]); setFavorites({}); try { sessionStorage.removeItem("hrs_s"); } catch {} setPage(P.LAND); };
   const [genResult, setGenResult] = useState(null);
   const [genError, setGenError] = useState("");
+  const [showConcurrentUpgrade, setShowConcurrentUpgrade] = useState(false);
   const [audioOn, setAudioOn] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
   const [previewIndex, setPreviewIndex] = useState(null);
@@ -1197,12 +1294,36 @@ export default function App() {
     const isVid = tab === T.VID;
     if (isVid && profile.videos_remaining <= 0) return;
     if (!isVid && profile.images_remaining <= 0) return;
+
+    // Restore & colorize require at least 1 reference image
+    if (!isVid && (style === "restore" || style === "colorize") && refImages.length === 0) {
+      setGenError(lang === "es"
+        ? `⚠️ El modo "${style === "restore" ? "Restaurar" : "Colorear"}" requiere subir al menos 1 imagen de referencia.`
+        : `⚠️ "${style === "restore" ? "Restore" : "Coloring Page"}" mode requires at least 1 reference image.`
+      );
+      return;
+    }
     // Block if payment failed
     if (profile.subscription_status === "payment_failed") {
       setPaymentFailedModal(true);
       return;
     }
+    // Concurrent generation limit
+    const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+    const concurrentLimit = CONCURRENT_LIMITS[profile.plan] || 1;
+    const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
+    if (pendingCount >= concurrentLimit) {
+      setGenError(lang === "es"
+        ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Tu plan ${profile.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}. Esperá que terminen.`
+        : `⏳ You have ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Your ${profile.plan} plan allows max ${concurrentLimit} simultaneous. Wait for them to finish.`
+      );
+      setShowConcurrentUpgrade(true);
+      return;
+    }
+    setShowConcurrentUpgrade(false);
     setGenning(true);
+    setGenBtnLocked(true);
+    setTimeout(() => setGenBtnLocked(false), 5000); // re-enable button after 5s
     setGenResult(null);
     setGenError("");
     setGenStatus({ phase: "queued", position: null, elapsed: 0 });
@@ -1339,6 +1460,7 @@ export default function App() {
       console.error("Generation error:", err);
       setGenError(err.message || "Error de conexión con el servidor.");
       setGenning(false);
+      setGenBtnLocked(false);
     }
   };
 
@@ -1389,18 +1511,21 @@ export default function App() {
   // - Active: next renewal date (subscription_end from Stripe)
   // - Cancelled/Failed: plan expiry date (subscription_end — when access ends)
   const getNextBilling = () => {
-    // Always prefer the real date from Stripe
-    if (profile?.subscription_end) {
-      const d = new Date(profile.subscription_end);
+    try {
+      if (profile?.subscription_end) {
+        const d = new Date(profile.subscription_end);
+        if (isNaN(d.getTime())) return null;
+        return d.toLocaleDateString(lang === "es" ? "es-ES" : "en-US", { day: "numeric", month: "long", year: "numeric" });
+      }
+      const start = profile?.subscription_start || profile?.created_at;
+      if (!start) return null;
+      const d = new Date(start);
+      if (isNaN(d.getTime())) return null;
+      const now = new Date();
+      let iters = 0;
+      while (d < now && iters < 24) { d.setMonth(d.getMonth() + 1); iters++; }
       return d.toLocaleDateString(lang === "es" ? "es-ES" : "en-US", { day: "numeric", month: "long", year: "numeric" });
-    }
-    // Fallback: calculate from subscription_start
-    const start = profile?.subscription_start || profile?.created_at;
-    if (!start) return null;
-    const d = new Date(start);
-    const now = new Date();
-    while (d < now) d.setMonth(d.getMonth() + 1);
-    return d.toLocaleDateString(lang === "es" ? "es-ES" : "en-US", { day: "numeric", month: "long", year: "numeric" });
+    } catch { return null; }
   };
 
   const inp = { width: "100%", padding: "12px 14px", fontSize: 14, color: "#e0e0f0", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)", borderRadius: 10, fontFamily: "inherit" };
@@ -1414,7 +1539,7 @@ export default function App() {
         {payMsg && <div style={{ padding: "10px 14px", marginBottom: 14, borderRadius: 8, background: payMsg.includes("✓") ? "rgba(0,240,255,.08)" : "rgba(255,184,0,.08)", border: `1px solid ${payMsg.includes("✓") ? "rgba(0,240,255,.2)" : "rgba(255,184,0,.2)"}`, fontSize: 13, textAlign: "center", color: payMsg.includes("✓") ? "#00f0ff" : "#ffb800", animation: "fadeUp .4s ease" }}>{payMsg}</div>}
         {ch}
       </div>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a50}button:active{transform:scale(.97)!important}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.3)!important}::selection{background:rgba(0,240,255,.2)}`}</style>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes nudge{0%,100%{transform:translateY(0)}20%{transform:translateY(-3px)}40%{transform:translateY(1px)}60%{transform:translateY(-2px)}80%{transform:translateY(0)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a50}button:active{transform:scale(.97)!important}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.3)!important}::selection{background:rgba(0,240,255,.2)}.btn-nudge{animation:nudge 3s ease-in-out 2s infinite}`}</style>
     </div>
   );
 
@@ -1568,8 +1693,8 @@ export default function App() {
           {/* Actions */}
           <div style={{ padding: "10px 16px" }}>
             {hasPlanForPanel && (
-              <button onClick={() => { setUserPanelOpen(false); setPage(P.PLANS); }}
-                style={{ display: "block", width: "100%", padding: "8px", fontSize: 11, fontWeight: 600, color: "#e0e0f0", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", marginBottom: 6, textAlign: "center" }}>
+              <button onClick={() => { setUserPanelOpen(false); setPage(P.PLANS); }} className="btn-nudge"
+                style={{ display: "block", width: "100%", padding: "8px", fontSize: 11, fontWeight: 700, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", marginBottom: 6, textAlign: "center", boxShadow: "0 0 10px rgba(0,255,136,.2)" }}>
                 {t("change_plan")}
               </button>
             )}
@@ -1767,6 +1892,48 @@ export default function App() {
         <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ padding: "10px 28px", fontSize: 12, fontWeight: 700, color: "#e0e0f0", background: "transparent", border: "1px solid rgba(0,240,255,.25)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("learn_cta")}</button>
       </div>
 
+      {/* ── FAQ Section ── */}
+      {(() => {
+        const faqs = lang === "es" ? [
+          { q: "¿Necesito experiencia en diseño o IA para usar NanoBanano Studio?", a: "Para nada. Solo describís lo que querés en español, elegís el estilo y hacés clic en generar. La plataforma hace todo el trabajo técnico. En segundos tenés una imagen o video profesional listo para usar." },
+          { q: "¿Puedo cancelar mi suscripción en cualquier momento?", a: "Sí, sin condiciones ni penalizaciones. Cancelás desde tu panel cuando quieras y seguís teniendo acceso hasta que venza tu período actual. No se cobran períodos adicionales." },
+          { q: "¿Qué pasa si se me acaban los créditos antes de fin de mes?", a: "Podés comprar packs de créditos adicionales sin cambiar tu plan (disponible para planes Básico, Pro y Creador). Los créditos extras no vencen con el mes — se mantienen hasta que los uses." },
+          { q: "¿Las imágenes y videos que genero son míos? ¿Puedo usarlos comercialmente?", a: "Sí. Todo el contenido que generás con NanoBanano Studio te pertenece y podés usarlo con fines comerciales — para redes sociales, anuncios, productos, clientes, lo que necesités." },
+          { q: "¿Cómo restauro fotos antiguas con IA?", a: "En NanoBanano Studio seleccionás el estilo 'Restaurar', subís tu foto antigua y la IA la restaura automáticamente preservando los rasgos originales con calidad hasta 4K." },
+          { q: "¿Cuánto tarda en generarse un video?", a: "Las imágenes tardan entre 15 segundos y 1 minuto. Los videos pueden tardar entre 3 y 10 minutos. Podés cerrar la app y el video se guarda automáticamente cuando termina — lo encontrás en tu biblioteca al volver." },
+          { q: "¿Cuál es la diferencia entre Imagen, Video, Motion y Director?", a: "Imagen genera fotos con IA. Video genera clips cinematográficos desde texto. Motion Control anima una imagen usando un video de referencia de movimiento. Director es el modo más avanzado — hasta 9 imágenes de referencia, audio y control total de escena con Seedance 2.0." },
+        ] : [
+          { q: "Do I need design or AI experience to use NanoBanano Studio?", a: "Not at all. Just describe what you want in plain language, choose a style, and hit generate. The platform handles all the technical work. In seconds you have a professional image or video ready to use." },
+          { q: "Can I cancel my subscription at any time?", a: "Yes, with no conditions or penalties. Cancel from your dashboard at any time and keep access until your current period ends. No additional charges." },
+          { q: "What happens if I run out of credits before the end of the month?", a: "You can buy additional credit packs without changing your plan (available for Basic, Pro, and Creator plans). Extra credits don't expire at month end — they stay until you use them." },
+          { q: "Do I own the images and videos I generate? Can I use them commercially?", a: "Yes. All content you generate with NanoBanano Studio belongs to you and can be used commercially — for social media, ads, products, clients, whatever you need." },
+          { q: "How do I restore old photos with AI?", a: "In NanoBanano Studio select the 'Restore' style, upload your old photo and the AI restores it automatically preserving original features with up to 4K quality." },
+          { q: "How long does it take to generate a video?", a: "Images take 15 seconds to 1 minute. Videos can take 3 to 10 minutes. You can close the app and the video saves automatically when done — find it in your library when you return." },
+          { q: "What's the difference between Image, Video, Motion, and Director modes?", a: "Image generates AI photos. Video generates cinematic clips from text. Motion Control animates an existing image using a reference motion video. Director is the most advanced — up to 9 reference images, audio, and full scene control with Seedance 2.0." },
+        ];
+        return (
+          <div style={{ maxWidth: isDesk ? 720 : "100%", margin: "40px auto 16px", padding: isDesk ? "0" : "0 4px" }}>
+            <h2 style={{ fontSize: isDesk ? 22 : 18, fontWeight: 800, color: "#e0e0f0", marginBottom: 20, textAlign: "center" }}>
+              {lang === "es" ? "Preguntas frecuentes" : "Frequently asked questions"}
+            </h2>
+            {faqs.map((faq, i) => (
+              <div key={i} style={{ marginBottom: 8, borderRadius: 10, border: `1px solid ${openFaqIdx === i ? "rgba(0,240,255,.2)" : "rgba(255,255,255,.06)"}`, background: openFaqIdx === i ? "rgba(0,240,255,.03)" : "rgba(255,255,255,.02)", overflow: "hidden", transition: "border-color .2s" }}>
+                <button onClick={() => setOpenFaqIdx(openFaqIdx === i ? null : i)}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left", gap: 12 }}>
+                  <span style={{ fontSize: isDesk ? 13 : 12, fontWeight: 600, color: "#e0e0f0", lineHeight: 1.4 }}>{faq.q}</span>
+                  <span style={{ fontSize: 18, color: "#00f0ff", flexShrink: 0, transition: "transform .25s", transform: openFaqIdx === i ? "rotate(45deg)" : "rotate(0deg)", display: "inline-block" }}>+</span>
+                </button>
+                {openFaqIdx === i && (
+                  <div style={{ padding: "0 16px 14px", animation: "fadeUp .2s ease" }}>
+                    <p style={{ fontSize: isDesk ? 12 : 11, color: "#6a6a80", margin: 0, lineHeight: 1.65 }}>{faq.a}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       <Footer />
       <CancelModal />
     </>
@@ -1863,7 +2030,7 @@ export default function App() {
   // ═══ PLAN SELECTION ═══
   const manualActivate = async (planId) => {
     // Redirect to Stripe checkout — webhook handles plan activation
-    openCheckout(planId);
+    openCheckout(planId, profile?.email);
   };
 
   if (page === P.PLANS) return wrap(
@@ -1891,17 +2058,72 @@ export default function App() {
             creator: { es: "Escalar mi contenido →",   en: "Scale my content →" },
           };
           const cta = lang === "en" ? planCta[pl.id].en : planCta[pl.id].es;
-          return <PlanCard key={pl.id} pl={pl} onAction={() => openCheckout(pl.id)} actionLabel={cta} isDesk={isDesk} lang={lang} features={planFeatures(pl)} />;
+          return <PlanCard key={pl.id} pl={pl} onAction={() => openCheckout(pl.id, profile?.email)} actionLabel={cta} isDesk={isDesk} lang={lang} features={planFeatures(pl)} />;
         })}
       </div>
+
+      {/* ── FAQ Section ── */}
+      {(() => {
+        const faqs = lang === "es" ? [
+          { q: "¿Necesito experiencia en diseño o IA para usar NanoBanano Studio?", a: "Para nada. Solo describís lo que querés en español, elegís el estilo y hacés clic en generar. La plataforma hace todo el trabajo técnico. En segundos tenés una imagen o video profesional listo para usar." },
+          { q: "¿Puedo cancelar mi suscripción en cualquier momento?", a: "Sí, sin condiciones ni penalizaciones. Cancelás desde tu panel cuando quieras y seguís teniendo acceso hasta que venza tu período actual. No se cobran períodos adicionales." },
+          { q: "¿Qué pasa si se me acaban los créditos antes de fin de mes?", a: "Podés comprar packs de créditos adicionales sin cambiar tu plan (disponible para planes Básico, Pro y Creador). Los créditos extras no vencen con el mes — se mantienen hasta que los uses." },
+          { q: "¿Las imágenes y videos que genero son míos? ¿Puedo usarlos comercialmente?", a: "Sí. Todo el contenido que generás con NanoBanano Studio te pertenece y podés usarlo con fines comerciales — para redes sociales, anuncios, productos, clientes, lo que necesités." },
+          { q: "¿Por qué el modelo rechaza algunas imágenes en modo Director?", a: "El modelo de IA tiene restricciones de privacidad y no procesa rostros de personas reales reconocibles. Para mejores resultados usá ilustraciones, personajes animados, productos o paisajes. Si la generación falla, los créditos se devuelven automáticamente." },
+          { q: "¿Cuánto tarda en generarse un video?", a: "Las imágenes tardan entre 15 segundos y 1 minuto. Los videos pueden tardar entre 3 y 10 minutos. Podés cerrar la app y el video se guarda automáticamente cuando termina — lo encontrás en tu biblioteca al volver." },
+          { q: "¿Cuál es la diferencia entre Imagen, Video, Motion y Director?", a: "Imagen genera fotos con IA. Video genera clips cinematográficos desde texto. Motion Control anima una imagen usando un video de referencia de movimiento. Director es el modo más avanzado — hasta 9 imágenes de referencia, audio y control total de escena con Seedance 2.0." },
+        ] : [
+          { q: "Do I need design or AI experience to use NanoBanano Studio?", a: "Not at all. Just describe what you want in plain language, choose a style, and hit generate. The platform handles all the technical work. In seconds you have a professional image or video ready to use." },
+          { q: "Can I cancel my subscription at any time?", a: "Yes, with no conditions or penalties. Cancel from your dashboard at any time and keep access until your current period ends. No additional charges." },
+          { q: "What happens if I run out of credits before the end of the month?", a: "You can buy additional credit packs without changing your plan (available for Basic, Pro, and Creator plans). Extra credits don't expire at month end — they stay until you use them." },
+          { q: "Do I own the images and videos I generate? Can I use them commercially?", a: "Yes. All content you generate with NanoBanano Studio belongs to you and can be used commercially — for social media, ads, products, clients, whatever you need." },
+          { q: "Why does the model reject some images in Director mode?", a: "The AI model has privacy restrictions and cannot process recognizable real people's faces. For best results use illustrations, animated characters, products, or landscapes. If a generation fails, credits are automatically refunded." },
+          { q: "How long does it take to generate a video?", a: "Images take 15 seconds to 1 minute. Videos can take 3 to 10 minutes. You can close the app and the video saves automatically when done — find it in your library when you return." },
+          { q: "What's the difference between Image, Video, Motion, and Director modes?", a: "Image generates AI photos. Video generates cinematic clips from text. Motion Control animates an existing image using a reference motion video. Director is the most advanced — up to 9 reference images, audio, and full scene control with Seedance 2.0." },
+        ];
+
+        const [openIdx, setOpenIdx] = React.useState(null);
+
+        return (
+          <div style={{ maxWidth: isDesk ? 700 : "100%", margin: "0 auto 48px", padding: isDesk ? "0" : "0 4px" }}>
+            <h3 style={{ fontSize: isDesk ? 20 : 17, fontWeight: 800, color: "#e0e0f0", marginBottom: 20, textAlign: "center" }}>
+              {lang === "es" ? "Preguntas frecuentes" : "Frequently asked questions"}
+            </h3>
+            {faqs.map((faq, i) => (
+              <div key={i} style={{ marginBottom: 8, borderRadius: 10, border: `1px solid ${openIdx === i ? "rgba(0,240,255,.2)" : "rgba(255,255,255,.06)"}`, background: openIdx === i ? "rgba(0,240,255,.03)" : "rgba(255,255,255,.02)", overflow: "hidden", transition: "border-color .2s" }}>
+                <button onClick={() => setOpenIdx(openIdx === i ? null : i)}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left", gap: 12 }}>
+                  <span style={{ fontSize: isDesk ? 13 : 12, fontWeight: 600, color: "#e0e0f0", lineHeight: 1.4 }}>{faq.q}</span>
+                  <span style={{ fontSize: 18, color: "#00f0ff", flexShrink: 0, transition: "transform .25s", transform: openIdx === i ? "rotate(45deg)" : "rotate(0deg)", display: "inline-block" }}>+</span>
+                </button>
+                {openIdx === i && (
+                  <div style={{ padding: "0 16px 14px", animation: "fadeUp .2s ease" }}>
+                    <p style={{ fontSize: isDesk ? 12 : 11, color: "#6a6a80", margin: 0, lineHeight: 1.65 }}>{faq.a}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       <Footer />
       <CancelModal />
     </div>
   );
-
-  // ═══ DASHBOARD ═══
   const planData = PLANS.find(p => p.id === profile?.plan) || PLANS[0];
   const hasPlan = profile?.plan && profile.plan !== "none";
+
+  // Loading guard — show spinner instead of black screen while profile loads
+  if (loadingProfile || (!profile && session)) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#06060e", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+        <div style={{ width: 36, height: 36, border: "3px solid rgba(0,240,255,.15)", borderTop: "3px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
+        <p style={{ color: "#5a5a70", fontSize: 13, fontFamily: "sans-serif" }}>Cargando...</p>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
+  }
 
   return wrap(
     <>
@@ -1927,7 +2149,7 @@ export default function App() {
       {/* Plan + Credits */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 16, background: `${hasPlan ? planData.color : "#5a5a70"}12`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}30`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>{t("plan_label")} {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}</span>
-        {hasPlan && <button onClick={() => setPage(P.PLANS)} style={{ fontSize: 10, color: "#5a5a70", background: "none", border: "1px solid rgba(255,255,255,.06)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit" }}>Cambiar plan</button>}
+        {hasPlan && <button onClick={() => setPage(P.PLANS)} className="btn-nudge" style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, boxShadow: "0 0 8px rgba(0,255,136,.2)" }}>Cambiar plan</button>}
       </div>
 
       {/* Dashboard layout */}
@@ -2048,8 +2270,11 @@ export default function App() {
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{t("ratio_label")}</p>
                   <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
                     {RATIOS.map(r => (
-                      <button key={r} onClick={() => setRatio(r)} style={{ flex: r === "auto" ? "2" : "1", padding: "8px 0", fontSize: r === "auto" ? 11 : 10, fontWeight: ratio === r ? 700 : 400, color: ratio === r ? (r === "auto" ? "#ffb800" : "#00f0ff") : "#5a5a70", background: ratio === r ? (r === "auto" ? "rgba(255,184,0,.08)" : "rgba(0,240,255,.08)") : "rgba(255,255,255,.02)", border: ratio === r ? (r === "auto" ? "1px solid rgba(255,184,0,.25)" : "1px solid rgba(0,240,255,.2)") : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>
-                        {r === "auto" ? (lang === "en" ? "✦ Auto" : "✦ Auto") : r}
+                      <button key={r} onClick={() => setRatio(r)} style={{ flex: r === "auto" ? "2" : "1", padding: "8px 4px", fontSize: 10, fontWeight: ratio === r ? 700 : 400, color: ratio === r ? (r === "auto" ? "#ffb800" : "#00f0ff") : "#5a5a70", background: ratio === r ? (r === "auto" ? "rgba(255,184,0,.08)" : "rgba(0,240,255,.08)") : "rgba(255,255,255,.02)", border: ratio === r ? (r === "auto" ? "1px solid rgba(255,184,0,.25)" : "1px solid rgba(0,240,255,.2)") : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        <span style={{ display:"flex", alignItems:"center", gap:4 }}>
+                          {r === "auto" ? <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/><line x1="4" y1="7" x2="10" y2="7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="7" y1="4" x2="7" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> : r === "1:1" ? <svg width="13" height="13" viewBox="0 0 13 13"><rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : r === "16:9" ? <svg width="18" height="11" viewBox="0 0 18 11"><rect x="1" y="1" width="16" height="9" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : r === "9:16" ? <svg width="11" height="18" viewBox="0 0 11 18"><rect x="1" y="1" width="9" height="16" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : r === "4:3" ? <svg width="16" height="13" viewBox="0 0 16 13"><rect x="1" y="1" width="14" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : r === "3:4" ? <svg width="13" height="16" viewBox="0 0 13 16"><rect x="1" y="1" width="11" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : null}
+                          {r === "auto" ? "Auto" : r}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -2119,8 +2344,11 @@ export default function App() {
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>Relación de aspecto</p>
                   <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
                     {["16:9", "9:16", "1:1"].map(r => (
-                      <button key={r} onClick={() => setVidRatio(r)} style={{ flex: 1, padding: "8px 0", fontSize: 11, fontWeight: vidRatio === r ? 600 : 400, color: vidRatio === r ? "#b44aff" : "#5a5a70", background: vidRatio === r ? "rgba(180,74,255,.08)" : "rgba(255,255,255,.02)", border: vidRatio === r ? "1px solid rgba(180,74,255,.2)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>
-                        <span style={{ display: "block", fontSize: 9, marginBottom: 2, color: vidRatio === r ? "#8a8a9e" : "#3a3a50" }}>{r === "16:9" ? t("horizontal") : r === "9:16" ? t("vertical") : t("square")}</span>{r}
+                      <button key={r} onClick={() => setVidRatio(r)} style={{ flex: 1, padding: "8px 4px", fontSize: 10, fontWeight: vidRatio === r ? 600 : 400, color: vidRatio === r ? "#b44aff" : "#5a5a70", background: vidRatio === r ? "rgba(180,74,255,.08)" : "rgba(255,255,255,.02)", border: vidRatio === r ? "1px solid rgba(180,74,255,.2)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        <span style={{ display:"flex", alignItems:"center", gap:4 }}>
+                          {r === "16:9" ? <svg width="18" height="11" viewBox="0 0 18 11"><rect x="1" y="1" width="16" height="9" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : r === "9:16" ? <svg width="11" height="18" viewBox="0 0 11 18"><rect x="1" y="1" width="9" height="16" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : <svg width="13" height="13" viewBox="0 0 13 13"><rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>}
+                          {r}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -2249,13 +2477,23 @@ export default function App() {
                 );
               })()}
 
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genning || (!prompt.trim() && style !== "restore" && style !== "colorize") || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genning && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
-                {!hasPlan ? t("plan_for_gen") : genning ? (t("loading")) : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genBtnLocked && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
+                {!hasPlan ? t("plan_for_gen") : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube una imagen de referencia" : "Upload a reference image") : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
               </button>
               {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={tab} duration={vidDur} lang={lang} genStatus={genStatus} /></div>}
 
               {/* Error */}
-              {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>{genError}</div>}
+              {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>
+                {genError}
+                {showConcurrentUpgrade && (
+                  <div style={{ marginTop: 6 }}>
+                    <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
+                      style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+                      {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
+                    </button>
+                  </div>
+                )}
+              </div>}
 
               {/* Result preview */}
               {genResult && !genning && (
@@ -2419,6 +2657,16 @@ export default function App() {
 
             const handleMotionGen = async () => {
               if (!canGenMotion) return;
+              // Concurrent limit check
+              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+              const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
+              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
+              if (pendingCount >= concurrentLimit) {
+                setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
+                setShowConcurrentUpgrade(true);
+                return;
+              }
+              setShowConcurrentUpgrade(false);
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
@@ -2633,7 +2881,17 @@ export default function App() {
                       {genning ? (lang === "es" ? "Generando..." : "Generating...") : (motionUploadProgress.img || motionUploadProgress.vid) ? (lang === "es" ? "⏳ Subiendo archivos..." : "⏳ Uploading files...") : !motionImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !motionVideo ? (lang === "es" ? "Sube un video de movimiento" : "Upload a motion video") : !motionImageUrl || !motionVideoUrl ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : (profile?.videos_remaining ?? 0) < motionCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Generar Motion (${motionCredits} créditos)` : `🎭 Generate Motion (${motionCredits} credits)`)}
                     </button>
                     {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={motionDur} lang={lang} genStatus={genStatus} /></div>}
-                    {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>{genError}</div>}
+                    {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>
+                {genError}
+                {showConcurrentUpgrade && (
+                  <div style={{ marginTop: 6 }}>
+                    <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
+                      style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+                      {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
+                    </button>
+                  </div>
+                )}
+              </div>}
                     {genResult && !genning && tab === T.MOT && (
                       <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,107,43,.2)", animation: "fadeUp .5s ease" }}>
                         <video src={genResult.url} controls autoPlay style={{ width: "100%", display: "block", borderRadius: 14 }} />
@@ -2730,6 +2988,16 @@ export default function App() {
 
             const handleDirGen = async () => {
               if (!canGenDir) return;
+              // Concurrent limit check
+              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+              const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
+              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
+              if (pendingCount >= concurrentLimit) {
+                setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
+                setShowConcurrentUpgrade(true);
+                return;
+              }
+              setShowConcurrentUpgrade(false);
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
@@ -2952,8 +3220,13 @@ export default function App() {
                 <div style={{ marginBottom: 12 }}>
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Formato" : "Aspect ratio"}</p>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {[["9:16","📱 9:16"],["16:9","🖥️ 16:9"],["1:1","⬛ 1:1"]].map(([v,l]) => (
-                      <button key={v} onClick={() => setDirAspect(v)} style={{ flex: 1, padding: "8px 4px", fontSize: 10, fontWeight: dirAspect === v ? 700 : 400, color: dirAspect === v ? "#00f0ff" : "#5a5a70", background: dirAspect === v ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: dirAspect === v ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                    {[["9:16"],["16:9"],["1:1"]].map(([v]) => (
+                      <button key={v} onClick={() => setDirAspect(v)} style={{ flex: 1, padding: "8px 4px", fontSize: 10, fontWeight: dirAspect === v ? 700 : 400, color: dirAspect === v ? "#00f0ff" : "#5a5a70", background: dirAspect === v ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: dirAspect === v ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        <span style={{ display:"flex", alignItems:"center", gap:4 }}>
+                          {v === "9:16" ? <svg width="11" height="18" viewBox="0 0 11 18"><rect x="1" y="1" width="9" height="16" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : v === "16:9" ? <svg width="18" height="11" viewBox="0 0 18 11"><rect x="1" y="1" width="16" height="9" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : <svg width="13" height="13" viewBox="0 0 13 13"><rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>}
+                          {v}
+                        </span>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -3046,7 +3319,17 @@ export default function App() {
                 </button>
 
                 {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={dirDuration} lang={lang} genStatus={genStatus} /></div>}
-                {genError && <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>{genError}</div>}
+                {genError && <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>
+                  {genError}
+                  {showConcurrentUpgrade && (
+                    <div style={{ marginTop: 6 }}>
+                      <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
+                        style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+                        {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
+                      </button>
+                    </div>
+                  )}
+                </div>}
 
                 {genResult && !genning && tab === T.DIR && (
                   <div style={{ marginTop: 14, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)" }}>
