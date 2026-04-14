@@ -593,6 +593,7 @@ export default function App() {
   const [authLoad, setAuthLoad] = useState(false);
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(false); // prevents race during OAuth
   const [tab, setTab] = useState(T.IMG);
   const [prompt, setPrompt] = useState("");
   const [style, setStyle] = useState("photorealistic");
@@ -678,22 +679,57 @@ export default function App() {
     }
   }, [tab, profile?.plan]);
 
-  // Auto-redirect logged-in users away from landing page
+  // Auto-redirect logged-in users away from landing page — only if not mid-load
   useEffect(() => {
-    if (page === P.LAND && session) setPage(P.DASH);
-  }, [page, session]);
+    if (page === P.LAND && session && !loadingProfile) setPage(P.DASH);
+  }, [page, session, loadingProfile]);
 
   useEffect(() => {
     const hash = window.location.hash;
     const params = new URLSearchParams(window.location.search);
+
+    // ── Implicit flow: #access_token (Mac/iOS/most browsers) ──
     if (hash && hash.includes("access_token")) {
       const hp = new URLSearchParams(hash.substring(1));
       const token = hp.get("access_token");
       if (token) {
         const s = { access_token: token, refresh_token: hp.get("refresh_token") };
-        try { sessionStorage.setItem("hrs_s", JSON.stringify(s)); } catch {} setSession(s); loadProfile(s);
-        window.history.replaceState(null, "", window.location.pathname); return;
+        try { sessionStorage.setItem("hrs_s", JSON.stringify(s)); } catch {}
+        setSession(s); loadProfile(s);
+        window.history.replaceState(null, "", window.location.pathname);
+        return;
       }
+    }
+
+    // ── PKCE flow: ?code= (Windows/Chrome/Edge) ──
+    const oauthCode = params.get("code");
+    if (oauthCode && !params.get("payment") && !params.get("pack")) {
+      window.history.replaceState(null, "", window.location.pathname);
+      (async () => {
+        try {
+          // Exchange code for session via Supabase token endpoint
+          const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=pkce`, {
+            method: "POST",
+            headers: { apikey: SB_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ auth_code: oauthCode }),
+          });
+          const data = await res.json();
+          if (data?.access_token) {
+            const s = { access_token: data.access_token, refresh_token: data.refresh_token };
+            try { sessionStorage.setItem("hrs_s", JSON.stringify(s)); } catch {}
+            setSession(s);
+            await loadProfile(s);
+          } else {
+            console.error("PKCE exchange failed:", data);
+            // Fallback — try to use existing session
+            const saved = (() => { try { return JSON.parse(sessionStorage.getItem("hrs_s") || "null"); } catch { return null; } })();
+            if (saved?.access_token) { setSession(saved); await loadProfile(saved); }
+          }
+        } catch (e) {
+          console.error("PKCE exchange error:", e.message);
+        }
+      })();
+      return;
     }
     if (params.get("payment") === "success") {
       const planFromUrl = params.get("plan");
@@ -856,14 +892,16 @@ export default function App() {
     } catch {}
   };
   const loadProfile = async (s) => {
+    setLoadingProfile(true);
     try {
       const u = await sb.getUser(s.access_token);
-      if (!u?.id) { setPage(P.DASH); return; }
+      if (!u?.id) { setPage(P.DASH); setLoadingProfile(false); return; }
 
       const p = await sb.getProfile(u.id, s.access_token);
 
       if (!p) {
         setPage(P.PLANS);
+        setLoadingProfile(false);
         return;
       }
 
@@ -984,6 +1022,8 @@ export default function App() {
     } catch (err) {
       console.error("loadProfile error:", err);
       setPage(P.DASH);
+    } finally {
+      setLoadingProfile(false);
     }
   };
   const handleAuth = async () => {
