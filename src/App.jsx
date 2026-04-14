@@ -360,16 +360,16 @@ function buildStyledPrompt(userPrompt, styleId) {
 }
 const PLANS = [
   { id: "test", name: "Test", nameEn: "Test", price: 9.99, oldPrice: 29.99, images: 20, videos: 2, maxDuration: [5], resolution: "1K",
-    features: { es: ["20 imágenes premium (calidad 1K)/mes", "2 videos premium (5s)/mes", "1 generación simultánea", "Calidad de imagen 1K", "Soporte por email"], en: ["20 premium images (1K quality)/mo", "2 premium videos (5s)/mo", "1 simultaneous generation", "1K image quality", "Email support"] },
+    features: { es: ["20 imágenes premium (calidad 1K)/mes", "2 videos premium (5s)/mes", "Calidad de imagen 1K", "Soporte por email"], en: ["20 premium images (1K quality)/mo", "2 premium videos (5s)/mo", "1K image quality", "Email support"] },
     color: "#22c55e", popular: false },
   { id: "basic", name: "Básico", nameEn: "Basic", price: 19.99, oldPrice: 49.99, images: 40, videos: 8, maxDuration: [5], resolution: "1K",
-    features: { es: ["40 imágenes premium (calidad 1K)/mes", "8 videos premium (5s)/mes", "2 generaciones simultáneas", "Calidad de imagen 1K", "Soporte por email"], en: ["40 premium images (1K quality)/mo", "8 premium videos (5s)/mo", "2 simultaneous generations", "1K image quality", "Email support"] },
+    features: { es: ["40 imágenes premium (calidad 1K)/mes", "8 videos premium (5s)/mes", "Calidad de imagen 1K", "Soporte por email"], en: ["40 premium images (1K quality)/mo", "8 premium videos (5s)/mo", "1K image quality", "Email support"] },
     color: "#00f0ff", popular: false },
   { id: "pro", name: "Pro", nameEn: "Pro", price: 47.99, oldPrice: 99.99, images: 90, videos: 18, maxDuration: [5, 8], resolution: "2K",
-    features: { es: ["90 imágenes premium (calidad 2K)/mes", "18 videos premium (5-8s)/mes", "4 generaciones simultáneas", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["90 premium images (2K quality)/mo", "18 premium videos (5-8s)/mo", "4 simultaneous generations", "2K image quality", "Priority queue", "Priority support"] },
+    features: { es: ["90 imágenes premium (calidad 2K)/mes", "18 videos premium (5-8s)/mes", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["90 premium images (2K quality)/mo", "18 premium videos (5-8s)/mo", "2K image quality", "Priority queue", "Priority support"] },
     color: "#b44aff", popular: true },
   { id: "creator", name: "Creador", nameEn: "Creator", price: 99.99, oldPrice: 199, images: 200, videos: 30, maxDuration: [5, 8, 10], resolution: "4K",
-    features: { es: ["200 imágenes premium (calidad 4K)/mes", "30 videos premium (5-15s)/mes", "8 generaciones simultáneas", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 premium images (4K quality)/mo", "30 premium videos (5-15s)/mo", "8 simultaneous generations", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
+    features: { es: ["200 imágenes premium (calidad 4K)/mes", "30 videos premium (5-15s)/mes", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 premium images (4K quality)/mo", "30 premium videos (5-15s)/mo", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
     color: "#ff6b2b", popular: false },
 ];
 const STYLES = [
@@ -622,12 +622,10 @@ export default function App() {
   const [dirUploading, setDirUploading] = useState({ img: false, aud: false });
   const [dirUploadError, setDirUploadError] = useState(null);
   const [dirPrompt, setDirPrompt] = useState("");
-  const [dirMention, setDirMention] = useState(null); // { query, start } when user types @image
   const [dirDuration, setDirDuration] = useState(5);
   const [dirAspect, setDirAspect] = useState("9:16");
   const [dirKeepFrame, setDirKeepFrame] = useState(false);
   const [genning, setGenning] = useState(false);
-  const [genBtnLocked, setGenBtnLocked] = useState(false); // prevents double-click for 5s after submit
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
   const [visibleCount, setVisibleCount] = useState(20);
@@ -874,68 +872,51 @@ export default function App() {
         setGens(mapped);
         setVisibleCount(20);
 
-        // ── Recover ALL pending generations silently ──────────────────────
-        const pendings = g.filter(gen =>
-          gen.status === "processing" &&
-          gen.result_url &&
-          gen.result_url.includes("|")
-        );
+        // Resume polling for any pending generation (page was reloaded mid-generation)
+        const pending = g.find(gen => gen.status === "processing" && gen.result_url && gen.result_url.includes("|"));
+        if (pending) {
+          const [reqId, ep] = pending.result_url.split("|");
+          const genType = pending.type;
+          const pendingAge = Date.now() - new Date(pending.created_at).getTime(); // ms since created
+          const MAX_POLL_AGE = 6 * 60 * 60 * 1000; // 6 hours max
 
-        if (pendings.length > 0) {
-          console.log(`Found ${pendings.length} pending generation(s) to recover`);
+          console.log("Pending generation found, age:", Math.round(pendingAge / 1000) + "s");
 
-          const MAX_POLL_AGE = 6 * 60 * 60 * 1000; // 6 hours
-
-          const refreshCredits = async () => {
+          // Always check fal.ai at least once — even if old — before giving up
+          // The generation may have completed while the tab was closed
+          const checkOnce = async () => {
             try {
-              const u2 = await sb.getUser(s.access_token);
-              if (u2?.id) {
-                const p2 = await sb.getProfile(u2.id, s.access_token);
-                if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining }));
+              const statusRes = await fetch("/api/status", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
+              });
+              const statusData = await statusRes.json();
+              if (statusData.status === "COMPLETED" && statusData.url) {
+                const newGen = { ...pending, url: statusData.url, status: "completed", result_url: statusData.url };
+                setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
+                setGenResult({ type: genType, url: statusData.url });
+                console.log("Pending generation recovered:", statusData.url);
+                if (Notification.permission === "granted") {
+                  new Notification("NanoBanano Studio", { body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista", icon: "/favicon.png" });
+                }
+                return "completed";
               }
-            } catch {}
+              if (statusData.status === "FAILED") {
+                // Remove spinner, refresh credits (refund already done by status.js)
+                setGens(prev => prev.filter(gen => gen.id !== pending.id));
+                try { const u2 = await sb.getUser(s.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, s.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {}
+                return "failed";
+              }
+              return "pending";
+            } catch { return "pending"; }
           };
 
-          const recoverOne = async (pending) => {
-            const parts = pending.result_url.split("|");
-            const reqId = parts[0];
-            const ep = parts.slice(1).join("|");
-            const genType = pending.type;
-            const age = Date.now() - new Date(pending.created_at).getTime();
-
-            const checkStatus = async () => {
-              try {
-                const res = await fetch("/api/status", {
-                  method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
-                });
-                return await res.json();
-              } catch { return { status: "IN_PROGRESS" }; }
-            };
-
-            const handleCompleted = (url) => {
-              console.log(`✓ Recovered gen ${pending.id}: ${url}`);
-              setGens(prev => prev.map(gen =>
-                gen.id === pending.id
-                  ? { ...gen, url, status: "completed", result_url: url }
-                  : gen
-              ));
-              if (Notification.permission === "granted") {
-                new Notification("NanoBanano Studio", {
-                  body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista",
-                  icon: "/favicon.png"
-                });
-              }
-            };
-
-            const handleFailed = () => {
-              console.log(`✗ Gen ${pending.id} failed — removing`);
-              setGens(prev => prev.filter(gen => gen.id !== pending.id));
-              refreshCredits();
-            };
-
-            const handleExpired = async () => {
-              console.log(`Gen ${pending.id} expired — marking failed`);
+          // If older than MAX_POLL_AGE — check once then give up
+          if (pendingAge > MAX_POLL_AGE) {
+            console.log("Generation too old — checking fal.ai one last time before giving up");
+            const result = await checkOnce();
+            if (result !== "completed" && result !== "failed") {
+              // Still pending after max age — mark as failed
               try {
                 await fetch(`${SB_URL}/rest/v1/generations?id=eq.${pending.id}`, {
                   method: "PATCH",
@@ -944,34 +925,86 @@ export default function App() {
                 });
               } catch {}
               setGens(prev => prev.filter(gen => gen.id !== pending.id));
-            };
+            }
+            return;
+          }
 
-            // Always check once immediately regardless of age
-            const sd = await checkStatus();
-            if (sd.status === "COMPLETED" && sd.url) { handleCompleted(sd.url); return; }
-            if (sd.status === "FAILED") { handleFailed(); return; }
+          // Check fal.ai status once immediately
+          const quickCheck = async () => {
+            try {
+              const result = await checkOnce();
+              if (result === "completed" || result === "failed") return;
 
-            // If too old and still not done — give up
-            if (age > MAX_POLL_AGE) { await handleExpired(); return; }
+              // Still processing — only show spinner if less than 5 minutes old
+              const SHOW_SPINNER_AGE = 5 * 60 * 1000;
+              if (pendingAge > SHOW_SPINNER_AGE) {
+                // Too old to show spinner — poll quietly in background
+                console.log("Polling silently in background (age > 5min)");
+                const bgPoll = async (attempts = 0) => {
+                  if (attempts > 150) return; // give up after ~7 minutes
+                  try {
+                    const r = await fetch("/api/status", {
+                      method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
+                    });
+                    const d = await r.json();
+                    if (d.status === "COMPLETED" && d.url) {
+                      const newGen = { ...pending, url: d.url, status: "completed", result_url: d.url };
+                      setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
+                      setGenResult({ type: genType, url: d.url });
+                      playDoneSound();
+                    } else if (d.status === "FAILED") {
+                      // Remove from UI and refresh credits
+                      setGens(prev => prev.filter(gen => gen.id !== pending.id));
+                      try { const u2 = await sb.getUser(s.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, s.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {}
+                    } else {
+                      setTimeout(() => bgPoll(attempts + 1), 3000);
+                    }
+                  } catch { setTimeout(() => bgPoll(attempts + 1), 5000); }
+                };
+                setTimeout(() => bgPoll(0), 3000);
+                return;
+              }
 
-            // Still IN_PROGRESS — poll silently in background (every 4s, up to 20 min)
-            const MAX_ATTEMPTS = Math.ceil((20 * 60 * 1000) / 4000); // ~300 attempts
-            let attempts = 0;
-            const poll = async () => {
-              attempts++;
-              if (attempts > MAX_ATTEMPTS) { await handleExpired(); return; }
-              const d = await checkStatus();
-              if (d.status === "COMPLETED" && d.url) { handleCompleted(d.url); playDoneSound(); return; }
-              if (d.status === "FAILED") { handleFailed(); return; }
-              setTimeout(poll, 4000);
-            };
-            setTimeout(poll, 4000);
+              // Less than 5 minutes old — show spinner and poll normally
+              setGenning(true);
+              setGenStatus({ phase: statusData.position > 0 ? "queued" : "generating", position: statusData.position || null, elapsed: Math.round(pendingAge / 1000) });
+              const pollStart = Date.now();
+              let attempts = 0;
+              const resumePoll = async () => {
+                attempts++;
+                if (attempts > 60) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+                try {
+                  const r2 = await fetch("/api/status", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ request_id: reqId, endpoint: ep, type: genType, user_token: s.access_token }),
+                  });
+                  const d2 = await r2.json();
+                  const elapsed = Math.round((Date.now() - pollStart + pendingAge) / 1000);
+                  if (d2.status === "COMPLETED" && d2.url) {
+                    const newGen = { ...pending, url: d2.url, status: "completed", result_url: d2.url };
+                    setGens(prev => prev.map(gen => gen.id === pending.id ? newGen : gen));
+                    setGenResult({ type: genType, url: d2.url });
+                    setGenning(false);
+                    setGenStatus({ phase: "done", position: null, elapsed });
+                    playDoneSound();
+                    if (document.hidden && Notification.permission === "granted") {
+                      new Notification("NanoBanano Studio", { body: genType === "video" ? "🎬 Tu video está listo" : "📸 Tu imagen está lista", icon: "/favicon.png" });
+                    }
+                    return;
+                  }
+                  if (d2.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGens(prev => prev.filter(gen => gen.id !== pending.id)); try { const u2 = await sb.getUser(s.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, s.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {}; return; }
+                  setGenStatus({ phase: d2.position > 0 ? "queued" : "generating", position: d2.position || null, elapsed });
+                  setTimeout(resumePoll, 3000);
+                } catch { setTimeout(resumePoll, 5000); }
+              };
+              setTimeout(resumePoll, 2000);
+
+            } catch { /* network error — ignore silently */ }
           };
 
-          // Process all pendings in parallel — don't await, run concurrently
-          pendings.forEach(p => recoverOne(p));
+          quickCheck();
         }
-        // ── End recovery ──────────────────────────────────────────────────
       }
 
       loadFavorites(s.access_token);
@@ -995,7 +1028,6 @@ export default function App() {
   const logout = () => { setSession(null); setProfile(null); setGens([]); setFavorites({}); try { sessionStorage.removeItem("hrs_s"); } catch {} setPage(P.LAND); };
   const [genResult, setGenResult] = useState(null);
   const [genError, setGenError] = useState("");
-  const [showConcurrentUpgrade, setShowConcurrentUpgrade] = useState(false);
   const [audioOn, setAudioOn] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
   const [previewIndex, setPreviewIndex] = useState(null);
@@ -1199,36 +1231,12 @@ export default function App() {
     const isVid = tab === T.VID;
     if (isVid && profile.videos_remaining <= 0) return;
     if (!isVid && profile.images_remaining <= 0) return;
-
-    // Restore & colorize require at least 1 reference image
-    if (!isVid && (style === "restore" || style === "colorize") && refImages.length === 0) {
-      setGenError(lang === "es"
-        ? `⚠️ El modo "${style === "restore" ? "Restaurar" : "Colorear"}" requiere subir al menos 1 imagen de referencia.`
-        : `⚠️ "${style === "restore" ? "Restore" : "Coloring Page"}" mode requires at least 1 reference image.`
-      );
-      return;
-    }
     // Block if payment failed
     if (profile.subscription_status === "payment_failed") {
       setPaymentFailedModal(true);
       return;
     }
-    // Concurrent generation limit
-    const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
-    const concurrentLimit = CONCURRENT_LIMITS[profile.plan] || 1;
-    const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
-    if (pendingCount >= concurrentLimit) {
-      setGenError(lang === "es"
-        ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Tu plan ${profile.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}. Esperá que terminen.`
-        : `⏳ You have ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Your ${profile.plan} plan allows max ${concurrentLimit} simultaneous. Wait for them to finish.`
-      );
-      setShowConcurrentUpgrade(true);
-      return;
-    }
-    setShowConcurrentUpgrade(false);
     setGenning(true);
-    setGenBtnLocked(true);
-    setTimeout(() => setGenBtnLocked(false), 5000); // re-enable button after 5s
     setGenResult(null);
     setGenError("");
     setGenStatus({ phase: "queued", position: null, elapsed: 0 });
@@ -1270,7 +1278,6 @@ export default function App() {
         body: JSON.stringify({
           type: isVid ? "video" : "image",
           prompt: buildStyledPrompt(prompt, tab === T.IMG ? style : "cinematic"),
-          user_prompt: prompt.trim(), // raw user input — saved to DB, never sent to fal.ai
           style_id: tab === T.IMG ? style : "cinematic",
           aspect_ratio: isVid ? vidRatio : ratio,
           image_quality: !isVid ? imgQuality : undefined,
@@ -1365,7 +1372,6 @@ export default function App() {
       console.error("Generation error:", err);
       setGenError(err.message || "Error de conexión con el servidor.");
       setGenning(false);
-      setGenBtnLocked(false);
     }
   };
 
@@ -2072,6 +2078,17 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                  {/* Style influence preview */}
+                  {prompt.trim() && (
+                    <div style={{ marginBottom: 12, padding: "8px 10px", borderRadius: 8, background: "rgba(0,240,255,.03)", border: "1px solid rgba(0,240,255,.08)" }}>
+                      <p style={{ fontSize: 8, color: "#3a3a60", letterSpacing: 1, textTransform: "uppercase", margin: "0 0 4px" }}>
+                        {lang === "en" ? "✦ prompt that will be sent" : "✦ prompt que se enviará"}
+                      </p>
+                      <p style={{ fontSize: 10, color: "#5a5a70", margin: 0, lineHeight: 1.5, fontFamily: "'JetBrains Mono',monospace", wordBreak: "break-word" }}>
+                        {buildStyledPrompt(prompt, style)}
+                      </p>
+                    </div>
+                  )}
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{t("ratio_label")}</p>
                   <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
                     {RATIOS.map(r => (
@@ -2276,23 +2293,13 @@ export default function App() {
                 );
               })()}
 
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genBtnLocked && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
-                {!hasPlan ? t("plan_for_gen") : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube una imagen de referencia" : "Upload a reference image") : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genning || (!prompt.trim() && style !== "restore" && style !== "colorize") || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genning && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
+                {!hasPlan ? t("plan_for_gen") : genning ? (t("loading")) : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
               </button>
               {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={tab} duration={vidDur} lang={lang} genStatus={genStatus} /></div>}
 
               {/* Error */}
-              {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>
-                {genError}
-                {showConcurrentUpgrade && (
-                  <div style={{ marginTop: 6 }}>
-                    <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
-                      style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
-                      {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
-                    </button>
-                  </div>
-                )}
-              </div>}
+              {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>{genError}</div>}
 
               {/* Result preview */}
               {genResult && !genning && (
@@ -2456,16 +2463,6 @@ export default function App() {
 
             const handleMotionGen = async () => {
               if (!canGenMotion) return;
-              // Concurrent limit check
-              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
-              const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
-              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
-              if (pendingCount >= concurrentLimit) {
-                setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
-                setShowConcurrentUpgrade(true);
-                return;
-              }
-              setShowConcurrentUpgrade(false);
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
@@ -2680,17 +2677,7 @@ export default function App() {
                       {genning ? (lang === "es" ? "Generando..." : "Generating...") : (motionUploadProgress.img || motionUploadProgress.vid) ? (lang === "es" ? "⏳ Subiendo archivos..." : "⏳ Uploading files...") : !motionImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !motionVideo ? (lang === "es" ? "Sube un video de movimiento" : "Upload a motion video") : !motionImageUrl || !motionVideoUrl ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : (profile?.videos_remaining ?? 0) < motionCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Generar Motion (${motionCredits} créditos)` : `🎭 Generate Motion (${motionCredits} credits)`)}
                     </button>
                     {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={motionDur} lang={lang} genStatus={genStatus} /></div>}
-                    {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>
-                {genError}
-                {showConcurrentUpgrade && (
-                  <div style={{ marginTop: 6 }}>
-                    <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
-                      style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
-                      {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
-                    </button>
-                  </div>
-                )}
-              </div>}
+                    {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>{genError}</div>}
                     {genResult && !genning && tab === T.MOT && (
                       <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,107,43,.2)", animation: "fadeUp .5s ease" }}>
                         <video src={genResult.url} controls autoPlay style={{ width: "100%", display: "block", borderRadius: 14 }} />
@@ -2787,16 +2774,6 @@ export default function App() {
 
             const handleDirGen = async () => {
               if (!canGenDir) return;
-              // Concurrent limit check
-              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
-              const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
-              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
-              if (pendingCount >= concurrentLimit) {
-                setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
-                setShowConcurrentUpgrade(true);
-                return;
-              }
-              setShowConcurrentUpgrade(false);
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
@@ -2894,8 +2871,6 @@ export default function App() {
                       {dirImages.map((img, i) => (
                         <div key={i} style={{ position: "relative", width: 72, height: 72, borderRadius: 9, overflow: "hidden", border: "1px solid rgba(0,240,255,.25)", flexShrink: 0 }}>
                           <img src={img.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          {/* Number badge */}
-                          <div style={{ position: "absolute", bottom: 3, left: 3, background: "rgba(0,0,0,.75)", borderRadius: 4, padding: "1px 5px", fontSize: 9, color: "#00f0ff", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", backdropFilter: "blur(4px)" }}>{i+1}</div>
                           <button onClick={() => setDirImages(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,.75)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                         </div>
                       ))}
@@ -2905,10 +2880,30 @@ export default function App() {
                           {dirUploading.img
                             ? <div style={{ width: 18, height: 18, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
                             : <><span style={{ fontSize: 22, color: "#5a5a70" }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>img</span></>}
-                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadDirFile(f, true); }} />
+                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => { e.target.value = ""; uploadDirFile(e.target.files[0], true); }} />
                         </label>
                       )}
                     </div>
+
+                    {/* @ chip bar — tap to insert tag in prompt */}
+                    {dirImages.length >= 1 && !dirKeepFrame && (
+                      <div style={{ marginTop: 8 }}>
+                        <p style={{ fontSize: 9, color: "#3a3a50", margin: "0 0 5px" }}>
+                          {lang === "es" ? "Tocá para insertar en el prompt:" : "Tap to insert in prompt:"}
+                        </p>
+                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                          {dirImages.map((img, i) => (
+                            <div key={i} onClick={() => { const tag = `@image${i+1}`; setDirPrompt(prev => prev ? prev + (prev.endsWith(" ") ? "" : " ") + tag : tag); }}
+                              style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px 4px 5px", borderRadius: 20, background: "rgba(0,240,255,.07)", border: "1px solid rgba(0,240,255,.18)", cursor: "pointer", userSelect: "none" }}
+                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,240,255,.14)"}
+                              onMouseLeave={e => e.currentTarget.style.background = "rgba(0,240,255,.07)"}>
+                              <img src={img.preview} alt="" style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(0,240,255,.3)" }} />
+                              <span style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace" }}>@image{i+1}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Audio section — hidden in keepFrame mode */}
@@ -2951,67 +2946,14 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Prompt with @image autocomplete */}
-                <div style={{ marginBottom: 12, position: "relative" }}>
+                {/* Prompt */}
+                <div style={{ marginBottom: 12 }}>
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena *" : "Scene description *"}</p>
-                  <textarea value={dirPrompt}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setDirPrompt(val);
-                      // Detect @image trigger — look for @image followed by optional digits at cursor
-                      const pos = e.target.selectionStart;
-                      const before = val.slice(0, pos);
-                      const match = before.match(/@image(\d*)$/);
-                      if (match && dirImages.length > 0 && !dirKeepFrame) {
-                        setDirMention({ query: match[1], start: pos - match[0].length });
-                      } else {
-                        setDirMention(null);
-                      }
-                    }}
-                    onKeyDown={e => {
-                      // Close mention dropdown on Escape
-                      if (e.key === "Escape" && dirMention) { setDirMention(null); e.preventDefault(); }
-                    }}
-                    onBlur={() => setTimeout(() => setDirMention(null), 150)}
+                  <textarea value={dirPrompt} onChange={e => setDirPrompt(e.target.value)}
                     placeholder={lang === "es"
-                      ? (dirImages.length > 1 ? "Describe la escena. Escribí @image1, @image2... para referenciar tus imágenes..." : "Describe la escena. Escribí @image1 para referenciar tu imagen. Ej: @image1 camina por una calle de noche...")
-                      : (dirImages.length > 1 ? "Describe the scene. Type @image1, @image2... to reference your images..." : "Describe the scene. Type @image1 to reference your image. E.g. @image1 walks down a neon-lit street...")}
+                      ? (dirImages.length > 1 ? "Describe la escena. Usá @image1, @image2... para referenciar tus imágenes. Ej: @image1 camina con la ropa de @image2..." : "Describe la escena. Usá @image1 para referenciar tu imagen. Ej: @image1 camina por una calle de noche...")
+                      : (dirImages.length > 1 ? "Describe the scene. Use @image1, @image2... to reference your images. E.g. @image1 walks wearing @image2's outfit..." : "Describe the scene. Use @image1 to reference your image. E.g. @image1 walks down a neon-lit street...")}
                     rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
-
-                  {/* Autocomplete dropdown */}
-                  {dirMention && dirImages.length > 0 && (() => {
-                    const filtered = dirImages
-                      .map((img, i) => ({ img, i, num: i+1 }))
-                      .filter(({ num }) => !dirMention.query || String(num).startsWith(dirMention.query));
-                    if (!filtered.length) return null;
-                    const insertMention = (num) => {
-                      const tag = `@image${num}`;
-                      const before = dirPrompt.slice(0, dirMention.start);
-                      const after = dirPrompt.slice(dirMention.start + 1 + "image".length + dirMention.query.length);
-                      setDirPrompt(before + tag + (after.startsWith(" ") ? "" : " ") + after);
-                      setDirMention(null);
-                    };
-                    return (
-                      <div style={{ position: "absolute", left: 0, right: 0, zIndex: 50, background: "#0e0e1e", border: "1px solid rgba(0,240,255,.25)", borderRadius: 10, padding: "6px", boxShadow: "0 8px 24px rgba(0,0,0,.5)", marginTop: 2 }}>
-                        <p style={{ fontSize: 9, color: "#3a3a50", margin: "0 0 6px 4px", letterSpacing: 1 }}>IMÁGENES</p>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {filtered.map(({ img, num }) => (
-                            <div key={num} onMouseDown={() => insertMention(num)}
-                              style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 5px", borderRadius: 8, background: "rgba(0,240,255,.06)", border: "1px solid rgba(0,240,255,.15)", cursor: "pointer" }}
-                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,240,255,.14)"}
-                              onMouseLeave={e => e.currentTarget.style.background = "rgba(0,240,255,.06)"}>
-                              <div style={{ position: "relative" }}>
-                                <img src={img.preview} alt="" style={{ width: 28, height: 28, borderRadius: 5, objectFit: "cover", display: "block" }} />
-                                <div style={{ position: "absolute", bottom: -2, right: -2, background: "#00f0ff", borderRadius: 3, padding: "0 3px", fontSize: 8, color: "#06060e", fontWeight: 800, lineHeight: "14px" }}>{num}</div>
-                              </div>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace" }}>@image{num}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
                   <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}><span style={{ color: dirPrompt.length > 3000 ? "#ffb800" : "#3a3a50" }}>{dirPrompt.length}</span>/3500</p>
                 </div>
 
@@ -3113,17 +3055,7 @@ export default function App() {
                 </button>
 
                 {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={dirDuration} lang={lang} genStatus={genStatus} /></div>}
-                {genError && <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>
-                  {genError}
-                  {showConcurrentUpgrade && (
-                    <div style={{ marginTop: 6 }}>
-                      <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
-                        style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
-                        {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
-                      </button>
-                    </div>
-                  )}
-                </div>}
+                {genError && <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>{genError}</div>}
 
                 {genResult && !genning && tab === T.DIR && (
                   <div style={{ marginTop: 14, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)" }}>
@@ -3249,19 +3181,28 @@ export default function App() {
                 </div>
                 <button onClick={() => { setPreviewItem(null); setPreviewIndex(null); }} style={{ background: "none", border: "none", color: "#5a5a70", fontSize: 18, cursor: "pointer" }}>✕</button>
               </div>
-              {/* Prompt hidden from UI — copy button only, no visible text */}
+              {/* Prompt box — max 3 lines, copy button */}
               {previewItem.prompt && (
-                <div style={{ marginBottom: 12, display: "flex", justifyContent: "flex-end" }}>
-                  <button
-                    onClick={e => {
-                      navigator.clipboard?.writeText(previewItem.prompt).catch(() => {});
-                      const b = e.currentTarget;
-                      b.textContent = "✓ " + (lang === "en" ? "Copied!" : "¡Copiado!");
-                      setTimeout(() => { b.textContent = "📋 " + (lang === "en" ? "Copy prompt" : "Copiar prompt"); }, 1500);
-                    }}
-                    style={{ fontSize: 10, color: "#6a6a80", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
-                    📋 {lang === "en" ? "Copy prompt" : "Copiar prompt"}
-                  </button>
+                <div style={{ marginBottom: 12, borderRadius: 8, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                    <span style={{ fontSize: 9, color: "#3a3a50", letterSpacing: 1, textTransform: "uppercase" }}>Prompt</span>
+                    <button
+                      onClick={e => {
+                        navigator.clipboard?.writeText(previewItem.prompt).catch(() => {});
+                        const b = e.currentTarget;
+                        b.textContent = "✓";
+                        setTimeout(() => { b.textContent = lang === "en" ? "Copy" : "Copiar"; }, 1500);
+                      }}
+                      style={{ fontSize: 10, color: "#00f0ff", background: "rgba(0,240,255,.06)", border: "1px solid rgba(0,240,255,.15)", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                      {lang === "en" ? "Copy" : "Copiar"}
+                    </button>
+                  </div>
+                  <div style={{ maxHeight: 60, overflow: "hidden", position: "relative", padding: "8px 10px" }}>
+                    <p style={{ fontSize: 11, color: "#6a6a80", margin: 0, lineHeight: 1.55, fontFamily: "'JetBrains Mono',monospace", wordBreak: "break-word" }}>
+                      {previewItem.prompt}
+                    </p>
+                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 20, background: "linear-gradient(transparent, rgba(10,10,20,0.95))" }} />
+                  </div>
                 </div>
               )}
               <div style={{ display: "flex", gap: 8 }}>
