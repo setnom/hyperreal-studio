@@ -1244,6 +1244,7 @@ export default function App() {
         body: JSON.stringify({
           type: isVid ? "video" : "image",
           prompt: buildStyledPrompt(prompt, tab === T.IMG ? style : "cinematic"),
+          user_prompt: prompt.trim(), // raw user input — saved to DB, never sent to fal.ai
           style_id: tab === T.IMG ? style : "cinematic",
           aspect_ratio: isVid ? vidRatio : ratio,
           image_quality: !isVid ? imgQuality : undefined,
