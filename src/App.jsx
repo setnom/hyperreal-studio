@@ -7,14 +7,35 @@ class ErrorBoundary extends Component {
   componentDidCatch(err) { console.error("App crash:", err); }
   render() {
     if (this.state.error) {
+      const isEs = navigator.language?.toLowerCase().startsWith("es") ?? true;
       return (
         <div style={{ minHeight: "100vh", background: "#06060e", color: "#e0e0f0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", padding: 24, textAlign: "center" }}>
-          <p style={{ fontSize: 32, marginBottom: 12 }}>⚠️</p>
-          <p style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Algo salió mal</p>
-          <p style={{ fontSize: 13, color: "#5a5a70", marginBottom: 24 }}>Something went wrong. Please reload the page.</p>
+          <p style={{ fontSize: 40, marginBottom: 16 }}>⚠️</p>
+          <p style={{ fontSize: 20, fontWeight: 800, marginBottom: 8, color: "#fff" }}>
+            {isEs ? "Algo salió mal" : "Something went wrong"}
+          </p>
+          <p style={{ fontSize: 13, color: "#5a5a70", marginBottom: 8, maxWidth: 360, lineHeight: 1.6 }}>
+            {isEs
+              ? "Ocurrió un error inesperado en la aplicación. Podés intentar recargar la página."
+              : "An unexpected error occurred. You can try reloading the page."}
+          </p>
+          <div style={{ margin: "16px 0 24px", padding: "14px 20px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", maxWidth: 380 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#00f0ff", marginBottom: 6 }}>
+              {isEs ? "¿El error persiste?" : "Does the error persist?"}
+            </p>
+            <p style={{ fontSize: 12, color: "#8a8a9e", lineHeight: 1.6, marginBottom: 10 }}>
+              {isEs
+                ? "Tomá una captura de pantalla de este error y enviá un correo explicando lo que estabas haciendo cuando ocurrió."
+                : "Take a screenshot of this error and send an email explaining what you were doing when it occurred."}
+            </p>
+            <a href="mailto:soporte@nanobanano.studio?subject=Error%20en%20la%20app&body=Hola%2C%20tuve%20un%20error%20en%20NanoBanano%20Studio.%20Adjunto%20captura."
+              style={{ display: "inline-block", padding: "8px 18px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#00f0ff,#00c8ff)", borderRadius: 8, textDecoration: "none" }}>
+              📧 soporte@nanobanano.studio
+            </a>
+          </div>
           <button onClick={() => { this.setState({ error: null }); window.location.href = "/"; }}
             style={{ padding: "12px 28px", fontSize: 14, fontWeight: 700, color: "#06060e", background: "#00f0ff", border: "none", borderRadius: 10, cursor: "pointer" }}>
-            🔄 Recargar
+            {isEs ? "🔄 Recargar página" : "🔄 Reload page"}
           </button>
         </div>
       );
@@ -1694,7 +1715,6 @@ export default function App() {
           <div style={{ padding: "10px 16px" }}>
             {hasPlanForPanel && (
               <button onClick={() => { setUserPanelOpen(false); setPage(P.PLANS); }}
-                onMouseEnter={e => e.currentTarget.style.animation="none"} onMouseLeave={e => e.currentTarget.style.animation="nudge 4s ease-in-out 0s infinite"}
                 style={{ display: "block", width: "100%", padding: "8px", fontSize: 11, fontWeight: 700, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", marginBottom: 6, textAlign: "center", boxShadow: "0 0 10px rgba(0,255,136,.2)", animation: "nudge 4s ease-in-out 3s infinite" }}>
                 {t("change_plan")}
               </button>
@@ -2150,7 +2170,7 @@ export default function App() {
       {/* Plan + Credits */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 16, background: `${hasPlan ? planData.color : "#5a5a70"}12`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}30`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>{t("plan_label")} {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}</span>
-        {hasPlan && <button onClick={() => setPage(P.PLANS)} style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, boxShadow: "0 0 8px rgba(0,255,136,.2)", animation: "nudge 4s ease-in-out 3s infinite", display: "inline-block" }} onMouseEnter={e => e.currentTarget.style.animation="none"} onMouseLeave={e => e.currentTarget.style.animation="nudge 4s ease-in-out 0s infinite"}>{t("change_plan")}</button>}
+        {hasPlan && <span style={{ display: "inline-block", animation: "nudge 4s ease-in-out 3s infinite" }}><button onClick={() => setPage(P.PLANS)} style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, boxShadow: "0 0 8px rgba(0,255,136,.2)" }}>{t("change_plan")}</button></span>}
       </div>
 
       {/* Dashboard layout */}
