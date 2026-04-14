@@ -7,7 +7,7 @@ class ErrorBoundary extends Component {
   componentDidCatch(err) { console.error("App crash:", err); }
   render() {
     if (this.state.error) {
-      const isEs = navigator.language?.toLowerCase().startsWith("es") ?? true;
+      const isEs = (navigator.language || navigator.userLanguage || "en").toLowerCase().startsWith("es");
       return (
         <div style={{ minHeight: "100vh", background: "#06060e", color: "#e0e0f0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", padding: 24, textAlign: "center" }}>
           <p style={{ fontSize: 40, marginBottom: 16 }}>⚠️</p>
@@ -727,6 +727,7 @@ export default function App() {
   const [langOpen, setLangOpen] = useState(false);
   const [userPanelOpen, setUserPanelOpen] = useState(false);
   const [openFaqIdx, setOpenFaqIdx] = useState(null); // FAQ accordion for landing page
+  const [planFaqIdx, setPlanFaqIdx] = useState(null); // FAQ accordion for plans page
   const [cancelModal, setCancelModal] = useState(false);
   const [showTyC, setShowTyC] = useState(false);
 
@@ -2103,7 +2104,7 @@ export default function App() {
           { q: "What's the difference between Image, Video, Motion, and Director modes?", a: "Image generates AI photos. Video generates cinematic clips from text. Motion Control animates an existing image using a reference motion video. Director is the most advanced — up to 9 reference images, audio, and full scene control with Seedance 2.0." },
         ];
 
-        const [openIdx, setOpenIdx] = React.useState(null);
+        const [openIdx, setOpenIdx] = [planFaqIdx, setPlanFaqIdx];
 
         return (
           <div style={{ maxWidth: isDesk ? 700 : "100%", margin: "0 auto 48px", padding: isDesk ? "0" : "0 4px" }}>
