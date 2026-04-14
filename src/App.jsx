@@ -2883,7 +2883,7 @@ export default function App() {
                           {dirUploading.img
                             ? <div style={{ width: 18, height: 18, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
                             : <><span style={{ fontSize: 22, color: "#5a5a70" }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>img</span></>}
-                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => { e.target.value = ""; uploadDirFile(e.target.files[0], true); }} />
+                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadDirFile(f, true); }} />
                         </label>
                       )}
                     </div>
