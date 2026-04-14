@@ -1539,7 +1539,7 @@ export default function App() {
         {payMsg && <div style={{ padding: "10px 14px", marginBottom: 14, borderRadius: 8, background: payMsg.includes("✓") ? "rgba(0,240,255,.08)" : "rgba(255,184,0,.08)", border: `1px solid ${payMsg.includes("✓") ? "rgba(0,240,255,.2)" : "rgba(255,184,0,.2)"}`, fontSize: 13, textAlign: "center", color: payMsg.includes("✓") ? "#00f0ff" : "#ffb800", animation: "fadeUp .4s ease" }}>{payMsg}</div>}
         {ch}
       </div>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes nudge{0%,100%{transform:translateY(0)}20%{transform:translateY(-3px)}40%{transform:translateY(1px)}60%{transform:translateY(-2px)}80%{transform:translateY(0)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a50}button:active{transform:scale(.97)!important}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.3)!important}::selection{background:rgba(0,240,255,.2)}.btn-nudge{animation:nudge 3s ease-in-out 2s infinite}`}</style>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes nudge{0%,70%,100%{transform:translateY(0)}75%{transform:translateY(-3px)}82%{transform:translateY(1px)}88%{transform:translateY(-2px)}95%{transform:translateY(0)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a50}button:active{transform:scale(.97)!important}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.3)!important}::selection{background:rgba(0,240,255,.2)}.btn-nudge{animation:nudge 4s ease-in-out 3s infinite}.btn-nudge:hover,.btn-nudge:active{animation:none}`}</style>
     </div>
   );
 
@@ -2149,7 +2149,7 @@ export default function App() {
       {/* Plan + Credits */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 16, background: `${hasPlan ? planData.color : "#5a5a70"}12`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}30`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>{t("plan_label")} {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}</span>
-        {hasPlan && <button onClick={() => setPage(P.PLANS)} className="btn-nudge" style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, boxShadow: "0 0 8px rgba(0,255,136,.2)" }}>Cambiar plan</button>}
+        {hasPlan && <button onClick={() => setPage(P.PLANS)} className="btn-nudge" style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, boxShadow: "0 0 8px rgba(0,255,136,.2)" }}>{t("change_plan")}</button>}
       </div>
 
       {/* Dashboard layout */}
