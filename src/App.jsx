@@ -989,6 +989,29 @@ export default function App() {
         setGens(mapped);
         setVisibleCount(20);
 
+        // ── Clean up stale processing gens (> 6 hours old with no result) ──
+        const STALE_AGE = 6 * 60 * 60 * 1000;
+        const stale = g.filter(gen =>
+          gen.status === "processing" &&
+          gen.result_url?.includes("|") &&
+          (Date.now() - new Date(gen.created_at).getTime()) > STALE_AGE
+        );
+        if (stale.length > 0) {
+          console.log(`Cleaning up ${stale.length} stale processing gen(s)`);
+          for (const gen of stale) {
+            try {
+              await fetch(`${SB_URL}/rest/v1/generations?id=eq.${gen.id}`, {
+                method: "PATCH",
+                headers: { ...hdr(s.access_token), Prefer: "return=minimal" },
+                body: JSON.stringify({ status: "failed" }),
+              });
+            } catch {}
+          }
+          setGens(prev => prev.map(gen =>
+            stale.find(s => s.id === gen.id) ? { ...gen, status: "failed" } : gen
+          ).filter(gen => gen.status !== "failed"));
+        }
+
         // ── Recover ALL pending generations silently ──────────────────────
         const pendings = g.filter(gen =>
           gen.status === "processing" &&
@@ -1333,7 +1356,7 @@ export default function App() {
     // Concurrent generation limit
     const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
     const concurrentLimit = CONCURRENT_LIMITS[profile.plan] || 1;
-    const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
+    const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|") && (Date.now() - new Date(g.created_at).getTime()) < 15 * 60 * 1000).length;
     if (pendingCount >= concurrentLimit) {
       setGenError(lang === "es"
         ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Tu plan ${profile.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}. Esperá que terminen.`
@@ -2682,7 +2705,7 @@ export default function App() {
               // Concurrent limit check
               const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
               const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
-              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
+              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|") && (Date.now() - new Date(g.created_at).getTime()) < 15 * 60 * 1000).length;
               if (pendingCount >= concurrentLimit) {
                 setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
                 setShowConcurrentUpgrade(true);
@@ -3013,7 +3036,7 @@ export default function App() {
               // Concurrent limit check
               const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
               const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
-              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|")).length;
+              const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|") && (Date.now() - new Date(g.created_at).getTime()) < 15 * 60 * 1000).length;
               if (pendingCount >= concurrentLimit) {
                 setGenError(lang === "es" ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Plan ${profile?.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}.` : `⏳ ${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress. Max ${concurrentLimit} for ${profile?.plan} plan.`);
                 setShowConcurrentUpgrade(true);
