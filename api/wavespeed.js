@@ -48,10 +48,9 @@ function humanizeError(msg) {
   return msg;
 }
 
-// Validate size format: "WxH" or "W*H" with reasonable pixel counts
+// Validate size format: "WxH" or "W*H" with reasonable pixel counts, or "auto"
 function safeImgSize(size) {
-  if (!size) return "2048*2048";
-  // Allow format like "2048*2048" or "1344*768"
+  if (!size || size === "auto") return null; // null = let Wavespeed decide
   if (/^\d{3,4}\*\d{3,4}$/.test(size)) {
     const [w, h] = size.split("*").map(Number);
     if (w >= 512 && w <= 4096 && h >= 512 && h <= 4096) return size;
@@ -90,10 +89,10 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
   try {
     const wsBody = {
       prompt: prompt.trim().slice(0, 3500),
-      images,          // field name is "images" (array of URLs) for the edit endpoint
-      size: imgSize,
+      images,
       enable_sync_mode: false,
       enable_base64_output: false,
+      ...(imgSize ? { size: imgSize } : {}),
     };
     console.log(`WS generate_img: size=${imgSize} images=${images.length} endpoint=bytedance/seedream-v4.5/edit`);
 

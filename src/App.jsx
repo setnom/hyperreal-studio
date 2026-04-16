@@ -1217,14 +1217,14 @@ export default function App() {
 
   // Direct download without opening new tab
   const downloadFile = async (url, filename) => {
-    // Show loading state on all download buttons
     const btns = document.querySelectorAll("[data-download-btn]");
     btns.forEach(b => { b.textContent = "⏳"; b.disabled = true; });
-
     const done = () => btns.forEach(b => { b.textContent = "↓ " + (lang === "en" ? "Download" : "Descargar"); b.disabled = false; });
 
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
     try {
-      // Try backend proxy first (bypasses CORS headers on fal CDN)
+      // Try backend proxy first — get blob
       const proxyRes = await fetch("/api/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1233,6 +1233,25 @@ export default function App() {
 
       if (proxyRes.ok) {
         const blob = await proxyRes.blob();
+
+        // iOS: use navigator.share with File — triggers "Save to Photos" banner
+        if (isIOS && navigator.share && navigator.canShare) {
+          const ext = filename?.split(".").pop() || (blob.type.includes("video") ? "mp4" : "png");
+          const mimeType = blob.type || (ext === "mp4" ? "video/mp4" : "image/png");
+          const file = new File([blob], filename || `nanobanano-${Date.now()}.${ext}`, { type: mimeType });
+          if (navigator.canShare({ files: [file] })) {
+            try {
+              await navigator.share({ files: [file], title: "NanoBanano Studio" });
+              done();
+              return;
+            } catch(shareErr) {
+              if (shareErr.name !== "AbortError") console.warn("Share failed:", shareErr.message);
+              // Fall through to blob download if share fails/aborted
+            }
+          }
+        }
+
+        // Desktop / Android: standard blob download
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = blobUrl;
@@ -1246,14 +1265,20 @@ export default function App() {
         return;
       }
     } catch (e) {
-      console.warn("Proxy download failed, trying direct fetch:", e.message);
+      console.warn("Proxy download failed:", e.message);
     }
 
     try {
-      // Direct fetch with no-cors mode — works for same-origin or permissive CORS
       const directRes = await fetch(url, { mode: "cors" });
       if (directRes.ok) {
         const blob = await directRes.blob();
+        if (isIOS && navigator.share && navigator.canShare) {
+          const ext = filename?.split(".").pop() || "png";
+          const file = new File([blob], filename || `nanobanano-${Date.now()}.${ext}`, { type: blob.type });
+          if (navigator.canShare({ files: [file] })) {
+            try { await navigator.share({ files: [file], title: "NanoBanano Studio" }); done(); return; } catch {}
+          }
+        }
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = blobUrl;
@@ -1270,7 +1295,7 @@ export default function App() {
       console.warn("Direct fetch failed:", e.message);
     }
 
-    // Last resort: force download via hidden iframe trick
+    // Last resort
     try {
       const a = document.createElement("a");
       a.href = url;
@@ -3522,7 +3547,7 @@ export default function App() {
                 {/* Proporción — SVG style igual que el resto */}
                 <div style={{ marginBottom: 14 }}>
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Proporción" : "Aspect ratio"}</p>
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                     {[
                       ["2048*2048","1:1"],
                       ["2688*1536","16:9"],
@@ -3536,6 +3561,11 @@ export default function App() {
                         {ratio}
                       </button>
                     ))}
+                    <button onClick={() => setWsImgSize("auto")}
+                      style={{ flex: "2", padding: "7px 4px", fontSize: 10, fontWeight: wsImgSize === "auto" ? 700 : 400, color: wsImgSize === "auto" ? "#ffb800" : "#5a5a70", background: wsImgSize === "auto" ? "rgba(255,184,0,.08)" : "rgba(255,255,255,.02)", border: wsImgSize === "auto" ? "1px solid rgba(255,184,0,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                      <RatioShape r="auto" active={wsImgSize === "auto"} color="#ffb800" />
+                      Auto
+                    </button>
                   </div>
                 </div>
 
