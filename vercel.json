@@ -39,6 +39,15 @@
     },
     "api/director.js": {
       "maxDuration": 300
+    },
+    "api/generate-ws.js": {
+      "maxDuration": 60
+    },
+    "api/video-ws.js": {
+      "maxDuration": 60
+    },
+    "api/status-ws.js": {
+      "maxDuration": 30
     }
   },
   "crons": [

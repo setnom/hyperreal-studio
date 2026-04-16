@@ -438,7 +438,7 @@ const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"];
 const SAMPLE = ["Luxury perfume bottle on black marble, volumetric lighting, 8K", "Latin woman CEO in modern office, golden hour, shallow DOF", "Gourmet burger floating, ingredients exploding, dark bg, studio light", "Futuristic car in neon-lit Tokyo street, rain reflections, cinematic"];
 
 const P = { LAND: 0, AUTH: 1, DASH: 2, PLANS: 3 };
-const T = { IMG: 0, VID: 1, GAL: 2, MOT: 3, DIR: 4 };
+const T = { IMG: 0, VID: 1, GAL: 2, MOT: 3, DIR: 4, WS_IMG: 5, WS_VID: 6 };
 
 // ─── HOOKS ───
 function useW() {
@@ -700,6 +700,21 @@ export default function App() {
   const [dirDuration, setDirDuration] = useState(5);
   const [dirAspect, setDirAspect] = useState("9:16");
   const [dirKeepFrame, setDirKeepFrame] = useState(false);
+
+  // Wavespeed Img (Seedream 4.5 Edit)
+  const [wsImgPrompt, setWsImgPrompt] = useState("");
+  const [wsImgImages, setWsImgImages] = useState([]);
+  const [wsImgSize, setWsImgSize] = useState("1024*1024");
+  const [wsImgUploading, setWsImgUploading] = useState(false);
+  const [wsImgError, setWsImgError] = useState(null);
+
+  // Wavespeed Vid (WAN 2.6 I2V Pro)
+  const [wsVidPrompt, setWsVidPrompt] = useState("");
+  const [wsVidImage, setWsVidImage] = useState(null);
+  const [wsVidDuration, setWsVidDuration] = useState(5);
+  const [wsVidRes, setWsVidRes] = useState("1080p");
+  const [wsVidUploading, setWsVidUploading] = useState(false);
+  const [wsVidError, setWsVidError] = useState(null);
   const [genning, setGenning] = useState(false);
   const [genBtnLocked, setGenBtnLocked] = useState(false); // prevents double-click for 5s after submit
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
@@ -2269,8 +2284,10 @@ export default function App() {
                 { k: T.VID, l: t("tab_video") },
                 { k: T.MOT, l: t("tab_motion") },
                 { k: T.DIR, l: t("tab_director") },
+                { k: T.WS_IMG, l: lang === "es" ? "✨ Img Pro" : "✨ Img Pro" },
+                { k: T.WS_VID, l: lang === "es" ? "🌊 Vid Pro" : "🌊 Vid Pro" },
               ].map(tb => (
-                <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : tb.k === T.DIR ? "rgba(0,240,255,.1)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : tab === tb.k && tb.k === T.DIR ? "1px solid rgba(0,240,255,.2)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
+                <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : tb.k === T.DIR ? "rgba(0,240,255,.1)" : tb.k === T.WS_IMG ? "rgba(255,184,0,.1)" : tb.k === T.WS_VID ? "rgba(0,200,255,.1)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : tab === tb.k && tb.k === T.DIR ? "1px solid rgba(0,240,255,.2)" : tab === tb.k && tb.k === T.WS_IMG ? "1px solid rgba(255,184,0,.3)" : tab === tb.k && tb.k === T.WS_VID ? "1px solid rgba(0,200,255,.3)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
               ))}
             </div>
           ) : (
@@ -2284,12 +2301,20 @@ export default function App() {
                   <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: tb.k === T.GAL ? "0 0 44px" : 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? "rgba(255,255,255,.06)" : "transparent", border: "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
                 ))}
               </div>
-              <div style={{ display: "flex", gap: 3, background: "rgba(255,107,43,.03)", borderRadius: 9, padding: 3, border: "1px solid rgba(255,107,43,.08)" }}>
+              <div style={{ display: "flex", gap: 3, marginBottom: 3, background: "rgba(255,107,43,.03)", borderRadius: 9, padding: 3, border: "1px solid rgba(255,107,43,.08)" }}>
                 {[
                   { k: T.MOT, l: "🎭 Motion" },
                   { k: T.DIR, l: "🎬 Director" },
                 ].map(tb => (
                   <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.15)" : "rgba(0,240,255,.1)") : "transparent", border: tab === tb.k ? (tb.k === T.MOT ? "1px solid rgba(255,107,43,.3)" : "1px solid rgba(0,240,255,.2)") : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 3, background: "rgba(255,184,0,.03)", borderRadius: 9, padding: 3, border: "1px solid rgba(255,184,0,.08)" }}>
+                {[
+                  { k: T.WS_IMG, l: "✨ Img Pro" },
+                  { k: T.WS_VID, l: "🌊 Vid Pro" },
+                ].map(tb => (
+                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.WS_IMG ? "rgba(255,184,0,.15)" : "rgba(0,200,255,.12)") : "transparent", border: tab === tb.k ? (tb.k === T.WS_IMG ? "1px solid rgba(255,184,0,.3)" : "1px solid rgba(0,200,255,.3)") : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
                 ))}
               </div>
             </div>
@@ -3376,7 +3401,272 @@ export default function App() {
                   )}
                 </div>}
 
-                {genResult && !genning && tab === T.DIR && (
+      
+          {/* ── Wavespeed Img Pro (Seedream 4.5 Edit) ── */}
+          {tab === T.WS_IMG && (() => {
+            const canGen = !genning && !wsImgUploading && wsImgImages.length > 0 && wsImgPrompt.trim();
+
+            const uploadWsImg = async (file) => {
+              if (!file) return;
+              setWsImgError(null);
+              if (file.type.startsWith("video/")) { setWsImgError(lang === "es" ? "Solo imágenes." : "Images only."); return; }
+              if (wsImgImages.length >= 10) { setWsImgError(lang === "es" ? "Máx 10 imágenes." : "Max 10 images."); return; }
+              setWsImgUploading(true);
+              try {
+                const dataUrl = await new Promise((res, rej) => {
+                  const img = new Image();
+                  img.onload = () => {
+                    const MAX = 1800; let w = img.width, h = img.height;
+                    if (w > MAX || h > MAX) { if (w > h) { h = Math.round((h/w)*MAX); w = MAX; } else { w = Math.round((w/h)*MAX); h = MAX; } }
+                    const c = document.createElement("canvas"); c.width = w; c.height = h;
+                    c.getContext("2d").drawImage(img, 0, 0, w, h);
+                    res(c.toDataURL("image/jpeg", 0.88));
+                  };
+                  img.onerror = () => rej(new Error("Load failed"));
+                  img.src = URL.createObjectURL(file);
+                });
+                const r = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }) });
+                const d = await r.json();
+                if (d.error) throw new Error(d.error);
+                setWsImgImages(prev => [...prev, { file, preview: URL.createObjectURL(file), url: d.url }]);
+              } catch(e) { setWsImgError(e.message); }
+              finally { setWsImgUploading(false); }
+            };
+
+            const handleWsImgGen = async () => {
+              if (!canGen) return;
+              setGenning(true); setGenError(null);
+              setGenStatus({ phase: "queued", position: null, elapsed: 0 });
+              try {
+                const r = await fetch("/api/generate-ws", {
+                  method: "POST", headers: {"Content-Type":"application/json"},
+                  body: JSON.stringify({ prompt: wsImgPrompt.trim(), image_urls: wsImgImages.map(i => i.url), size: wsImgSize, user_token: session?.access_token }),
+                });
+                const data = await r.json();
+                if (data.error) { setGenError(data.error); setGenning(false); return; }
+                const { request_id, gen_id } = data;
+                const pollStart = Date.now(); let attempts = 0;
+                const poll = async () => {
+                  attempts++;
+                  if (attempts > 120) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+                  try {
+                    const sr = await fetch("/api/status-ws", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ request_id, type: "image", user_token: session?.access_token, gen_id }) });
+                    const sd = await sr.json();
+                    const elapsed = Math.round((Date.now() - pollStart) / 1000);
+                    if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(false, { url: sd.url }); playDoneSound(); return; }
+                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, images_remaining: p2.images_remaining })); } } catch {} return; }
+                    setGenStatus({ phase: "generating", position: null, elapsed });
+                    setTimeout(poll, 3000);
+                  } catch { setTimeout(poll, 5000); }
+                };
+                setTimeout(poll, 3000);
+              } catch(e) { setGenError(e.message); setGenning(false); }
+            };
+
+            return (
+              <div style={{ animation: "fadeUp .4s ease" }}>
+                <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 12, background: "rgba(255,184,0,.04)", border: "1px solid rgba(255,184,0,.15)" }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 2px" }}>✨ Img Pro — Seedream 4.5 Edit</p>
+                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Edición de imágenes con IA · Tipografía nítida · Hasta 4K" : "AI image editing · Crisp typography · Up to 4K"}</p>
+                </div>
+
+                {/* Image upload grid */}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, margin: 0 }}>{lang === "es" ? `🖼️ Imágenes de referencia (${wsImgImages.length}/10)` : `🖼️ Reference images (${wsImgImages.length}/10)`}</p>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {wsImgImages.map((img, i) => (
+                      <div key={i} style={{ position: "relative", width: 72, height: 72, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,184,0,.3)", flexShrink: 0 }}>
+                        <img src={img.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <button onClick={() => setWsImgImages(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 9, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                      </div>
+                    ))}
+                    {wsImgImages.length < 10 && (
+                      <label style={{ width: 72, height: 72, borderRadius: 8, border: "1px dashed rgba(255,255,255,.15)", background: "rgba(255,255,255,.02)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {wsImgUploading ? <div style={{ width: 16, height: 16, border: "2px solid rgba(255,184,0,.3)", borderTop: "2px solid #ffb800", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : <><span style={{ fontSize: 18, color: "#5a5a70" }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>img</span></>}
+                        <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadWsImg(e.target.files[0])} />
+                      </label>
+                    )}
+                  </div>
+                  {wsImgError && <p style={{ fontSize: 10, color: "#ff4d6a", marginTop: 6 }}>{wsImgError}</p>}
+                </div>
+
+                {/* Prompt */}
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de edición *" : "Edit description *"}</p>
+                  <textarea value={wsImgPrompt} onChange={e => setWsImgPrompt(e.target.value)}
+                    placeholder={lang === "es" ? "Describe qué editar. Ej: Cambia el fondo a una ciudad de noche con neón, mantén el personaje..." : "Describe what to edit. E.g. Change background to neon night city, keep the character..."}
+                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
+                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{wsImgPrompt.length}/3500</p>
+                </div>
+
+                {/* Size */}
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Tamaño" : "Size"}</p>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {[["1024*1024","⬛ 1:1"],["1344*768","🖥️ 16:9"],["768*1344","📱 9:16"],["2048*2048","⬛ 2K"]].map(([v,l]) => (
+                      <button key={v} onClick={() => setWsImgSize(v)} style={{ flex: 1, padding: "7px 4px", fontSize: 10, fontWeight: wsImgSize === v ? 700 : 400, color: wsImgSize === v ? "#ffb800" : "#5a5a70", background: wsImgSize === v ? "rgba(255,184,0,.08)" : "rgba(255,255,255,.02)", border: wsImgSize === v ? "1px solid rgba(255,184,0,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <button onClick={handleWsImgGen} disabled={!canGen}
+                  style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#ffb800,#ff8800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(255,184,0,.25)" : "none" }}>
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? `✨ Generar Img Pro (1 crédito)` : `✨ Generate Img Pro (1 credit)`)}
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* ── Wavespeed Vid Pro (WAN 2.6 I2V Pro) ── */}
+          {tab === T.WS_VID && (() => {
+            const wsVidCredits = wsVidDuration <= 5 ? 2 : wsVidDuration <= 10 ? 3 : 4;
+            const canGen = !genning && !wsVidUploading && wsVidImage?.url && wsVidPrompt.trim() && (profile?.videos_remaining ?? 0) >= wsVidCredits;
+
+            const uploadWsVid = async (file) => {
+              if (!file) return;
+              setWsVidError(null);
+              if (file.type.startsWith("video/")) { setWsVidError(lang === "es" ? "Solo imágenes." : "Images only."); return; }
+              setWsVidUploading(true);
+              try {
+                const dataUrl = await new Promise((res, rej) => {
+                  const img = new Image();
+                  img.onload = () => {
+                    const MAX = 1800; let w = img.width, h = img.height;
+                    if (w > MAX || h > MAX) { if (w > h) { h = Math.round((h/w)*MAX); w = MAX; } else { w = Math.round((w/h)*MAX); h = MAX; } }
+                    const c = document.createElement("canvas"); c.width = w; c.height = h;
+                    c.getContext("2d").drawImage(img, 0, 0, w, h);
+                    res(c.toDataURL("image/jpeg", 0.88));
+                  };
+                  img.onerror = () => rej(new Error("Load failed"));
+                  img.src = URL.createObjectURL(file);
+                });
+                const r = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }) });
+                const d = await r.json();
+                if (d.error) throw new Error(d.error);
+                setWsVidImage({ file, preview: URL.createObjectURL(file), url: d.url });
+              } catch(e) { setWsVidError(e.message); }
+              finally { setWsVidUploading(false); }
+            };
+
+            const handleWsVidGen = async () => {
+              if (!canGen) return;
+              setGenning(true); setGenError(null);
+              setGenStatus({ phase: "queued", position: null, elapsed: 0 });
+              try {
+                const r = await fetch("/api/video-ws", {
+                  method: "POST", headers: {"Content-Type":"application/json"},
+                  body: JSON.stringify({ prompt: wsVidPrompt.trim(), image_url: wsVidImage.url, duration: wsVidDuration, resolution: wsVidRes, user_token: session?.access_token }),
+                });
+                const data = await r.json();
+                if (data.error) { setGenError(data.error); setGenning(false); return; }
+                const { request_id, gen_id } = data;
+                const pollStart = Date.now(); let attempts = 0;
+                const poll = async () => {
+                  attempts++;
+                  if (attempts > 150) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+                  try {
+                    const sr = await fetch("/api/status-ws", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ request_id, type: "video", user_token: session?.access_token, gen_id }) });
+                    const sd = await sr.json();
+                    const elapsed = Math.round((Date.now() - pollStart) / 1000);
+                    if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
+                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining })); } } catch {} return; }
+                    setGenStatus({ phase: "generating", position: null, elapsed });
+                    setTimeout(poll, 5000);
+                  } catch { setTimeout(poll, 6000); }
+                };
+                setTimeout(poll, 5000);
+              } catch(e) { setGenError(e.message); setGenning(false); }
+            };
+
+            return (
+              <div style={{ animation: "fadeUp .4s ease" }}>
+                <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 12, background: "rgba(0,200,255,.04)", border: "1px solid rgba(0,200,255,.15)" }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#00c8ff", margin: "0 0 2px" }}>🌊 Vid Pro — WAN 2.6 Image-to-Video</p>
+                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Video cinemático desde imagen · 1080p/2K/4K · Audio nativo" : "Cinematic video from image · 1080p/2K/4K · Native audio"}</p>
+                </div>
+
+                {/* Image upload */}
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, marginBottom: 6 }}>{lang === "es" ? "🖼️ Imagen de referencia *" : "🖼️ Reference image *"}</p>
+                  <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 130, borderRadius: 12, border: wsVidImage ? "1px solid rgba(0,200,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: wsVidImage ? "rgba(0,200,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
+                    {wsVidImage
+                      ? <><img src={wsVidImage.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          {wsVidUploading && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 20, height: 20, border: "2px solid rgba(0,200,255,.3)", borderTop: "2px solid #00c8ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /></div>}
+                          <button onClick={e => { e.preventDefault(); setWsVidImage(null); }} style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 10, cursor: "pointer" }}>×</button>
+                        </>
+                      : <><span style={{ fontSize: 28, marginBottom: 6 }}>🖼️</span><span style={{ fontSize: 10, color: "#5a5a70" }}>{lang === "es" ? "Subí tu imagen" : "Upload your image"}</span></>}
+                    <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadWsVid(e.target.files[0])} />
+                  </label>
+                  {wsVidError && <p style={{ fontSize: 10, color: "#ff4d6a", marginTop: 6 }}>{wsVidError}</p>}
+                </div>
+
+                {/* Prompt */}
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena *" : "Scene description *"}</p>
+                  <textarea value={wsVidPrompt} onChange={e => setWsVidPrompt(e.target.value)}
+                    placeholder={lang === "es" ? "Describe el movimiento y la escena. Ej: Cámara se aleja lentamente, personaje mira hacia el horizonte, luz dorada de atardecer, cinemático..." : "Describe the motion and scene. E.g. Camera slowly pulls back, character looks toward the horizon, golden sunset light, cinematic..."}
+                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
+                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{wsVidPrompt.length}/3500</p>
+                </div>
+
+                {/* Resolution */}
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Resolución" : "Resolution"}</p>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {[["1080p","🖥️ 1080p"],["2k","🖥️ 2K"],["4k","🖥️ 4K"]].map(([v,l]) => (
+                      <button key={v} onClick={() => setWsVidRes(v)} style={{ flex: 1, padding: "7px 4px", fontSize: 10, fontWeight: wsVidRes === v ? 700 : 400, color: wsVidRes === v ? "#00c8ff" : "#5a5a70", background: wsVidRes === v ? "rgba(0,200,255,.08)" : "rgba(255,255,255,.02)", border: wsVidRes === v ? "1px solid rgba(0,200,255,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Duration */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>{lang === "es" ? "Duración" : "Duration"}</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 16, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: "#00c8ff" }}>{wsVidDuration}s</span>
+                      <span style={{ fontSize: 10, color: "#00c8ff", background: "rgba(0,200,255,.08)", border: "1px solid rgba(0,200,255,.2)", borderRadius: 5, padding: "2px 8px", fontWeight: 700 }}>{wsVidCredits} {lang === "es" ? "créditos" : "credits"}</span>
+                    </div>
+                  </div>
+                  <input type="range" min={5} max={15} step={5} value={wsVidDuration}
+                    onChange={e => setWsVidDuration(Number(e.target.value))}
+                    style={{ width: "100%", accentColor: "#00c8ff", cursor: "pointer", height: 4 }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                    {[5,10,15].map(d => <span key={d} style={{ fontSize: 9, color: d === wsVidDuration ? "#00c8ff" : "#3a3a50" }}>{d}s</span>)}
+                  </div>
+                  <p style={{ fontSize: 9, color: "#3a3a50", marginTop: 4, textAlign: "center" }}>5s = 2 créditos · 10s = 3 créditos · 15s = 4 créditos</p>
+                </div>
+
+                {/* Credits warning */}
+                {hasPlan && (profile?.videos_remaining ?? 0) < wsVidCredits && (() => {
+                  const vidPacks = [{ id: "vid_s", label: "Pack S", amount: 5, price: 12.99 }, { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 }, { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 }];
+                  return (
+                    <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 8px" }}>{lang === "es" ? "🎬 Sin créditos de video" : "🎬 Out of video credits"}</p>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {vidPacks.map(pk => (
+                          <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)} style={{ flex: 1, padding: "8px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
+                            <p style={{ fontSize: 10, fontWeight: 600, color: "#8a8aaa", margin: "0 0 2px", textTransform: "uppercase" }}>{pk.label}</p>
+                            <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px" }}>+{pk.amount}</p>
+                            <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <button onClick={handleWsVidGen} disabled={!canGen}
+                  style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#00c8ff,#0080ff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(0,200,255,.25)" : "none" }}>
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsVidUploading ? "⏳..." : !wsVidImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsVidPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.videos_remaining ?? 0) < wsVidCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🌊 Generar Vid Pro (${wsVidCredits} créditos)` : `🌊 Generate Vid Pro (${wsVidCredits} credits)`)}
+                </button>
+              </div>
+            );
+          })()}
+
+          {genResult && !genning && tab === T.DIR && (
                   <div style={{ marginTop: 14, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)" }}>
                     <video src={genResult.url} controls playsInline style={{ width: "100%", display: "block", maxHeight: 300, objectFit: "contain", background: "#000" }} />
                     <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
