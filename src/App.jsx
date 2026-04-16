@@ -3402,6 +3402,23 @@ export default function App() {
                 </div>}
 
       
+
+          {genResult && !genning && tab === T.DIR && (
+                  <div style={{ marginTop: 14, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)" }}>
+                    <video src={genResult.url} controls playsInline style={{ width: "100%", display: "block", maxHeight: 300, objectFit: "contain", background: "#000" }} />
+                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
+                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ Director Premium</span>
+                      <button onClick={() => downloadFile(genResult.url, `director-${Date.now()}.mp4`)} style={{ fontSize: 10, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.15)", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
+                    </div>
+                  </div>
+                )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+
           {/* ── Wavespeed Img Pro (Seedream 4.5 Edit) ── */}
           {tab === T.WS_IMG && (() => {
             const canGen = !genning && !wsImgUploading && wsImgImages.length > 0 && wsImgPrompt.trim();
@@ -3666,22 +3683,7 @@ export default function App() {
             );
           })()}
 
-          {genResult && !genning && tab === T.DIR && (
-                  <div style={{ marginTop: 14, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)" }}>
-                    <video src={genResult.url} controls playsInline style={{ width: "100%", display: "block", maxHeight: 300, objectFit: "contain", background: "#000" }} />
-                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
-                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ Director Premium</span>
-                      <button onClick={() => downloadFile(genResult.url, `director-${Date.now()}.mp4`)} style={{ fontSize: 10, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.15)", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
-                    </div>
-                  </div>
-                )}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Mobile gallery */}
+                    {/* Mobile gallery */}
           {!isDesk && tab === T.GAL && (
             <div style={{ animation: "fadeUp .4s ease" }}>
               {gens.length === 0 ? (
