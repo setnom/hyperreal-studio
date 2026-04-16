@@ -471,15 +471,16 @@ function Generating({ type, duration, lang, genStatus }) {
   const phase = genStatus?.phase || "generating";
   const pos = genStatus?.position;
   const elapsed = genStatus?.elapsed || 0;
-  const estMin = type === T.VID ? "5" : "0:15";
-  const estMax = type === T.VID ? "10" : "1";
+  const isVidType = type === T.VID || type === T.WS_VID || type === T.MOT || type === T.DIR;
+  const estMin = isVidType ? "2" : "0:15";
+  const estMax = isVidType ? "8" : "1";
 
   const phaseColor = phase === "queued" ? "#ffb800" : phase === "done" ? "#00ff88" : "#00f0ff";
   const phaseLabel = phase === "queued"
     ? (pos ? (isEn ? `In queue · position ${pos}` : `En cola · posición ${pos}`) : (isEn ? "In queue…" : "En cola…"))
     : phase === "done"
     ? (isEn ? "✓ Ready!" : "✓ ¡Listo!")
-    : (isEn ? (type === T.VID ? "Generating video" : "Generating image") : (type === T.VID ? "Generando video" : "Generando imagen"));
+    : (isEn ? (isVidType ? "Generating video" : "Generating image") : (isVidType ? "Generando video" : "Generando imagen"));
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "rgba(6,6,14,.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 10, borderRadius: 14, backdropFilter: "blur(8px)" }}>
@@ -3470,7 +3471,7 @@ export default function App() {
                     const sr = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ action: "status", request_id, type: "image", user_token: session?.access_token, gen_id }) });
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
-                    if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(false, { url: sd.url }); playDoneSound(); return; }
+                    if (sd.status === "COMPLETED" && sd.url) { setGenStatus({ phase: "done", position: null, elapsed }); await saveGenResult(false, { url: sd.url }); playDoneSound(); return; }
                     if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, images_remaining: p2.images_remaining })); } } catch {} return; }
                     setGenStatus({ phase: "generating", position: null, elapsed });
                     setTimeout(poll, 3000);
@@ -3538,10 +3539,26 @@ export default function App() {
                   </div>
                 </div>
 
+                {genning && (
+                  <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}>
+                    <Generating type={T.WS_IMG} duration={0} lang={lang} genStatus={genStatus} />
+                  </div>
+                )}
+
                 <button onClick={handleWsImgGen} disabled={!canGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#ffb800,#ff8800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(255,184,0,.25)" : "none" }}>
                   {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar (1 crédito)" : "✨ Generate (1 credit)")}
                 </button>
+
+                {genResult && !genning && tab === T.WS_IMG && (
+                  <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,184,0,.2)", animation: "fadeUp .5s ease" }}>
+                    <img src={genResult.url} alt="Generated" style={{ width: "100%", display: "block", borderRadius: "14px 14px 0 0" }} />
+                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
+                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {lang === "es" ? "Imagen Pro" : "Pro Image"}</span>
+                      <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-img-pro-${Date.now()}.png`)} style={{ fontSize: 11, color: "#ffb800", background: "rgba(255,184,0,.08)", border: "1px solid rgba(255,184,0,.2)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -3602,7 +3619,7 @@ export default function App() {
                     const sr = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ action: "status", request_id, type: "video", user_token: session?.access_token, gen_id }) });
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
-                    if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
+                    if (sd.status === "COMPLETED" && sd.url) { setGenStatus({ phase: "done", position: null, elapsed }); await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
                     if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining })); } } catch {} return; }
                     setGenStatus({ phase: "generating", position: null, elapsed });
                     setTimeout(poll, 5000);
@@ -3693,10 +3710,26 @@ export default function App() {
                   );
                 })()}
 
+                {genning && (
+                  <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}>
+                    <Generating type={T.WS_VID} duration={wsVidDuration} lang={lang} genStatus={genStatus} />
+                  </div>
+                )}
+
                 <button onClick={handleWsVidGen} disabled={!canGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#00c8ff,#0080ff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(0,200,255,.25)" : "none" }}>
                   {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsVidUploading ? "⏳..." : !wsVidImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsVidPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.videos_remaining ?? 0) < wsVidCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🌊 Generar Vid Pro (${wsVidCredits} créditos)` : `🌊 Generate Vid Pro (${wsVidCredits} credits)`)}
                 </button>
+
+                {genResult && !genning && tab === T.WS_VID && (
+                  <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,200,255,.2)", animation: "fadeUp .5s ease" }}>
+                    <video src={genResult.url} controls autoPlay playsInline style={{ width: "100%", display: "block", borderRadius: "14px 14px 0 0" }} />
+                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
+                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {lang === "es" ? "Video Pro" : "Pro Video"}</span>
+                      <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-vid-pro-${Date.now()}.mp4`)} style={{ fontSize: 11, color: "#00c8ff", background: "rgba(0,200,255,.08)", border: "1px solid rgba(0,200,255,.2)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
