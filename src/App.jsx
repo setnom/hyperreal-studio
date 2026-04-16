@@ -704,7 +704,7 @@ export default function App() {
   // Wavespeed Img (Seedream 4.5 Edit)
   const [wsImgPrompt, setWsImgPrompt] = useState("");
   const [wsImgImages, setWsImgImages] = useState([]);
-  const [wsImgSize, setWsImgSize] = useState("1024*1024");
+  const [wsImgSize, setWsImgSize] = useState("2048*2048");
   const [wsImgUploading, setWsImgUploading] = useState(false);
   const [wsImgError, setWsImgError] = useState(null);
 
@@ -3483,8 +3483,8 @@ export default function App() {
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
                 <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 12, background: "rgba(255,184,0,.04)", border: "1px solid rgba(255,184,0,.15)" }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 2px" }}>✨ Img Pro — Seedream 4.5 Edit</p>
-                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Edición de imágenes con IA · Tipografía nítida · Hasta 4K" : "AI image editing · Crisp typography · Up to 4K"}</p>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 2px" }}>✨ Imagen Premium Pro</p>
+                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Edición avanzada con IA · Tipografía nítida · Alta resolución" : "Advanced AI editing · Crisp typography · High resolution"}</p>
                 </div>
 
                 {/* Image upload grid */}
@@ -3511,26 +3511,36 @@ export default function App() {
 
                 {/* Prompt */}
                 <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de edición *" : "Edit description *"}</p>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción *" : "Description *"}</p>
                   <textarea value={wsImgPrompt} onChange={e => setWsImgPrompt(e.target.value)}
                     placeholder={lang === "es" ? "Describe qué editar. Ej: Cambia el fondo a una ciudad de noche con neón, mantén el personaje..." : "Describe what to edit. E.g. Change background to neon night city, keep the character..."}
                     rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
                   <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{wsImgPrompt.length}/3500</p>
                 </div>
 
-                {/* Size */}
+                {/* Proporción — SVG style igual que el resto */}
                 <div style={{ marginBottom: 14 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Tamaño" : "Size"}</p>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    {[["1024*1024","⬛ 1:1"],["1344*768","🖥️ 16:9"],["768*1344","📱 9:16"],["2048*2048","⬛ 2K"]].map(([v,l]) => (
-                      <button key={v} onClick={() => setWsImgSize(v)} style={{ flex: 1, padding: "7px 4px", fontSize: 10, fontWeight: wsImgSize === v ? 700 : 400, color: wsImgSize === v ? "#ffb800" : "#5a5a70", background: wsImgSize === v ? "rgba(255,184,0,.08)" : "rgba(255,255,255,.02)", border: wsImgSize === v ? "1px solid rgba(255,184,0,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Proporción" : "Aspect ratio"}</p>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {[
+                      ["2048*2048","1:1"],
+                      ["2688*1536","16:9"],
+                      ["1536*2688","9:16"],
+                      ["2048*1536","4:3"],
+                      ["1536*2048","3:4"],
+                    ].map(([v, ratio]) => (
+                      <button key={v} onClick={() => setWsImgSize(v)}
+                        style={{ flex: 1, padding: "7px 4px", fontSize: 10, fontWeight: wsImgSize === v ? 700 : 400, color: wsImgSize === v ? "#ffb800" : "#5a5a70", background: wsImgSize === v ? "rgba(255,184,0,.08)" : "rgba(255,255,255,.02)", border: wsImgSize === v ? "1px solid rgba(255,184,0,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        <RatioShape r={ratio} active={wsImgSize === v} color="#ffb800" />
+                        {ratio}
+                      </button>
                     ))}
                   </div>
                 </div>
 
                 <button onClick={handleWsImgGen} disabled={!canGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#ffb800,#ff8800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(255,184,0,.25)" : "none" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? `✨ Generar Img Pro (1 crédito)` : `✨ Generate Img Pro (1 credit)`)}
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar (1 crédito)" : "✨ Generate (1 credit)")}
                 </button>
               </div>
             );
@@ -3538,7 +3548,12 @@ export default function App() {
 
           {/* ── Wavespeed Vid Pro (WAN 2.6 I2V Pro) ── */}
           {tab === T.WS_VID && (() => {
-            const wsVidCredits = wsVidDuration <= 5 ? 2 : wsVidDuration <= 10 ? 3 : 4;
+            const wsVidCreditTable = {
+              5:  { "1080p": 2, "2k": 3, "4k": 3 },
+              10: { "1080p": 3, "2k": 4, "4k": 4 },
+              15: { "1080p": 3, "2k": 4, "4k": 5 },
+            };
+            const wsVidCredits = (wsVidCreditTable[wsVidDuration] || wsVidCreditTable[5])[wsVidRes] ?? 2;
             const canGen = !genning && !wsVidUploading && wsVidImage?.url && wsVidPrompt.trim() && (profile?.videos_remaining ?? 0) >= wsVidCredits;
 
             const uploadWsVid = async (file) => {
@@ -3600,8 +3615,8 @@ export default function App() {
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
                 <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 12, background: "rgba(0,200,255,.04)", border: "1px solid rgba(0,200,255,.15)" }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "#00c8ff", margin: "0 0 2px" }}>🌊 Vid Pro — WAN 2.6 Image-to-Video</p>
-                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Video cinemático desde imagen · 1080p/2K/4K · Audio nativo" : "Cinematic video from image · 1080p/2K/4K · Native audio"}</p>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#00c8ff", margin: "0 0 2px" }}>🌊 Video Premium Pro</p>
+                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Video cinemático desde imagen · Alta resolución · Audio nativo" : "Cinematic video from image · High resolution · Native audio"}</p>
                 </div>
 
                 {/* Image upload */}
@@ -3632,8 +3647,11 @@ export default function App() {
                 <div style={{ marginBottom: 12 }}>
                   <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Resolución" : "Resolution"}</p>
                   <div style={{ display: "flex", gap: 4 }}>
-                    {[["1080p","🖥️ 1080p"],["2k","🖥️ 2K"],["4k","🖥️ 4K"]].map(([v,l]) => (
-                      <button key={v} onClick={() => setWsVidRes(v)} style={{ flex: 1, padding: "7px 4px", fontSize: 10, fontWeight: wsVidRes === v ? 700 : 400, color: wsVidRes === v ? "#00c8ff" : "#5a5a70", background: wsVidRes === v ? "rgba(0,200,255,.08)" : "rgba(255,255,255,.02)", border: wsVidRes === v ? "1px solid rgba(0,200,255,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                    {[["1080p","HD"],["2k","2K"],["4k","4K"]].map(([v,l]) => (
+                      <button key={v} onClick={() => setWsVidRes(v)} style={{ flex: 1, padding: "7px 4px", fontSize: 10, fontWeight: wsVidRes === v ? 700 : 400, color: wsVidRes === v ? "#00c8ff" : "#5a5a70", background: wsVidRes === v ? "rgba(0,200,255,.08)" : "rgba(255,255,255,.02)", border: wsVidRes === v ? "1px solid rgba(0,200,255,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        <svg width="14" height="10" viewBox="0 0 14 10"><rect x="1" y="1" width="12" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+                        {l}
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -3653,7 +3671,7 @@ export default function App() {
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
                     {[5,10,15].map(d => <span key={d} style={{ fontSize: 9, color: d === wsVidDuration ? "#00c8ff" : "#3a3a50" }}>{d}s</span>)}
                   </div>
-                  <p style={{ fontSize: 9, color: "#3a3a50", marginTop: 4, textAlign: "center" }}>5s = 2 créditos · 10s = 3 créditos · 15s = 4 créditos</p>
+                  <p style={{ fontSize: 9, color: "#3a3a50", marginTop: 4, textAlign: "center" }}>5s: HD=2 · 2K/4K=3 &nbsp;|&nbsp; 10s: HD=3 · 2K/4K=4 &nbsp;|&nbsp; 15s: HD=3 · 2K=4 · 4K=5</p>
                 </div>
 
                 {/* Credits warning */}

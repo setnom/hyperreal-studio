@@ -98,7 +98,8 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
   if (!image_url || !isSafeUrl(image_url)) return res.status(400).json({ error: "Invalid image URL" });
   const safeDuration = [5, 10, 15].includes(Number(duration)) ? Number(duration) : 5;
   const safeResolution = ["1080p", "2k", "4k"].includes(resolution) ? resolution : "1080p";
-  const creditsNeeded = safeDuration <= 5 ? 2 : safeDuration <= 10 ? 3 : 4;
+  const creditTable = { 5: {"1080p":2,"2k":3,"4k":3}, 10: {"1080p":3,"2k":4,"4k":4}, 15: {"1080p":3,"2k":4,"4k":5} };
+  const creditsNeeded = (creditTable[safeDuration] || creditTable[5])[safeResolution] ?? 2;
 
   const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
   const prof = (await profRes.json())?.[0];
