@@ -2703,7 +2703,7 @@ export default function App() {
                 } else {
                   // Larger — presigned PUT directly to fal.ai storage (CSP allows it)
                   const mime = isImg ? "image/jpeg" : file.type;
-                  const initR = await fetch("/api/upload-init", {
+                  const initR = await fetch("/api/upload", {
                     method: "POST", headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ mime_type: mime, file_name: `motion.${isImg ? "jpg" : file.name.split(".").pop()}`, user_token: session?.access_token }),
                   });
@@ -3036,7 +3036,7 @@ export default function App() {
                   uploadedUrl = d.url;
                 } else {
                   const mime = isImg ? "image/jpeg" : file.type;
-                  const initR = await fetch("/api/upload-init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mime_type: mime, file_name: `dir.${isImg ? "jpg" : file.name.split(".").pop()}`, user_token: session?.access_token }) });
+                  const initR = await fetch("/api/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mime_type: mime, file_name: `dir.${isImg ? "jpg" : file.name.split(".").pop()}`, user_token: session?.access_token }) });
                   const initD = await initR.json();
                   if (!initD.upload_url) throw new Error(initD.error || "No upload URL");
                   const blob = isImg ? await (await fetch(dataUrl)).blob() : file;
@@ -3438,9 +3438,9 @@ export default function App() {
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
-                const r = await fetch("/api/generate-ws", {
+                const r = await fetch("/api/wavespeed", {
                   method: "POST", headers: {"Content-Type":"application/json"},
-                  body: JSON.stringify({ prompt: wsImgPrompt.trim(), image_urls: wsImgImages.map(i => i.url), size: wsImgSize, user_token: session?.access_token }),
+                  body: JSON.stringify({ action: "generate_img", prompt: wsImgPrompt.trim(), image_urls: wsImgImages.map(i => i.url), size: wsImgSize, user_token: session?.access_token }),
                 });
                 const data = await r.json();
                 if (data.error) { setGenError(data.error); setGenning(false); return; }
@@ -3450,7 +3450,7 @@ export default function App() {
                   attempts++;
                   if (attempts > 120) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
                   try {
-                    const sr = await fetch("/api/status-ws", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ request_id, type: "image", user_token: session?.access_token, gen_id }) });
+                    const sr = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ action: "status", request_id, type: "image", user_token: session?.access_token, gen_id }) });
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(false, { url: sd.url }); playDoneSound(); return; }
@@ -3555,9 +3555,9 @@ export default function App() {
               setGenning(true); setGenError(null);
               setGenStatus({ phase: "queued", position: null, elapsed: 0 });
               try {
-                const r = await fetch("/api/video-ws", {
+                const r = await fetch("/api/wavespeed", {
                   method: "POST", headers: {"Content-Type":"application/json"},
-                  body: JSON.stringify({ prompt: wsVidPrompt.trim(), image_url: wsVidImage.url, duration: wsVidDuration, resolution: wsVidRes, user_token: session?.access_token }),
+                  body: JSON.stringify({ action: "generate_vid", prompt: wsVidPrompt.trim(), image_url: wsVidImage.url, duration: wsVidDuration, resolution: wsVidRes, user_token: session?.access_token }),
                 });
                 const data = await r.json();
                 if (data.error) { setGenError(data.error); setGenning(false); return; }
@@ -3567,7 +3567,7 @@ export default function App() {
                   attempts++;
                   if (attempts > 150) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
                   try {
-                    const sr = await fetch("/api/status-ws", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ request_id, type: "video", user_token: session?.access_token, gen_id }) });
+                    const sr = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ action: "status", request_id, type: "video", user_token: session?.access_token, gen_id }) });
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }

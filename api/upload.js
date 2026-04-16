@@ -19,6 +19,31 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const body = req.body || {};
+
+  // ── Presigned URL mode (large files) ──
+  if (!body.data_url && body.mime_type) {
+    const { mime_type, file_name, user_token: ut } = body;
+    const FAL_KEY = process.env.FAL_KEY;
+    if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
+    const ALLOWED_MIME = ["image/jpeg","image/jpg","image/png","image/webp","image/gif","video/mp4","video/quicktime","video/webm","video/x-m4v"];
+    if (!ALLOWED_MIME.includes(mime_type)) return res.status(400).json({ error: "Unsupported file type" });
+    if (!ut) return res.status(401).json({ error: "Auth required" });
+    try {
+      await verifyToken(ut);
+    } catch { return res.status(401).json({ error: "Invalid session" }); }
+    try {
+      const falRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
+        method: "POST", headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ mime_type, file_size: 10000000 })
+      });
+      if (!falRes.ok) { const e = await falRes.text(); return res.status(502).json({ error: "Storage init failed", detail: e }); }
+      const d = await falRes.json();
+      if (!d?.upload_url) return res.status(502).json({ error: "No upload URL returned" });
+      return res.status(200).json({ upload_url: d.upload_url, file_url: d.file_url || d.url });
+    } catch(e) { return res.status(500).json({ error: e.message }); }
+  }
+
 
   const { data_url, user_token } = req.body || {};
   const FAL_KEY = process.env.FAL_KEY;
