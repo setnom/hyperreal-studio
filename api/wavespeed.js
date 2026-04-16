@@ -1,14 +1,19 @@
-// Wavespeed AI — unified handler for Seedream 4.5 Edit + WAN 2.6 I2V Pro + polling
+// Wavespeed AI — unified: Seedream 4.5 Edit + WAN 2.6 I2V Pro + polling
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const WS_BASE = "https://api.wavespeed.ai/api/v3";
 
-const ALLOWED_IMG_HOSTS = ["v3b.fal.media","v2.fal.media","fal.media","cdn.fal.run","storage.googleapis.com","pygcsyqahhdtmwmqklnl.supabase.co","res.cloudinary.com"];
+// Accept any HTTPS URL — Wavespeed needs to fetch the images so they must be public
 function isSafeUrl(url) {
   if (!url || typeof url !== "string") return false;
   try {
     const p = new URL(url);
-    return p.protocol === "https:" && ALLOWED_IMG_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("."+h));
+    // Only allow https
+    if (p.protocol !== "https:") return false;
+    // Block localhost/private ranges
+    const h = p.hostname;
+    if (h === "localhost" || h === "127.0.0.1" || h.startsWith("192.168.") || h.startsWith("10.") || h.endsWith(".local")) return false;
+    return true;
   } catch { return false; }
 }
 
@@ -43,15 +48,26 @@ function humanizeError(msg) {
   return msg;
 }
 
+// Validate size format: "WxH" or "W*H" with reasonable pixel counts
+function safeImgSize(size) {
+  if (!size) return "2048*2048";
+  // Allow format like "2048*2048" or "1344*768"
+  if (/^\d{3,4}\*\d{3,4}$/.test(size)) {
+    const [w, h] = size.split("*").map(Number);
+    if (w >= 512 && w <= 4096 && h >= 512 && h <= 4096) return size;
+  }
+  return "2048*2048";
+}
+
 // ── action: generate_img ─────────────────────────────────────────────────────
 async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
-  const { prompt, image_urls, size = "1024*1024" } = body;
+  const { prompt, image_urls, size } = body;
   if (!prompt?.trim()) return res.status(400).json({ error: "Prompt required" });
   const images = Array.isArray(image_urls) ? image_urls.filter(Boolean) : [];
   if (images.length === 0) return res.status(400).json({ error: "At least one image required" });
-  for (const u of images) { if (!isSafeUrl(u)) return res.status(400).json({ error: "Invalid image URL" }); }
-  const validSizes = ["1024*1024","1344*768","768*1344","1536*1024","1024*1536","2048*2048"];
-  const safeSize = validSizes.includes(size) ? size : "1024*1024";
+  for (const u of images) { if (!isSafeUrl(u)) return res.status(400).json({ error: `Invalid image URL: ${u}` }); }
+
+  const imgSize = safeImgSize(size);
 
   const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
   const prof = (await profRes.json())?.[0];
@@ -72,21 +88,36 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
   const genId = gen?.id;
 
   try {
+    const wsBody = {
+      prompt: prompt.trim().slice(0, 3500),
+      images,          // field name is "images" (array of URLs) for the edit endpoint
+      size: imgSize,
+      enable_sync_mode: false,
+      enable_base64_output: false,
+    };
+    console.log(`WS generate_img: size=${imgSize} images=${images.length} endpoint=bytedance/seedream-v4.5/edit`);
+
     const wsRes = await fetch(`${WS_BASE}/bytedance/seedream-v4.5/edit`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${WS_KEY}` },
-      body: JSON.stringify({ prompt: prompt.trim().slice(0, 3500), images, size: safeSize, enable_sync_mode: false, enable_base64_output: false })
+      body: JSON.stringify(wsBody)
     });
     const wsData = await wsRes.json();
+    console.log(`WS response status=${wsRes.status} data=${JSON.stringify(wsData).slice(0, 200)}`);
+
     if (!wsRes.ok || !wsData?.data?.id) {
+      // Refund on submission failure
       await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ images_remaining: prof.images_remaining }) });
       if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) });
-      return res.status(500).json({ error: wsData?.message || "Submission failed" });
+      return res.status(500).json({ error: wsData?.message || wsData?.error || `Wavespeed error ${wsRes.status}` });
     }
+
     const requestId = wsData.data.id;
     if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ result_url: `${requestId}|ws-img` }) });
     return res.status(200).json({ request_id: requestId, endpoint: "ws-img", gen_id: genId });
   } catch(e) {
+    console.error("generateImg error:", e.message);
     await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ images_remaining: prof.images_remaining }) }).catch(() => {});
+    if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
     return res.status(500).json({ error: e.message });
   }
 }
@@ -120,21 +151,29 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
   const genId = gen?.id;
 
   try {
+    const wsBody = { prompt: prompt.trim().slice(0, 3500), image: image_url, duration: safeDuration, resolution: safeResolution, shot_type: "single", enable_prompt_expansion: false, seed: -1 };
+    console.log(`WS generate_vid: dur=${safeDuration} res=${safeResolution} credits=${creditsNeeded}`);
+
     const wsRes = await fetch(`${WS_BASE}/alibaba/wan-2.6/image-to-video-pro`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${WS_KEY}` },
-      body: JSON.stringify({ prompt: prompt.trim().slice(0, 3500), image: image_url, duration: safeDuration, resolution: safeResolution, shot_type: "single", enable_prompt_expansion: false, seed: -1 })
+      body: JSON.stringify(wsBody)
     });
     const wsData = await wsRes.json();
+    console.log(`WS vid response status=${wsRes.status} data=${JSON.stringify(wsData).slice(0, 200)}`);
+
     if (!wsRes.ok || !wsData?.data?.id) {
       await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining }) });
       if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) });
-      return res.status(500).json({ error: wsData?.message || "Submission failed" });
+      return res.status(500).json({ error: wsData?.message || wsData?.error || `Wavespeed error ${wsRes.status}` });
     }
+
     const requestId = wsData.data.id;
     if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ result_url: `${requestId}|ws-vid` }) });
     return res.status(200).json({ request_id: requestId, endpoint: "ws-vid", gen_id: genId, credits_used: creditsNeeded });
   } catch(e) {
+    console.error("generateVid error:", e.message);
     await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining }) }).catch(() => {});
+    if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
     return res.status(500).json({ error: e.message });
   }
 }
@@ -148,6 +187,7 @@ async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
     const pollRes = await fetch(`${WS_BASE}/predictions/${request_id}/result`, {
       headers: { Authorization: `Bearer ${WS_KEY}` }
     });
+
     if (pollRes.status === 404) return res.status(200).json({ status: "IN_PROGRESS" });
 
     if (!pollRes.ok) {
