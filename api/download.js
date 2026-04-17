@@ -1,20 +1,20 @@
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 
-const ALLOWED_HOSTS = [
-  "fal.run", "cdn.fal.run", "storage.googleapis.com",
-  "fal-cdn.batata.so", "v2.fal.media", "v3b.fal.media", "fal.media",
-  "pygcsyqahhdtmwmqklnl.supabase.co",  // Supabase Storage
-  "api.wavespeed.ai",                   // Wavespeed API
-  "cdn.wavespeed.ai",                   // Wavespeed output CDN
-  "storage.wavespeed.ai",               // Wavespeed storage
-];
-
+// Block SSRF — private IPs, localhost, internal ranges
 function isSafeUrl(url) {
   try {
     const p = new URL(url);
-    return p.protocol === "https:" &&
-      ALLOWED_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("." + h));
+    if (p.protocol !== "https:") return false;
+    const h = p.hostname;
+    // Block private/internal ranges
+    if (h === "localhost" || h === "127.0.0.1") return false;
+    if (/^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h)) return false;
+    if (h === "0.0.0.0" || h.endsWith(".local") || h.endsWith(".internal")) return false;
+    if (h === "169.254.169.254") return false; // AWS metadata
+    if (h === "metadata.google.internal") return false; // GCP metadata
+    if (h === "100.100.100.200") return false; // Alibaba metadata
+    return true;
   } catch { return false; }
 }
 
@@ -31,7 +31,7 @@ async function verifyToken(user_token) {
 
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
-  const allowed = origin === ALLOWED_ORIGIN || origin.endsWith(".vercel.app") && origin.includes("hyperreal-studio");
+  const allowed = origin === ALLOWED_ORIGIN || (origin.endsWith(".vercel.app") && origin.includes("hyperreal-studio"));
   res.setHeader("Access-Control-Allow-Origin", allowed ? origin : ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -42,7 +42,8 @@ export default async function handler(req, res) {
   const { url, filename, user_token } = req.body || {};
 
   if (!user_token) return res.status(401).json({ error: "Authentication required" });
-  if (!url || !isSafeUrl(url)) return res.status(400).json({ error: "Invalid URL" });
+  if (!url || typeof url !== "string" || !isSafeUrl(url))
+    return res.status(400).json({ error: "Invalid URL" });
 
   try {
     await verifyToken(user_token);
@@ -51,20 +52,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    const fileRes = await fetch(url);
-    if (!fileRes.ok) return res.status(502).json({ error: "Failed to fetch file" });
+    const fileRes = await fetch(url, {
+      headers: { "User-Agent": "NanoBanano/1.0" },
+    });
+    if (!fileRes.ok) return res.status(502).json({ error: `Failed to fetch file: ${fileRes.status}` });
 
     const contentType = fileRes.headers.get("content-type") || "application/octet-stream";
+
+    // Only allow media types — block HTML, JS, etc.
+    const allowedTypes = ["image/", "video/", "application/octet-stream"];
+    if (!allowedTypes.some(t => contentType.startsWith(t)))
+      return res.status(400).json({ error: "Unsupported content type" });
+
     const buffer = await fileRes.arrayBuffer();
-    if (buffer.byteLength > 50 * 1024 * 1024) {
-      return res.status(413).json({ error: "File too large to proxy (max 50MB)" });
-    }
+    if (buffer.byteLength > 500 * 1024 * 1024)
+      return res.status(413).json({ error: "File too large to proxy (max 500MB)" });
+
     const safeFilename = (filename || "nanobanano-file").replace(/[^a-zA-Z0-9._-]/g, "_");
 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
     res.setHeader("Content-Length", buffer.byteLength);
     res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
     return res.status(200).send(Buffer.from(buffer));
 
   } catch (err) {
