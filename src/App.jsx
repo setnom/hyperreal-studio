@@ -3646,7 +3646,7 @@ export default function App() {
                   attempts++;
                   if (attempts > 150) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
                   try {
-                    const sr = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ action: "status", request_id, type: "video", user_token: session?.access_token, gen_id }) });
+                    const sr = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ action: "status", request_id, type: "video", user_token: session?.access_token, gen_id, credits_used: wsVidCredits }) });
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { setGenStatus({ phase: "done", position: null, elapsed }); await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }

@@ -243,8 +243,8 @@ export default async function handler(req, res) {
       if (safeRatio !== "auto") body.aspect_ratio = safeRatio;
       if (hasRefs) body.image_urls = image_urls.slice(0, 14);
     } else {
-      const hasStart = typeof start_frame === "string" && start_frame.startsWith("https://");
-      const hasEnd   = typeof end_frame   === "string" && end_frame.startsWith("https://");
+      const hasStart = typeof start_frame === "string" && isSafeImageUrl(start_frame);
+      const hasEnd   = typeof end_frame   === "string" && isSafeImageUrl(end_frame);
       endpoint = (hasStart || hasEnd)
         ? "fal-ai/kling-video/v3/standard/image-to-video"
         : "fal-ai/kling-video/v3/standard/text-to-video";

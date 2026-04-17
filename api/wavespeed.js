@@ -30,12 +30,14 @@ function sbH(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" };
 }
 
-async function refundCredits(userId, type, serviceKey) {
+async function refundCredits(userId, type, serviceKey, creditsToRefund = 1) {
   try {
     const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,videos_remaining`, { headers: sbH(serviceKey) });
     const prof = (await profRes.json())?.[0];
     if (!prof) return;
-    const patch = type === "image" ? { images_remaining: (prof.images_remaining || 0) + 1 } : { videos_remaining: (prof.videos_remaining || 0) + 2 };
+    const patch = type === "image"
+      ? { images_remaining: (prof.images_remaining || 0) + 1 }
+      : { videos_remaining: (prof.videos_remaining || 0) + creditsToRefund };
     await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(serviceKey), body: JSON.stringify(patch) });
   } catch(e) { console.error("WS refund error:", e.message); }
 }
@@ -179,7 +181,8 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
 
 // ── action: status ───────────────────────────────────────────────────────────
 async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
-  const { request_id, type, gen_id } = body;
+  const { request_id, type, gen_id, credits_used } = body;
+  const creditsToRefund = typeof credits_used === "number" && credits_used > 0 ? credits_used : (type === "video" ? 2 : 1);
   if (!request_id) return res.status(400).json({ error: "Missing request_id" });
 
   try {
@@ -192,7 +195,7 @@ async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
     if (!pollRes.ok) {
       const errBody = await pollRes.json().catch(() => ({}));
       const errMsg = humanizeError(errBody?.message || errBody?.error || "Generation failed");
-      await refundCredits(userId, type, SERVICE_KEY);
+      await refundCredits(userId, type, SERVICE_KEY, creditsToRefund);
       if (gen_id) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${gen_id}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
       return res.status(200).json({ status: "FAILED", error: errMsg });
     }
@@ -204,7 +207,7 @@ async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
 
     if (status === "COMPLETED" || url) {
       if (!url) {
-        await refundCredits(userId, type, SERVICE_KEY);
+        await refundCredits(userId, type, SERVICE_KEY, creditsToRefund);
         return res.status(200).json({ status: "FAILED", error: "No output URL" });
       }
       if (gen_id) {
@@ -217,7 +220,7 @@ async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
 
     if (status === "FAILED" || data?.data?.error) {
       const errMsg = humanizeError(data?.data?.error || "Generation failed");
-      await refundCredits(userId, type, SERVICE_KEY);
+      await refundCredits(userId, type, SERVICE_KEY, creditsToRefund);
       if (gen_id) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${gen_id}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
       return res.status(200).json({ status: "FAILED", error: errMsg });
     }

@@ -3,7 +3,11 @@ const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 
 const ALLOWED_HOSTS = [
   "fal.run", "cdn.fal.run", "storage.googleapis.com",
-  "fal-cdn.batata.so", "v2.fal.media", "fal.media",
+  "fal-cdn.batata.so", "v2.fal.media", "v3b.fal.media", "fal.media",
+  "pygcsyqahhdtmwmqklnl.supabase.co",  // Supabase Storage
+  "api.wavespeed.ai",                   // Wavespeed API
+  "cdn.wavespeed.ai",                   // Wavespeed output CDN
+  "storage.wavespeed.ai",               // Wavespeed storage
 ];
 
 function isSafeUrl(url) {
