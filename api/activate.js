@@ -84,10 +84,11 @@ export default async function handler(req, res) {
       if (confirmedPlan) break;
     }
 
-    // Customer exists = payment happened, trust requested plan
+    // If no confirmed plan found via active sub or paid invoice, do NOT trust user-supplied plan
+    // The webhook handles activation reliably; this endpoint is just a fallback
     if (!confirmedPlan && customers.data.length > 0) {
-      console.warn(`No sub found yet, trusting requestedPlan=${requestedPlan}`);
-      confirmedPlan = requestedPlan;
+      console.warn(`No active sub/invoice found for ${userEmail} — cannot confirm plan via activate`);
+      // Don't assign confirmedPlan — will return 402 below
     }
   } catch (e) {
     console.error("Stripe error:", e.message);

@@ -2,6 +2,7 @@
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const WS_BASE = "https://api.wavespeed.ai/api/v3";
+const wsRateLimits = new Map(); // per-user rate limit for WS generations
 
 // Accept any HTTPS URL — Wavespeed needs to fetch the images so they must be public
 function isSafeUrl(url) {
@@ -17,6 +18,18 @@ function isSafeUrl(url) {
   } catch { return false; }
 }
 
+
+function checkWsRateLimit(userId) {
+  const now = Date.now();
+  const entry = wsRateLimits.get(userId);
+  if (!entry || now - entry.start > 60000) {
+    wsRateLimits.set(userId, { count: 1, start: now });
+    return true;
+  }
+  if (entry.count >= 5) return false; // max 5 WS generations per minute
+  entry.count++;
+  return true;
+}
 async function verifyToken(user_token) {
   const res = await fetch(`${SB_URL}/auth/v1/user`, {
     headers: { apikey: process.env.SUPABASE_ANON_KEY, Authorization: `Bearer ${user_token}` }
@@ -255,6 +268,11 @@ export default async function handler(req, res) {
   let userId;
   try { userId = await verifyToken(user_token); }
   catch { return res.status(401).json({ error: "Invalid session" }); }
+
+  // Rate limit WS generations — max 5 per minute per user
+  if ((action === "generate_img" || action === "generate_vid") && !checkWsRateLimit(userId)) {
+    return res.status(429).json({ error: "Too many requests. Wait a moment." });
+  }
 
   if (action === "generate_img") return generateImg(body, userId, WS_KEY, SERVICE_KEY, res);
   if (action === "generate_vid") return generateVid(body, userId, WS_KEY, SERVICE_KEY, res);

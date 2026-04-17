@@ -1,7 +1,8 @@
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const ALLOWED_MIME = ["image/jpeg","image/jpg","image/png","image/webp","image/gif","video/mp4","video/quicktime","video/webm","video/x-m4v"];
-const MAX_B64_SIZE = 4 * 1024 * 1024; // 4MB base64 string max
+const MAX_B64_SIZE = 4 * 1024 * 1024;
+const uploadRateLimits = new Map(); // per-user upload rate limit // 4MB base64 string max
 
 async function verifyToken(user_token) {
   const anonKey = process.env.SUPABASE_ANON_KEY;
@@ -57,6 +58,21 @@ export default async function handler(req, res) {
   try { authUser = await verifyToken(user_token); }
   catch { return res.status(401).json({ error: "Invalid session" }); }
   const userId = authUser.id;
+
+  // Rate limit: max 20 uploads per minute per user (in-memory, resets per serverless instance)
+  if (!uploadRateLimits.has(userId)) {
+    uploadRateLimits.set(userId, { count: 1, start: Date.now() });
+  } else {
+    const entry = uploadRateLimits.get(userId);
+    const elapsed = Date.now() - entry.start;
+    if (elapsed > 60000) {
+      uploadRateLimits.set(userId, { count: 1, start: Date.now() });
+    } else if (entry.count >= 20) {
+      return res.status(429).json({ error: "Too many uploads. Wait a moment." });
+    } else {
+      entry.count++;
+    }
+  }
 
   // Parse data URL
   const matches = data_url.match(/^data:([^;]+);base64,(.+)$/);

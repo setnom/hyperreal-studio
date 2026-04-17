@@ -216,7 +216,10 @@ export default async function handler(req, res) {
   if (req.query?.source === "fal" || !req.headers["stripe-signature"]) {
     // Only handle if it looks like a fal.ai payload (has request_id)
     const body = req.body;
-    if (body?.request_id) {
+    // Validate request_id format — fal.ai uses UUID-like strings, max 200 chars, no special chars
+    const rawId = body?.request_id;
+    const isValidRequestId = typeof rawId === "string" && rawId.length > 0 && rawId.length <= 200 && /^[a-zA-Z0-9_\-]+$/.test(rawId);
+    if (isValidRequestId) {
       console.log(`fal-webhook: request_id=${body.request_id} status=${body.status}`);
       if (!SERVICE_KEY) return res.status(200).json({ received: true });
 

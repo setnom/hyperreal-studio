@@ -1,0 +1,21 @@
+{
+  "name": "NanoBanano Studio",
+  "short_name": "NanoBanano",
+  "description": "Genera imágenes y videos con IA en segundos",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#06060e",
+  "theme_color": "#06060e",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
