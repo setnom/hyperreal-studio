@@ -222,19 +222,22 @@ export default async function handler(req, res) {
   try {
     let endpoint, body;
 
+    // URL validation for reference images — used in both image and video paths
+    const ALLOWED_IMAGE_HOSTS = [
+      "pygcsyqahhdtmwmqklnl.supabase.co",
+      "storage.googleapis.com",
+      "fal.run", "cdn.fal.run",
+      "v3b.fal.media", "v2.fal.media", "fal.media",
+      "nanobanano.studio",
+    ];
+    const isSafeImageUrl = (u) => {
+      try {
+        const p = new URL(u);
+        return p.protocol === "https:" && ALLOWED_IMAGE_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("." + h));
+      } catch { return false; }
+    };
+
     if (!isVid) {
-      const ALLOWED_IMAGE_HOSTS = [
-        "pygcsyqahhdtmwmqklnl.supabase.co",
-        "storage.googleapis.com",
-        "fal.run", "cdn.fal.run",
-        "nanobanano.studio",
-      ];
-      const isSafeImageUrl = (u) => {
-        try {
-          const p = new URL(u);
-          return p.protocol === "https:" && ALLOWED_IMAGE_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("." + h));
-        } catch { return false; }
-      };
       const hasRefs = Array.isArray(image_urls) && image_urls.length > 0
         && image_urls.every(u => typeof u === "string" && isSafeImageUrl(u));
       endpoint = hasRefs ? "fal-ai/nano-banana-2/edit" : "fal-ai/nano-banana-2";
