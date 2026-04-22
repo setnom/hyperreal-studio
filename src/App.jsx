@@ -673,6 +673,7 @@ export default function App() {
   const [style, setStyle] = useState("photorealistic");
   const [ratio, setRatio] = useState("1:1");
   const [imgQuality, setImgQuality] = useState("1K");
+  const [maxRealism, setMaxRealism] = useState(false); // GPT Image 2 toggle
   const [vidDur, setVidDur] = useState(5);
   const [vidRatio, setVidRatio] = useState("16:9");
 
@@ -1379,7 +1380,8 @@ export default function App() {
     if ((!prompt.trim() && style !== "restore" && style !== "colorize") || !profile || !session) return;
     const isVid = tab === T.VID;
     if (isVid && profile.videos_remaining <= 0) return;
-    if (!isVid && profile.images_remaining <= 0) return;
+    const imgCreditsNeeded = (!isVid && maxRealism) ? 3 : 1;
+    if (!isVid && profile.images_remaining < imgCreditsNeeded) return;
 
     // Restore & colorize require at least 1 reference image
     if (!isVid && (style === "restore" || style === "colorize") && refImages.length === 0) {
@@ -1455,6 +1457,7 @@ export default function App() {
           style_id: tab === T.IMG ? style : "cinematic",
           aspect_ratio: isVid ? vidRatio : ratio,
           image_quality: !isVid ? imgQuality : undefined,
+          max_realism: !isVid ? maxRealism : undefined,
           plan: profile.plan || "basic",
           duration: isVid ? vidDur : undefined,
           audio: isVid ? audioOn : undefined,
@@ -2395,6 +2398,26 @@ export default function App() {
                     );
                   })()}
 
+                  {/* ✨ Máximo Realismo toggle */}
+                  {tab === T.IMG && (
+                    <div onClick={() => setMaxRealism(v => !v)} style={{ marginBottom: 14, padding: "12px 14px", borderRadius: 11, background: maxRealism ? "rgba(255,184,0,.06)" : "rgba(255,255,255,.02)", border: `1px solid ${maxRealism ? "rgba(255,184,0,.3)" : "rgba(255,255,255,.06)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all .2s" }}>
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: maxRealism ? "#ffb800" : "#8a8aaa", margin: "0 0 2px", display: "flex", alignItems: "center", gap: 6 }}>
+                          ✨ {lang === "es" ? "Máximo Realismo" : "Maximum Realism"}
+                        </p>
+                        <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>
+                          {lang === "es"
+                            ? `Motor premium de última generación · Alta calidad · 3 créditos`
+                            : `Next-gen premium engine · High quality · 3 credits`}
+                        </p>
+                      </div>
+                      {/* Toggle switch */}
+                      <div style={{ width: 36, height: 20, borderRadius: 10, background: maxRealism ? "#ffb800" : "rgba(255,255,255,.1)", position: "relative", flexShrink: 0, transition: "background .2s" }}>
+                        <div style={{ position: "absolute", top: 3, left: maxRealism ? 19 : 3, width: 14, height: 14, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
+                      </div>
+                    </div>
+                  )}
+
                   {/* Reference images upload */}
                   <div style={{ marginBottom: 14, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.04)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -2573,8 +2596,8 @@ export default function App() {
                 );
               })()}
 
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? "linear-gradient(135deg, #00f0ff, #00c8ff)" : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genBtnLocked && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 22px rgba(0,240,255,.2)" : "0 0 22px rgba(180,74,255,.2)" }}>
-                {!hasPlan ? t("plan_for_gen") : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube una imagen de referencia" : "Upload a reference image") : tab === T.IMG ? `${t("gen_image")} (${profile?.images_remaining ?? 0})` : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg, #00f0ff, #00c8ff)") : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genBtnLocked && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? (maxRealism ? "0 0 22px rgba(255,184,0,.25)" : "0 0 22px rgba(0,240,255,.2)") : "0 0 22px rgba(180,74,255,.2)" }}>
+                {!hasPlan ? t("plan_for_gen") : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube una imagen de referencia" : "Upload a reference image") : tab === T.IMG ? (maxRealism ? `✨ ${t("gen_image")} · 3 ${lang === "es" ? "créditos" : "credits"} (${profile?.images_remaining ?? 0} ${lang === "es" ? "disp." : "avail."})` : `${t("gen_image")} (${profile?.images_remaining ?? 0})`) : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
               </button>
               {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={tab} duration={vidDur} lang={lang} genStatus={genStatus} /></div>}
 

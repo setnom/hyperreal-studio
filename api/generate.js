@@ -95,7 +95,7 @@ export default async function handler(req, res) {
   if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
   const { type, prompt: rawPrompt, user_prompt: rawUserPrompt, aspect_ratio, style_id, image_quality, duration, audio,
-          image_urls, start_frame, end_frame, multishot, user_token } = req.body || {};
+          image_urls, start_frame, end_frame, multishot, max_realism, user_token } = req.body || {};
 
   // Validate style_id against allowed values only
   const VALID_STYLE_IDS = ["photorealistic", "cinematic", "product", "portrait", "pixar", "ads", "neutral", "restore", "colorize"];
@@ -181,12 +181,16 @@ export default async function handler(req, res) {
 
   // 🟡 FIX: Atomic credit deduction — only deduct if current value matches what we read
   // This prevents double-spend race conditions from concurrent requests
+  const imgCreditsToUse = (!isVid && max_realism === true) ? 3 : 1;
   try {
-    const newImages = !isVid ? imagesRemaining - 1 : imagesRemaining;
+    const newImages = !isVid ? imagesRemaining - imgCreditsToUse : imagesRemaining;
     const newVideos =  isVid ? videosRemaining  - 1 : videosRemaining;
+    // Validate enough credits
+    if (!isVid && imagesRemaining < imgCreditsToUse)
+      return res.status(403).json({ error: "No image credits remaining." });
     // Use conditional filter: only update if credits haven't changed since we read them
     const atomicFilter = !isVid
-      ? `id=eq.${userId}&images_remaining=eq.${imagesRemaining}`
+      ? `id=eq.${userId}&images_remaining=gte.${imgCreditsToUse}`
       : `id=eq.${userId}&videos_remaining=eq.${videosRemaining}`;
     const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?${atomicFilter}`, {
       method: "PATCH",
@@ -240,11 +244,40 @@ export default async function handler(req, res) {
     if (!isVid) {
       const hasRefs = Array.isArray(image_urls) && image_urls.length > 0
         && image_urls.every(u => typeof u === "string" && isSafeImageUrl(u));
-      endpoint = hasRefs ? "fal-ai/nano-banana-2/edit" : "fal-ai/nano-banana-2";
-      body = { prompt, resolution: imageResolution, limit_generations: true };
-      // "auto" = omit aspect_ratio so model infers from prompt/reference
-      if (safeRatio !== "auto") body.aspect_ratio = safeRatio;
-      if (hasRefs) body.image_urls = image_urls.slice(0, 14);
+
+      if (max_realism === true) {
+        // ✨ Máximo Realismo — GPT Image 2 via fal.ai
+        // Map aspect ratio to GPT Image 2 image_size format
+        const GPT_SIZE_MAP = {
+          "1:1":   "square_hd",
+          "16:9":  "landscape_16_9",
+          "9:16":  "portrait_16_9",
+          "4:3":   "landscape_4_3",
+          "3:4":   "portrait_4_3",
+          "auto":  "auto",
+        };
+        const gptSize = GPT_SIZE_MAP[safeRatio] || "square_hd";
+        const gptBaseBody = {
+          prompt,
+          quality: "high",       // Always high
+          output_format: "png",
+          num_images: 1,
+          ...(gptSize !== "auto" ? { image_size: gptSize } : {}),
+        };
+        if (hasRefs) {
+          endpoint = "openai/gpt-image-2/edit";
+          body = { ...gptBaseBody, image_urls: image_urls.slice(0, 14) };
+        } else {
+          endpoint = "fal-ai/gpt-image-2";
+          body = gptBaseBody;
+        }
+      } else {
+        // Standard — Nano Banana 2
+        endpoint = hasRefs ? "fal-ai/nano-banana-2/edit" : "fal-ai/nano-banana-2";
+        body = { prompt, resolution: imageResolution, limit_generations: true };
+        if (safeRatio !== "auto") body.aspect_ratio = safeRatio;
+        if (hasRefs) body.image_urls = image_urls.slice(0, 14);
+      }
     } else {
       const hasStart = typeof start_frame === "string" && isSafeImageUrl(start_frame);
       const hasEnd   = typeof end_frame   === "string" && isSafeImageUrl(end_frame);
@@ -295,11 +328,11 @@ export default async function handler(req, res) {
     // Refund credit atomically — increment back, don't overwrite with stale value
     try {
       const field = isVid ? "videos_remaining" : "images_remaining";
-      // Re-read current value then increment to avoid race condition
+      const refundAmount = isVid ? 1 : imgCreditsToUse;
       const cur = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,videos_remaining`, { headers: sbServiceHeaders() }).then(r => r.json());
       const curProfile = cur?.[0];
       if (curProfile) {
-        const refundVal = isVid ? (curProfile.videos_remaining || 0) + 1 : (curProfile.images_remaining || 0) + 1;
+        const refundVal = isVid ? (curProfile.videos_remaining || 0) + 1 : (curProfile.images_remaining || 0) + refundAmount;
         await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
           method: "PATCH",
           headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
