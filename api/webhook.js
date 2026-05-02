@@ -76,6 +76,18 @@ async function findUserByEmail(email, serviceKey) {
   return null;
 }
 
+
+// ─── Log credit transaction for audit trail ──────────────────────────────────
+async function logTransaction(userId, data, serviceKey) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/credit_transactions`, {
+      method: "POST",
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, ...data }),
+    });
+  } catch(e) { console.error("logTransaction error:", e.message); }
+}
+
 // Core plan activation — handles upgrade/downgrade/first-time logic
 async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null, isRenewal = false) {
   const credits = PLAN_CREDITS[newPlan];
@@ -127,6 +139,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
           subscription_end: periodEnd || null,
         }),
       });
+      await logTransaction(userId, { type: "plan_renewal", description: `Renovación mensual: ${currentPlan}`, plan: currentPlan, images_delta: PLAN_CREDITS[currentPlan]?.images ?? credits.images, videos_delta: PLAN_CREDITS[currentPlan]?.videos ?? credits.videos, images_after: PLAN_CREDITS[currentPlan]?.images ?? credits.images, videos_after: PLAN_CREDITS[currentPlan]?.videos ?? credits.videos }, serviceKey);
       console.log(`✓ Renewal reset: ${currentPlan} credits for ${email}`);
     }
     return;
@@ -149,6 +162,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
         pending_plan: null,
       }),
     });
+    await logTransaction(userId, { type: "plan_activation", description: `Plan activado: ${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: credits.images, videos_after: credits.videos, stripe_ref: null }, serviceKey);
     console.log(`✓ First activation: ${newPlan} (${credits.images} imgs, ${credits.videos} vids) for ${email}`);
     return;
   }
@@ -168,6 +182,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
         pending_plan: null,
       }),
     });
+    await logTransaction(userId, { type: "plan_upgrade", description: `Upgrade: ${currentPlan} → ${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
     console.log(`✓ Upgrade: ${currentPlan} → ${newPlan} | imgs: ${currentImages}+${credits.images}=${currentImages + credits.images} | vids: ${currentVideos}+${credits.videos}=${currentVideos + credits.videos} for ${email}`);
     return;
   }
@@ -184,6 +199,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
         pending_plan: newPlan,  // will be applied on next subscription_cycle
       }),
     });
+    await logTransaction(userId, { type: "plan_downgrade_scheduled", description: `Downgrade programado: ${currentPlan} → ${newPlan} al próximo ciclo`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
     console.log(`✓ Downgrade scheduled: keeps ${currentPlan} until renewal | imgs: ${currentImages}+${credits.images} | pending: ${newPlan} for ${email}`);
     return;
   }

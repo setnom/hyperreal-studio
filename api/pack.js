@@ -189,6 +189,24 @@ export default async function handler(req, res) {
   const updated = updatedRows[0];
   console.log(`✓ Pack applied: +${amountNum} ${type} for ${userEmail}`);
 
+  // Log transaction for audit trail
+  try {
+    await fetch(`${SB_URL}/rest/v1/credit_transactions`, {
+      method: "POST",
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: userId,
+        type: "pack_purchase",
+        description: `Pack de créditos: +${amountNum} ${type === "images" ? "imágenes" : "videos"}`,
+        images_delta: type === "images" ? amountNum : 0,
+        videos_delta: type === "videos" ? amountNum : 0,
+        images_after: updated.images_remaining,
+        videos_after: updated.videos_remaining,
+        stripe_ref: session_id,
+      }),
+    });
+  } catch(e) { console.error("logTransaction error:", e.message); }
+
   return res.status(200).json({
     ok: true, type, amount: amountNum, added: amountNum,
     images_remaining: updated.images_remaining,

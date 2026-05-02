@@ -77,6 +77,7 @@ const sb = {
   // NOTE: updateProfile intentionally removed — plan/credits can only be modified by backend API
   addGen: (uid, type, prompt, style, t) => fetch(`${SB_URL}/rest/v1/generations`, { method: "POST", headers: { ...hdr(t), Prefer: "return=representation" }, body: JSON.stringify({ user_id: uid, type, prompt, style, status: "completed" }) }).then(r => r.json()),
   getGens: (uid, t) => fetch(`${SB_URL}/rest/v1/generations?user_id=eq.${uid}&select=*&order=created_at.desc&limit=1000`, { headers: hdr(t) }).then(r => r.json()),
+  getTxHistory: (uid, t) => fetch(`${SB_URL}/rest/v1/credit_transactions?user_id=eq.${uid}&order=created_at.desc&limit=100`, { headers: hdr(t) }).then(r => r.json()),
   googleSignIn: () => {
     // flow=implicit forces #access_token response on all browsers including Windows Chrome/Edge
     window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(window.location.origin)}&flow_type=implicit`;
@@ -747,6 +748,8 @@ export default function App() {
   const [planFaqIdx, setPlanFaqIdx] = useState(null); // FAQ accordion for plans page
   const [cancelModal, setCancelModal] = useState(false);
   const [showTyC, setShowTyC] = useState(false);
+  const [showTxHistory, setShowTxHistory] = useState(false);
+  const [txHistory, setTxHistory] = useState(null);
 
   useEffect(() => {
     if (!langOpen) return;
@@ -1782,6 +1785,11 @@ export default function App() {
           {/* Actions */}
           <div style={{ padding: "10px 16px" }}>
             {hasPlanForPanel && (
+              <button onClick={() => { setUserPanelOpen(false); setShowTxHistory(true); }}
+                style={{ display: "block", width: "100%", padding: "8px", fontSize: 11, fontWeight: 600, color: "#8a8aaa", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", marginBottom: 6, textAlign: "center" }}>
+                📋 {lang === "es" ? "Historial de créditos" : "Credit history"}
+              </button>
+            )}
               <button onClick={() => { setUserPanelOpen(false); setPage(P.PLANS); }}
                 style={{ display: "block", width: "100%", padding: "8px", fontSize: 11, fontWeight: 700, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", marginBottom: 6, textAlign: "center", boxShadow: "0 0 10px rgba(0,255,136,.2)", animation: "nudge 4s ease-in-out 3s infinite" }}>
                 {t("change_plan")}
@@ -1802,6 +1810,93 @@ export default function App() {
       )}
     </div>
   );
+
+  // ─── TX HISTORY MODAL ───
+  const TxHistoryModal = () => {
+    useEffect(() => {
+      if (!showTxHistory || !session?.access_token || !session?.user?.id) return;
+      if (txHistory !== null) return; // already loaded
+      sb.getTxHistory(session.user.id, session.access_token)
+        .then(data => setTxHistory(Array.isArray(data) ? data : []))
+        .catch(() => setTxHistory([]));
+    }, [showTxHistory]);
+
+    if (!showTxHistory) return null;
+
+    const typeLabel = (type) => {
+      const map = {
+        plan_activation: lang === "es" ? "🎉 Activación de plan" : "🎉 Plan activated",
+        plan_upgrade: lang === "es" ? "⬆️ Upgrade de plan" : "⬆️ Plan upgrade",
+        plan_renewal: lang === "es" ? "🔄 Renovación mensual" : "🔄 Monthly renewal",
+        plan_downgrade_scheduled: lang === "es" ? "⬇️ Downgrade programado" : "⬇️ Downgrade scheduled",
+        pack_purchase: lang === "es" ? "📦 Pack de créditos" : "📦 Credit pack",
+        generation: lang === "es" ? "⚡ Generación" : "⚡ Generation",
+        refund: lang === "es" ? "↩️ Reembolso" : "↩️ Refund",
+        admin: lang === "es" ? "🔧 Ajuste admin" : "🔧 Admin adjustment",
+      };
+      return map[type] || type;
+    };
+
+    const deltaColor = (d) => d > 0 ? "#00ff88" : d < 0 ? "#ff4d6a" : "#5a5a70";
+    const fmt = (d) => d > 0 ? `+${d}` : `${d}`;
+    const fmtDate = (iso) => {
+      const d = new Date(iso);
+      return d.toLocaleDateString(lang === "es" ? "es-AR" : "en-US", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    };
+
+    return (
+      <div onClick={() => setShowTxHistory(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", zIndex: 2000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "0", backdropFilter: "blur(8px)" }}>
+        <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 520, background: "#0e0e1a", border: "1px solid rgba(255,255,255,.1)", borderRadius: "20px 20px 0 0", padding: "0 0 24px", maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "slideUp .3s ease" }}>
+          {/* Header */}
+          <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+            <div>
+              <p style={{ fontSize: 14, fontWeight: 800, margin: "0 0 2px", color: "#e0e0f0" }}>📋 {lang === "es" ? "Historial de créditos" : "Credit history"}</p>
+              <p style={{ fontSize: 10, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Últimas 100 transacciones" : "Last 100 transactions"}</p>
+            </div>
+            <button onClick={() => setShowTxHistory(false)} style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(255,255,255,.06)", border: "none", color: "#8a8aaa", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+          </div>
+          {/* Content */}
+          <div style={{ overflowY: "auto", flex: 1, padding: "12px 20px" }}>
+            {txHistory === null ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: "#5a5a70", fontSize: 12 }}>
+                <div style={{ width: 20, height: 20, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite", margin: "0 auto 12px" }} />
+                {lang === "es" ? "Cargando..." : "Loading..."}
+              </div>
+            ) : txHistory.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: "#5a5a70", fontSize: 12 }}>
+                {lang === "es" ? "No hay transacciones registradas aún." : "No transactions recorded yet."}
+                <p style={{ fontSize: 10, marginTop: 8, color: "#3a3a50" }}>{lang === "es" ? "Las nuevas transacciones se registrarán desde ahora." : "New transactions will be recorded from now on."}</p>
+              </div>
+            ) : (
+              txHistory.map((tx, i) => (
+                <div key={tx.id || i} style={{ padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,.04)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 11, fontWeight: 600, color: "#c0c0d8", margin: "0 0 2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{typeLabel(tx.type)}</p>
+                    <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tx.description || "—"}</p>
+                    <p style={{ fontSize: 9, color: "#3a3a50", margin: 0 }}>{fmtDate(tx.created_at)}</p>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    {tx.images_delta !== 0 && (
+                      <p style={{ fontSize: 11, fontWeight: 700, color: deltaColor(tx.images_delta), margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>
+                        🖼️ {fmt(tx.images_delta)}
+                        {tx.images_after !== null && tx.images_after !== undefined && <span style={{ color: "#3a3a50", fontSize: 9, fontWeight: 400 }}> → {tx.images_after}</span>}
+                      </p>
+                    )}
+                    {tx.videos_delta !== 0 && (
+                      <p style={{ fontSize: 11, fontWeight: 700, color: deltaColor(tx.videos_delta), margin: 0, fontFamily: "'JetBrains Mono',monospace" }}>
+                        🎬 {fmt(tx.videos_delta)}
+                        {tx.videos_after !== null && tx.videos_after !== undefined && <span style={{ color: "#3a3a50", fontSize: 9, fontWeight: 400 }}> → {tx.videos_after}</span>}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ─── CANCEL MODAL ───
   const CancelModal = () => !cancelModal ? null : (
@@ -2024,6 +2119,7 @@ export default function App() {
       })()}
 
       <Footer />
+      <TxHistoryModal />
       <CancelModal />
     </>
   );
@@ -2197,6 +2293,7 @@ export default function App() {
       })()}
 
       <Footer />
+      <TxHistoryModal />
       <CancelModal />
     </div>
   );
@@ -3923,6 +4020,7 @@ export default function App() {
       )}
 
       <Footer />
+      <TxHistoryModal />
       <CancelModal />
       <PaymentFailedModal />
     </>

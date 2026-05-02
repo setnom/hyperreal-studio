@@ -312,6 +312,25 @@ export default async function handler(req, res) {
         });
       } catch {}
 
+      // Log usage transaction
+      try {
+        const imgD = !isVid ? -imgCreditsToUse : 0;
+        const vidD = isVid ? -1 : 0;
+        await fetch(`${SB_URL}/rest/v1/credit_transactions`, {
+          method: "POST",
+          headers: { ...sbServiceHeaders(true) },
+          body: JSON.stringify({
+            user_id: userId,
+            type: "generation",
+            description: `${isVid ? "Video" : "Imagen"} generada${max_realism ? " (Máximo Realismo)" : ""}`,
+            images_delta: imgD,
+            videos_delta: vidD,
+            images_after: !isVid ? imagesRemaining - imgCreditsToUse : imagesRemaining,
+            videos_after: isVid ? videosRemaining - 1 : videosRemaining,
+            meta: { endpoint, style: safeStyleId, max_realism: max_realism === true },
+          }),
+        });
+      } catch {}
       return res.status(200).json({
         success: true, request_id: data.request_id, endpoint, type,
         status_url: data.status_url, response_url: data.response_url,
