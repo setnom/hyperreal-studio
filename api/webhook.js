@@ -105,45 +105,62 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
 
   console.log(`activatePlan: ${currentPlan} → ${newPlan} | upgrade=${isUpgrade} downgrade=${isDowngrade} renewal=${isRenewal} firstTime=${isFirstTime}`);
 
-  if (isRenewal) {
-    // Monthly renewal — check if there's a pending downgrade to apply
-    const pendingPlan = profile?.pending_plan;
-    if (pendingPlan && VALID_PLANS.includes(pendingPlan)) {
-      const pendingCredits = PLAN_CREDITS[pendingPlan];
-      console.log(`Applying pending downgrade: ${currentPlan} → ${pendingPlan}`);
-      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-        method: "PATCH",
-        headers: sbHeaders(serviceKey),
-        body: JSON.stringify({
-          plan: pendingPlan,
-          images_remaining: pendingCredits.images,
-          videos_remaining: pendingCredits.videos,
-          subscription_status: "active",
-          subscription_start: new Date().toISOString(),
-          subscription_end: periodEnd || null,
-          pending_plan: null,
-        }),
-      });
-      console.log(`✓ Downgrade applied: ${pendingPlan} for ${email}`);
-    } else {
-      // Normal renewal — reset credits to current plan value
-      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-        method: "PATCH",
-        headers: sbHeaders(serviceKey),
-        body: JSON.stringify({
-          plan: currentPlan,
-          images_remaining: PLAN_CREDITS[currentPlan]?.images ?? credits.images,
-          videos_remaining: PLAN_CREDITS[currentPlan]?.videos ?? credits.videos,
-          subscription_status: "active",
-          subscription_start: new Date().toISOString(),
-          subscription_end: periodEnd || null,
-        }),
-      });
-      await logTransaction(userId, { type: "plan_renewal", description: `Renovación mensual: ${currentPlan}`, plan: currentPlan, images_delta: PLAN_CREDITS[currentPlan]?.images ?? credits.images, videos_delta: PLAN_CREDITS[currentPlan]?.videos ?? credits.videos, images_after: PLAN_CREDITS[currentPlan]?.images ?? credits.images, videos_after: PLAN_CREDITS[currentPlan]?.videos ?? credits.videos }, serviceKey);
-      console.log(`✓ Renewal reset: ${currentPlan} credits for ${email}`);
-    }
-    return;
+if (isRenewal) {
+  const pendingPlan = profile?.pending_plan;
+
+  // Usar el plan MÁS ALTO entre lo que pagó y lo que está en DB
+  // Esto corrige casos donde el webhook estuvo caído durante un upgrade
+  const effectivePlan = planRank(newPlan) >= planRank(currentPlan) ? newPlan : currentPlan;
+  const effectiveCredits = PLAN_CREDITS[effectivePlan];
+
+  // Aplicar downgrade pendiente SOLO si el usuario pagó ese plan menor
+  if (pendingPlan && VALID_PLANS.includes(pendingPlan) && planRank(newPlan) <= planRank(pendingPlan)) {
+    const pendingCredits = PLAN_CREDITS[pendingPlan];
+    console.log(`Applying pending downgrade: ${currentPlan} → ${pendingPlan}`);
+    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+      method: "PATCH",
+      headers: sbHeaders(serviceKey),
+      body: JSON.stringify({
+        plan: pendingPlan,
+        images_remaining: pendingCredits.images,
+        videos_remaining: pendingCredits.videos,
+        subscription_status: "active",
+        subscription_start: new Date().toISOString(),
+        subscription_end: periodEnd || null,
+        pending_plan: null,
+      }),
+    });
+    await logTransaction(userId, { type: "plan_renewal", description: `Renovación + downgrade: ${pendingPlan}`, plan: pendingPlan, images_delta: pendingCredits.images, videos_delta: pendingCredits.videos, images_after: pendingCredits.images, videos_after: pendingCredits.videos }, serviceKey);
+    console.log(`✓ Downgrade applied on renewal: ${pendingPlan} for ${email}`);
+  } else {
+   // Renovación normal — RESETEAR créditos al plan efectivo
+// Se pierden créditos no usados y packs — se asignan los del plan
+await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
+  method: "PATCH",
+  headers: sbHeaders(serviceKey),
+  body: JSON.stringify({
+    plan: effectivePlan,
+    images_remaining: effectiveCredits.images,
+    videos_remaining: effectiveCredits.videos,
+        subscription_status: "active",
+        subscription_start: new Date().toISOString(),
+        subscription_end: periodEnd || null,
+        pending_plan: null,
+      }),
+    });
+    await logTransaction(userId, {
+      type: "plan_renewal",
+      description: `Renovación mensual: ${effectivePlan}${effectivePlan !== currentPlan ? ` (corregido de ${currentPlan})` : ""}`,
+      plan: effectivePlan,
+      images_delta: effectiveCredits.images,
+videos_delta: effectiveCredits.videos,
+images_after: effectiveCredits.images,
+videos_after: effectiveCredits.videos,
+    }, serviceKey);
+    console.log(`✓ Renewal reset: ${currentPlan}→${effectivePlan} | imgs=${effectiveCredits.images} vids=${effectiveCredits.videos} for ${email}`);
   }
+  return;
+}
 
   if (isFirstTime) {
     // First purchase — assign full credits, activate plan immediately
