@@ -103,6 +103,18 @@ export default async function handler(req, res) {
   }
 
   const credits = PLAN_CREDITS[confirmedPlan];
+
+  // ── Idempotency: if user already has this plan active, skip credit assignment ──
+  const currentProfileRes = await fetch(
+    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,subscription_status,images_remaining`,
+    { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
+  );
+  const currentProfile = (await currentProfileRes.json())?.[0];
+  if (currentProfile?.plan === confirmedPlan && currentProfile?.subscription_status === "active" && (currentProfile?.images_remaining ?? 0) > 0) {
+    console.log(`activate: user already has active plan=${confirmedPlan} — skipping credit assignment`);
+    return res.status(200).json({ success: true, plan: confirmedPlan, skipped: true });
+  }
+
   console.log(`Writing plan=${confirmedPlan} credits=${JSON.stringify(credits)} to userId=${userId}`);
 
   // 3a. Try PATCH first (update existing row)
