@@ -1,8 +1,3 @@
-export const config = {
-  api: {
-    bodyParser: false, // Required for Stripe webhook signature verification
-  },
-};
 
 import Stripe from 'stripe';
 
