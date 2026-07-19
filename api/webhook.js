@@ -243,7 +243,11 @@ async function getPlanFromSubscription(stripe, sub) {
   if (priceId && PRICE_TO_PLAN[priceId]) return PRICE_TO_PLAN[priceId];
   return null;
 }
-
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
