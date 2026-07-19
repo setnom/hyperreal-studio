@@ -1,15 +1,12 @@
-
+async function getRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
 import Stripe from 'stripe';
 
-async function getRawBody(req) {
-  // ALWAYS read from stream — never use req.body for webhook signature verification
-  // Vercel parses req.body as JSON which changes formatting and breaks Stripe signature
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-  }
-  return Buffer.concat(chunks);
-}
 
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 
