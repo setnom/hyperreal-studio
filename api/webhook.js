@@ -291,7 +291,7 @@ export default async function handler(req, res) {
     if (event.type === "invoice.payment_succeeded") {
       const invoice = event.data.object;
       const reason = invoice.billing_reason;
-      if (reason === "subscription_cycle") {
+      if (reason === "subscription_cycle" || reason === "subscription_update" || reason === "manual") {
         try {
           const customer = await stripe.customers.retrieve(invoice.customer);
           const email = customer.email;
