@@ -1,10 +1,14 @@
+export const config = {
+  api: {
+    bodyParser: false, // Required for Stripe webhook signature verification
+  },
+};
+
 import Stripe from 'stripe';
 
 async function getRawBody(req) {
-  if (req.body) {
-    const raw = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-    return Buffer.from(raw);
-  }
+  // ALWAYS read from stream — never use req.body for webhook signature verification
+  // Vercel parses req.body as JSON which changes formatting and breaks Stripe signature
   const chunks = [];
   for await (const chunk of req) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
