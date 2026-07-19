@@ -15,7 +15,6 @@
     },
     "api/webhook.js": {
       "maxDuration": 60,
-      "bodyParser": false
     },
     "api/download.js": {
       "maxDuration": 60
