@@ -263,6 +263,7 @@ export default async function handler(req, res) {
     }
 
     console.log("Stripe event:", event.type, event.id);
+    console.log("EVENT DATA:", JSON.stringify(event.data.object).slice(0, 500));
 
     // ── Idempotency check — skip if already processed ──────────────────────
     const alreadyProcessed = await isEventProcessed(event.id, SERVICE_KEY);
