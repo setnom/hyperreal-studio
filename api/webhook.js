@@ -1,10 +1,11 @@
 async function getRawBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', chunk => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
+  if (req._rawBody) return req._rawBody;
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
 import Stripe from 'stripe';
 
 
@@ -242,6 +243,12 @@ export const config = {
 };
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
+
+  // Disable body parsing manually — read raw stream
+  if (req.body !== undefined) {
+    // Vercel already parsed it — reconstruct raw body from parsed JSON
+    req._rawBody = Buffer.from(JSON.stringify(req.body));
+  }
 
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
