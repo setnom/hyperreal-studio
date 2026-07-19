@@ -42,6 +42,28 @@ function sbHeaders(key) {
   };
 }
 
+// ── Idempotency: check if Stripe event was already processed ─────────────────
+async function isEventProcessed(eventId, serviceKey) {
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/processed_stripe_events?event_id=eq.${eventId}&select=event_id&limit=1`,
+      { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+    );
+    const data = await res.json();
+    return Array.isArray(data) && data.length > 0;
+  } catch { return false; }
+}
+
+async function markEventProcessed(eventId, eventType, serviceKey) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/processed_stripe_events`, {
+      method: "POST",
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates" },
+      body: JSON.stringify({ event_id: eventId, event_type: eventType, processed_at: new Date().toISOString() }),
+    });
+  } catch(e) { console.error("markEventProcessed error:", e.message); }
+}
+
 async function getProfile(userId, serviceKey) {
   const res = await fetch(
     `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=id,plan,images_remaining,videos_remaining,pending_plan,email&limit=1`,
@@ -90,28 +112,31 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
   const isFirstTime = currentPlan === "none" || currentPlan === null;
   const isUpgrade = planRank(newPlan) > planRank(currentPlan);
   const isDowngrade = planRank(newPlan) < planRank(currentPlan);
-  console.log(`activatePlan: ${currentPlan} → ${newPlan} | upgrade=${isUpgrade} downgrade=${isDowngrade} renewal=${isRenewal} firstTime=${isFirstTime}`);
+  console.log(`activatePlan: ${currentPlan}→${newPlan} upgrade=${isUpgrade} downgrade=${isDowngrade} renewal=${isRenewal} firstTime=${isFirstTime}`);
 
   if (isRenewal) {
+    // RENOVACIÓN — resetear créditos al plan efectivo (no sumar)
     const pendingPlan = profile?.pending_plan;
     const effectivePlan = planRank(newPlan) >= planRank(currentPlan) ? newPlan : currentPlan;
     const effectiveCredits = PLAN_CREDITS[effectivePlan];
+
     if (pendingPlan && VALID_PLANS.includes(pendingPlan) && planRank(newPlan) <= planRank(pendingPlan)) {
+      // Aplicar downgrade pendiente
       const pendingCredits = PLAN_CREDITS[pendingPlan];
-      console.log(`Applying pending downgrade: ${currentPlan} → ${pendingPlan}`);
       await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
         method: "PATCH", headers: sbHeaders(serviceKey),
         body: JSON.stringify({ plan: pendingPlan, images_remaining: pendingCredits.images, videos_remaining: pendingCredits.videos, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
       });
       await logTransaction(userId, { type: "plan_renewal", description: `Renovación + downgrade: ${pendingPlan}`, plan: pendingPlan, images_delta: pendingCredits.images, videos_delta: pendingCredits.videos, images_after: pendingCredits.images, videos_after: pendingCredits.videos }, serviceKey);
-      console.log(`✓ Downgrade applied on renewal: ${pendingPlan} for ${email}`);
+      console.log(`✓ Downgrade on renewal: ${pendingPlan} for ${email}`);
     } else {
+      // Renovación normal — RESETEAR créditos al plan (no sumar, no acumular)
       await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
         method: "PATCH", headers: sbHeaders(serviceKey),
         body: JSON.stringify({ plan: effectivePlan, images_remaining: effectiveCredits.images, videos_remaining: effectiveCredits.videos, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
       });
-      await logTransaction(userId, { type: "plan_renewal", description: `Renovación mensual: ${effectivePlan}${effectivePlan !== currentPlan ? ` (corregido de ${currentPlan})` : ""}`, plan: effectivePlan, images_delta: effectiveCredits.images, videos_delta: effectiveCredits.videos, images_after: effectiveCredits.images, videos_after: effectiveCredits.videos }, serviceKey);
-      console.log(`✓ Renewal reset: ${currentPlan}→${effectivePlan} | imgs=${effectiveCredits.images} vids=${effectiveCredits.videos} for ${email}`);
+      await logTransaction(userId, { type: "plan_renewal", description: `Renovación mensual: ${effectivePlan}`, plan: effectivePlan, images_delta: effectiveCredits.images, videos_delta: effectiveCredits.videos, images_after: effectiveCredits.images, videos_after: effectiveCredits.videos }, serviceKey);
+      console.log(`✓ Renewal reset: ${effectivePlan} | imgs=${effectiveCredits.images} vids=${effectiveCredits.videos} for ${email}`);
     }
     return;
   }
@@ -123,7 +148,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
       body: JSON.stringify({ id: userId, email: email || "", plan: newPlan, images_remaining: credits.images, videos_remaining: credits.videos, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
     });
     await logTransaction(userId, { type: "plan_activation", description: `Plan activado: ${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: credits.images, videos_after: credits.videos }, serviceKey);
-    console.log(`✓ First activation: ${newPlan} (${credits.images} imgs, ${credits.videos} vids) for ${email}`);
+    console.log(`✓ First activation: ${newPlan} for ${email}`);
     return;
   }
 
@@ -132,8 +157,8 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
       method: "PATCH", headers: sbHeaders(serviceKey),
       body: JSON.stringify({ plan: newPlan, images_remaining: currentImages + credits.images, videos_remaining: currentVideos + credits.videos, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
     });
-    await logTransaction(userId, { type: "plan_upgrade", description: `Upgrade: ${currentPlan} → ${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
-    console.log(`✓ Upgrade: ${currentPlan} → ${newPlan} for ${email}`);
+    await logTransaction(userId, { type: "plan_upgrade", description: `Upgrade: ${currentPlan}→${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
+    console.log(`✓ Upgrade: ${currentPlan}→${newPlan} for ${email}`);
     return;
   }
 
@@ -142,16 +167,18 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
       method: "PATCH", headers: sbHeaders(serviceKey),
       body: JSON.stringify({ images_remaining: currentImages + credits.images, videos_remaining: currentVideos + credits.videos, pending_plan: newPlan }),
     });
-    await logTransaction(userId, { type: "plan_downgrade_scheduled", description: `Downgrade programado: ${currentPlan} → ${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
+    await logTransaction(userId, { type: "plan_downgrade_scheduled", description: `Downgrade programado: ${currentPlan}→${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
     console.log(`✓ Downgrade scheduled: ${newPlan} for ${email}`);
     return;
   }
 
+  // Mismo plan
   await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
     method: "PATCH", headers: sbHeaders(serviceKey),
     body: JSON.stringify({ images_remaining: currentImages + credits.images, videos_remaining: currentVideos + credits.videos, subscription_status: "active" }),
   });
-  console.log(`✓ Same plan repurchase: +${credits.images} imgs, +${credits.videos} vids for ${email}`);
+  await logTransaction(userId, { type: "plan_renewal", description: `Mismo plan recargado: ${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
+  console.log(`✓ Same plan repurchase: ${newPlan} for ${email}`);
 }
 
 async function getPlanFromSubscription(stripe, sub) {
@@ -175,7 +202,6 @@ export default async function handler(req, res) {
     const rawId = body?.request_id;
     const isValidRequestId = typeof rawId === "string" && rawId.length > 0 && rawId.length <= 200 && /^[a-zA-Z0-9_\-]+$/.test(rawId);
     if (isValidRequestId) {
-      console.log(`fal-webhook: request_id=${rawId} status=${body.status}`);
       if (!SERVICE_KEY) return res.status(200).json({ received: true });
       const { request_id, status, payload, error: falError } = body;
       const extractUrl = (p) => {
@@ -199,9 +225,7 @@ export default async function handler(req, res) {
       if (genRow && genRow.status !== "completed") {
         if (status === "OK") {
           const url = extractUrl(payload);
-          if (url) {
-            await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}`, { method: "PATCH", headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" }, body: JSON.stringify({ result_url: url, status: "completed" }) }).catch(() => {});
-          }
+          if (url) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}`, { method: "PATCH", headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" }, body: JSON.stringify({ result_url: url, status: "completed" }) }).catch(() => {});
         } else if (status === "ERROR") {
           await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}`, { method: "PATCH", headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" }, body: JSON.stringify({ result_url: null, status: "failed" }) }).catch(() => {});
           const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${genRow.user_id}&select=images_remaining,videos_remaining`, { headers: sbH(SERVICE_KEY) }).catch(() => null);
@@ -212,7 +236,6 @@ export default async function handler(req, res) {
           }
         }
       }
-      return res.status(200).json({ received: true });
     }
     return res.status(200).json({ received: true });
   }
@@ -239,27 +262,36 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid signature" });
     }
 
-    console.log("Stripe event:", event.type);
+    console.log("Stripe event:", event.type, event.id);
+
+    // ── Idempotency check — skip if already processed ──────────────────────
+    const alreadyProcessed = await isEventProcessed(event.id, SERVICE_KEY);
+    if (alreadyProcessed) {
+      console.log(`Event ${event.id} already processed — skipping`);
+      return res.status(200).json({ received: true, skipped: true });
+    }
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       const email = session.customer_email || session.customer_details?.email;
       let plan = VALID_PLANS.includes(session.client_reference_id) ? session.client_reference_id : null;
       if (!plan && session.subscription) {
-        try { const sub = await stripe.subscriptions.retrieve(session.subscription); plan = await getPlanFromSubscription(stripe, sub); } catch (e) { console.error("Sub lookup error:", e.message); }
+        try { const sub = await stripe.subscriptions.retrieve(session.subscription); plan = await getPlanFromSubscription(stripe, sub); } catch (e) { console.error("Sub lookup:", e.message); }
       }
-      if (!email || !plan) { console.error("Missing email or plan in checkout session"); return res.status(200).json({ received: true }); }
-      try {
-        const user = await findUserByEmail(email, SERVICE_KEY);
-        if (user) { await activatePlan(user.id, plan, email, SERVICE_KEY); }
-        else { console.error(`User not found: ${email}`); }
-      } catch (err) { console.error("Activation error:", err.message); }
+      if (!email || !plan) { console.error("Missing email or plan"); }
+      else {
+        try {
+          const user = await findUserByEmail(email, SERVICE_KEY);
+          if (user) await activatePlan(user.id, plan, email, SERVICE_KEY);
+          else console.error(`User not found: ${email}`);
+        } catch (err) { console.error("Activation error:", err.message); }
+      }
     }
 
     if (event.type === "invoice.payment_succeeded") {
       const invoice = event.data.object;
       const reason = invoice.billing_reason;
-      if (reason === "subscription_create" || reason === "subscription_cycle") {
+      if (reason === "subscription_cycle") {
         try {
           const customer = await stripe.customers.retrieve(invoice.customer);
           const email = customer.email;
@@ -269,18 +301,16 @@ export default async function handler(req, res) {
             const periodEnd = invoice.lines?.data?.[0]?.period?.end ? new Date(invoice.lines.data[0].period.end * 1000).toISOString() : null;
             const user = await findUserByEmail(email, SERVICE_KEY);
             if (user) {
-              if (reason === "subscription_cycle") {
-                if (invoice.subscription) {
-                  const sub = await stripe.subscriptions.retrieve(invoice.subscription);
-                  if (sub.status !== "active") { console.warn(`Sub not active, skipping renewal`); return res.status(200).json({ received: true }); }
-                }
-                await activatePlan(user.id, plan, email, SERVICE_KEY, periodEnd, true);
-              } else {
-                console.log("subscription_create — skipping, handled by checkout.session.completed");
+              if (invoice.subscription) {
+                const sub = await stripe.subscriptions.retrieve(invoice.subscription);
+                if (sub.status !== "active") { console.warn(`Sub not active, skipping`); return res.status(200).json({ received: true }); }
               }
-            }
+              await activatePlan(user.id, plan, email, SERVICE_KEY, periodEnd, true);
+            } else { console.error(`User not found: ${email}`); }
           }
         } catch (e) { console.error("Invoice handler error:", e.message); }
+      } else {
+        console.log(`invoice.payment_succeeded reason=${reason} — skipping, handled by checkout.session.completed`);
       }
     }
 
@@ -288,9 +318,7 @@ export default async function handler(req, res) {
       try {
         const customer = await stripe.customers.retrieve(event.data.object.customer);
         const user = await findUserByEmail(customer.email, SERVICE_KEY);
-        if (user) {
-          await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, { method: "PATCH", headers: sbHeaders(SERVICE_KEY), body: JSON.stringify({ subscription_status: "payment_failed" }) });
-        }
+        if (user) await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, { method: "PATCH", headers: sbHeaders(SERVICE_KEY), body: JSON.stringify({ subscription_status: "payment_failed" }) });
       } catch (e) { console.error("payment_failed error:", e.message); }
     }
 
@@ -328,6 +356,9 @@ export default async function handler(req, res) {
         }
       } catch (e) { console.error("Sub deleted error:", e.message); }
     }
+
+    // Mark event as processed AFTER successful handling
+    await markEventProcessed(event.id, event.type, SERVICE_KEY);
 
     res.status(200).json({ received: true });
   } catch (outerErr) {
