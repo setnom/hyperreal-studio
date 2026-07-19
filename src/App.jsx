@@ -128,7 +128,7 @@ const TEXTS = {
     subscribe: "Suscribirme",
     learn_title: "¿Prefieres aprender a hacerlo tú mismo?",
     learn_sub: "Domina IA generativa en nuestra comunidad",
-    learn_cta: "Conocer HyperReal AI Lab →",
+    learn_cta: "Conocer Aprende como crear contenido hiperrealista →",
     footer: "© 2026 NanoBanano Studio · Powered by HyperReal AI Lab",
     login_title: "Inicia sesión",
     signup_title: "Crea tu cuenta",
@@ -198,8 +198,8 @@ const TEXTS = {
     upgrade: "Actualizar plan →",
     download: "↓ Descargar",
     close: "Cerrar",
-    no_limits: "¿Crear sin límites?",
-    learn_lab: "Aprende en HyperReal AI Lab →",
+    no_limits: "Aprende como crear contenido hiperrealista",
+    learn_lab: "Aprende en Aprende como crear contenido hiperrealista →",
     plan_for_gen: "Elige un plan para generar →",
     timeout: "La generación tardó demasiado. Contacta soporte.",
     failed: "La generación falló. Intenta con otro prompt.",
@@ -247,7 +247,7 @@ const TEXTS = {
     subscribe: "Subscribe",
     learn_title: "Prefer to learn how to do it yourself?",
     learn_sub: "Master generative AI in our community",
-    learn_cta: "Discover HyperReal AI Lab →",
+    learn_cta: "Discover Aprende como crear contenido hiperrealista →",
     footer: "© 2026 NanoBanano Studio · Powered by HyperReal AI Lab",
     login_title: "Sign in",
     signup_title: "Create account",
@@ -318,7 +318,7 @@ const TEXTS = {
     download: "↓ Download",
     close: "Close",
     no_limits: "Create without limits?",
-    learn_lab: "Learn at HyperReal AI Lab →",
+    learn_lab: "Learn at Aprende como crear contenido hiperrealista →",
     plan_for_gen: "Choose a plan to generate →",
     timeout: "Generation took too long. Contact support.",
     failed: "Generation failed. Try a different prompt.",
@@ -2073,7 +2073,7 @@ export default function App() {
       <div style={{ textAlign: "center", padding: isDesk ? "32px 24px" : "18px 14px", borderRadius: 16, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.04)" }}>
         <p style={{ fontSize: isDesk ? 16 : 13, fontWeight: 600, margin: "0 0 6px" }}>{t("learn_title")}</p>
         <p style={{ fontSize: isDesk ? 13 : 11, color: "#5a5a70", margin: "0 0 14px", lineHeight: 1.5 }}>{t("learn_sub")}</p>
-        <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ padding: "10px 28px", fontSize: 12, fontWeight: 700, color: "#e0e0f0", background: "transparent", border: "1px solid rgba(0,240,255,.25)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("learn_cta")}</button>
+        <button onClick={() => window.open("https://www.skool.com/hyperreal-ai-lab-free-2654/about", "_blank")} style={{ padding: "10px 28px", fontSize: 12, fontWeight: 700, color: "#e0e0f0", background: "transparent", border: "1px solid rgba(0,240,255,.25)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("learn_cta")}</button>
       </div>
 
       {/* ── FAQ Section ── */}
@@ -2394,8 +2394,8 @@ export default function App() {
           {/* CTA desktop sidebar */}
           {isDesk && (
             <div style={{ padding: "14px", borderRadius: 10, background: "rgba(255,255,255,.015)", border: "1px solid rgba(255,255,255,.03)", textAlign: "center" }}>
-              <p style={{ fontSize: 10, color: "#4a4a60", margin: "0 0 5px" }}>¿Crear sin límites?</p>
-              <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>HyperReal AI Lab →</button>
+              <p style={{ fontSize: 10, color: "#4a4a60", margin: "0 0 5px" }}>Aprende como crear contenido hiperrealista</p>
+              <button onClick={() => window.open("https://www.skool.com/hyperreal-ai-lab-free-2654/about", "_blank")} style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Aprende como crear contenido hiperrealista →</button>
             </div>
           )}
         </div>
@@ -3926,8 +3926,8 @@ export default function App() {
       {/* Mobile CTA */}
       {!isDesk && (
         <div style={{ marginTop: 24, padding: "12px", borderRadius: 9, background: "rgba(255,255,255,.015)", border: "1px solid rgba(255,255,255,.03)", textAlign: "center" }}>
-          <p style={{ fontSize: 10, color: "#4a4a60", margin: "0 0 5px" }}>¿Crear sin límites?</p>
-          <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Aprende en HyperReal AI Lab →</button>
+          <p style={{ fontSize: 10, color: "#4a4a60", margin: "0 0 5px" }}>Aprende como crear contenido hiperrealista</p>
+          <button onClick={() => window.open("https://www.skool.com/hyperreal-ai-lab-free-2654/about", "_blank")} style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Aprende en Aprende como crear contenido hiperrealista →</button>
         </div>
       )}
 
