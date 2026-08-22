@@ -191,7 +191,7 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
       resolution: safeResolution,
       duration: safeDuration,
       aspect_ratio: safeAspect,
-      generate_audio: false,
+      generate_audio: true,
       seed: -1,
     };
     console.log(`WS generate_vid: dur=${safeDuration} res=${safeResolution} credits=${creditsNeeded}`);
