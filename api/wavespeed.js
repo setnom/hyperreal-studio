@@ -187,7 +187,7 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
   try {
     const wsBody = {
       prompt: (prompt || "").trim().slice(0, 2500) || "Cinematic, smooth motion, continue the scene naturally in one continuous shot",
-      image: finalImageUrl,
+      image: image_url,
       resolution: safeResolution,
       duration: safeDuration,
       aspect_ratio: safeAspect,
