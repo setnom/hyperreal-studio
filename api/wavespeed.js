@@ -136,15 +136,25 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
   }
 }
 
-// ── action: generate_vid ─────────────────────────────────────────────────────
+// ── action: generate_vid (Seedance 2.5 Spicy I2V) ────────────────────────────
 async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
-  const { prompt, image_url, duration = 5, resolution = "1080p" } = body;
-  if (!prompt?.trim()) return res.status(400).json({ error: "Prompt required" });
+  const { prompt, image_url, duration = 5, resolution = "720p", aspect_ratio = "16:9" } = body;
   if (!image_url || !isSafeUrl(image_url)) return res.status(400).json({ error: "Invalid image URL" });
-  const safeDuration = [5, 10, 15].includes(Number(duration)) ? Number(duration) : 5;
-  const safeResolution = ["1080p", "2k", "4k"].includes(resolution) ? resolution : "1080p";
-  const creditTable = { 5: {"1080p":2,"2k":3,"4k":3}, 10: {"1080p":3,"2k":4,"4k":4}, 15: {"1080p":3,"2k":4,"4k":5} };
-  const creditsNeeded = (creditTable[safeDuration] || creditTable[5])[safeResolution] ?? 2;
+  // Duration: 4-30 seconds
+  const safeDuration = Math.min(30, Math.max(4, Math.round(Number(duration) || 5)));
+  const safeResolution = ["480p","720p","1080p"].includes(resolution) ? resolution : "720p";
+  const safeAspect = ["16:9","9:16","1:1","4:3","3:4"].includes(aspect_ratio) ? aspect_ratio : "16:9";
+
+  // Credit table per resolution and duration range
+  const getCredits = (res, dur) => {
+    const table = {
+      "480p": dur <= 10 ? 3 : dur <= 16 ? 4 : dur <= 23 ? 5 : 6,
+      "720p": dur <= 10 ? 5 : dur <= 16 ? 6 : dur <= 23 ? 7 : 8,
+      "1080p": dur <= 10 ? 8 : dur <= 16 ? 10 : dur <= 23 ? 14 : 20,
+    };
+    return table[res] ?? 5;
+  };
+  const creditsNeeded = getCredits(safeResolution, safeDuration);
 
   const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
   const prof = (await profRes.json())?.[0];
@@ -165,10 +175,18 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
   const genId = gen?.id;
 
   try {
-    const wsBody = { prompt: prompt.trim().slice(0, 3500), image: image_url, duration: safeDuration, resolution: safeResolution, shot_type: "single", enable_prompt_expansion: false, seed: -1 };
+    const wsBody = {
+      prompt: (prompt || "").trim().slice(0, 2500) || "Cinematic, smooth motion, continue the scene naturally in one continuous shot",
+      image: finalImageUrl,
+      resolution: safeResolution,
+      duration: safeDuration,
+      aspect_ratio: safeAspect,
+      generate_audio: false,
+      seed: -1,
+    };
     console.log(`WS generate_vid: dur=${safeDuration} res=${safeResolution} credits=${creditsNeeded}`);
 
-    const wsRes = await fetch(`${WS_BASE}/alibaba/wan-2.6/image-to-video-pro`, {
+    const wsRes = await fetch(`${WS_BASE}/bytedance/seedance-2.5/image-to-video-spicy`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${WS_KEY}` },
       body: JSON.stringify(wsBody)
     });
