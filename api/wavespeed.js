@@ -49,7 +49,7 @@ async function refundCredits(userId, type, serviceKey, creditsToRefund = 1) {
     const prof = (await profRes.json())?.[0];
     if (!prof) return;
     const patch = type === "image"
-      ? { images_remaining: (prof.images_remaining || 0) + 1 }
+      ? { images_remaining: (prof.images_remaining || 0) + 2 }
       : { videos_remaining: (prof.videos_remaining || 0) + creditsToRefund };
     await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(serviceKey), body: JSON.stringify(patch) });
   } catch(e) { console.error("WS refund error:", e.message); }
@@ -65,10 +65,20 @@ function humanizeError(msg) {
 
 // Validate size format: "WxH" or "W*H" with reasonable pixel counts, or "auto"
 function safeImgSize(size) {
-  if (!size || size === "auto") return null; // null = let Wavespeed decide
+  // Always 2K — map aspect ratios to 2K equivalents
+  const aspectTo2K = {
+    "1:1":  "2048*2048",
+    "16:9": "2688*1536",
+    "9:16": "1536*2688",
+    "4:3":  "2048*1536",
+    "3:4":  "1536*2048",
+  };
+  if (size && aspectTo2K[size]) return aspectTo2K[size];
+  if (size === "auto" || !size) return "2048*2048";
+  // If already W*H format and 2K range, use it
   if (/^\d{3,4}\*\d{3,4}$/.test(size)) {
     const [w, h] = size.split("*").map(Number);
-    if (w >= 512 && w <= 4096 && h >= 512 && h <= 4096) return size;
+    if (w >= 1024 && w <= 4096 && h >= 1024 && h <= 4096) return size;
   }
   return "2048*2048";
 }
@@ -87,10 +97,10 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
   const prof = (await profRes.json())?.[0];
   if (!prof?.plan || prof.plan === "none") return res.status(403).json({ error: "No active plan" });
   if (prof.subscription_status === "payment_failed") return res.status(403).json({ error: "Payment issue" });
-  if ((prof.images_remaining ?? 0) <= 0) return res.status(402).json({ error: "No image credits" });
+  if ((prof.images_remaining ?? 0) < 2) return res.status(402).json({ error: "Need at least 2 image credits" });
 
-  const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&images_remaining=gt.0`, {
-    method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ images_remaining: prof.images_remaining - 1 })
+  const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&images_remaining=gte.2`, {
+    method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ images_remaining: prof.images_remaining - 2 })
   });
   if (!deductRes.ok) return res.status(409).json({ error: "Credit deduction failed" });
 
@@ -109,9 +119,9 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
       enable_base64_output: false,
       ...(imgSize ? { size: imgSize } : {}),
     };
-    console.log(`WS generate_img: size=${imgSize} images=${images.length} endpoint=bytedance/seedream-v4.5/edit`);
+    console.log(`WS generate_img: size=${imgSize} images=${images.length} endpoint=bytedance/seedream-v5.0-pro/edit`);
 
-    const wsRes = await fetch(`${WS_BASE}/bytedance/seedream-v4.5/edit`, {
+    const wsRes = await fetch(`${WS_BASE}/bytedance/seedream-v5.0-pro/edit`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${WS_KEY}` },
       body: JSON.stringify(wsBody)
     });

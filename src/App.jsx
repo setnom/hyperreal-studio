@@ -3568,7 +3568,7 @@ export default function App() {
 
           {/* ── Wavespeed Img Pro (Seedream 4.5 Edit) ── */}
           {tab === T.WS_IMG && (() => {
-            const canGen = !genning && !wsImgUploading && wsImgImages.length > 0 && wsImgPrompt.trim();
+            const canGen = !genning && !wsImgUploading && wsImgImages.length > 0 && wsImgPrompt.trim() && (profile?.images_remaining ?? 0) >= 2;
 
             const uploadWsImg = async (file) => {
               if (!file) return;
@@ -3631,7 +3631,7 @@ export default function App() {
               <div style={{ animation: "fadeUp .4s ease" }}>
                 <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 12, background: "rgba(255,184,0,.04)", border: "1px solid rgba(255,184,0,.15)" }}>
                   <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 2px" }}>✨ Imagen Premium Pro</p>
-                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Edición avanzada con IA · Tipografía nítida · Alta resolución" : "Advanced AI editing · Crisp typography · High resolution"}</p>
+                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Motor premium · Tipografía nítida · Siempre 2K · 2 créditos" : "Premium engine · Crisp typography · Always 2K · 2 credits"}</p>
                 </div>
 
                 {/* Image upload grid */}
@@ -3698,7 +3698,7 @@ export default function App() {
 
                 <button onClick={handleWsImgGen} disabled={!canGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#ffb800,#ff8800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(255,184,0,.25)" : "none" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar (1 crédito)" : "✨ Generate (1 credit)")}
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar (2 créditos)" : "✨ Generate (2 credits)")}
                 </button>
 
                 {genResult && !genning && tab === T.WS_IMG && (
