@@ -3924,25 +3924,24 @@ export default function App() {
                   vid.onerror = () => res(10);
                   vid.src = previewUrl;
                 });
-                // Read as base64
-                const dataUrl = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(file); });
-                let videoUrl;
-                if (dataUrl.length <= 3 * 1024 * 1024) {
-                  // Small enough — upload via API
-                  const r = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }) });
-                  const d = await r.json();
-                  if (d.error) throw new Error(d.error);
-                  videoUrl = d.url;
-                } else {
-                  // Large — presigned PUT
-                  const ext = file.name.split(".").pop() || "mp4";
-                  const initR = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ mime_type: file.type, file_name: `ve_video.${ext}`, user_token: session?.access_token }) });
-                  const initD = await initR.json();
-                  if (!initD.upload_url) throw new Error(initD.error || "No upload URL");
-                  const putR = await fetch(initD.upload_url, { method: "PUT", headers: {"Content-Type": file.type}, body: file });
-                  if (!putR.ok) throw new Error(`Upload failed: ${putR.status}`);
-                  videoUrl = initD.file_url;
-                }
+                // Upload directly to Supabase Storage (no size limit via API)
+                const ext = file.name.split(".").pop() || "mp4";
+                const path = `${session.user.id}/${Date.now()}.${ext}`;
+                const sbUp = await fetch(`${SB_URL}/storage/v1/object/motion-refs/${path}`, {
+                  method: "POST",
+                  headers: { apikey: SB_KEY, Authorization: `Bearer ${session.access_token}`, "Content-Type": file.type, "x-upsert": "true" },
+                  body: file,
+                });
+                if (!sbUp.ok) throw new Error(`Upload error: ${sbUp.status}`);
+                // Get signed URL (1h)
+                const signR = await fetch(`${SB_URL}/storage/v1/object/sign/motion-refs/${path}`, {
+                  method: "POST",
+                  headers: { apikey: SB_KEY, Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ expiresIn: 3600 }),
+                });
+                const signD = await signR.json();
+                if (!signD.signedURL) throw new Error("Could not get signed URL");
+                const videoUrl = `${SB_URL}/storage/v1${signD.signedURL}`;
                 setVidEditDuration(detectedDuration);
                 setVidEditVideo({ file, preview: previewUrl, name: file.name, url: videoUrl });
               } catch(e) { setVidEditError(e.message); }
