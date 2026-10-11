@@ -49,7 +49,7 @@ async function refundCredits(userId, type, serviceKey, creditsToRefund = 1) {
     const prof = (await profRes.json())?.[0];
     if (!prof) return;
     const patch = type === "image"
-      ? { images_remaining: (prof.images_remaining || 0) + 2 }
+      ? { images_remaining: (prof.images_remaining || 0) + 1 }
       : { videos_remaining: (prof.videos_remaining || 0) + creditsToRefund };
     await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(serviceKey), body: JSON.stringify(patch) });
   } catch(e) { console.error("WS refund error:", e.message); }
@@ -65,20 +65,10 @@ function humanizeError(msg) {
 
 // Validate size format: "WxH" or "W*H" with reasonable pixel counts, or "auto"
 function safeImgSize(size) {
-  // Always 2K — map aspect ratios to 2K equivalents
-  const aspectTo2K = {
-    "1:1":  "2048*2048",
-    "16:9": "2688*1536",
-    "9:16": "1536*2688",
-    "4:3":  "2048*1536",
-    "3:4":  "1536*2048",
-  };
-  if (size && aspectTo2K[size]) return aspectTo2K[size];
-  if (size === "auto" || !size) return "2048*2048";
-  // If already W*H format and 2K range, use it
+  if (!size || size === "auto") return null; // null = let Wavespeed decide
   if (/^\d{3,4}\*\d{3,4}$/.test(size)) {
     const [w, h] = size.split("*").map(Number);
-    if (w >= 1024 && w <= 4096 && h >= 1024 && h <= 4096) return size;
+    if (w >= 512 && w <= 4096 && h >= 512 && h <= 4096) return size;
   }
   return "2048*2048";
 }
@@ -97,10 +87,10 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
   const prof = (await profRes.json())?.[0];
   if (!prof?.plan || prof.plan === "none") return res.status(403).json({ error: "No active plan" });
   if (prof.subscription_status === "payment_failed") return res.status(403).json({ error: "Payment issue" });
-  if ((prof.images_remaining ?? 0) < 2) return res.status(402).json({ error: "Need at least 2 image credits" });
+  if ((prof.images_remaining ?? 0) <= 0) return res.status(402).json({ error: "No image credits" });
 
-  const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&images_remaining=gte.2`, {
-    method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ images_remaining: prof.images_remaining - 2 })
+  const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&images_remaining=gt.0`, {
+    method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ images_remaining: prof.images_remaining - 1 })
   });
   if (!deductRes.ok) return res.status(409).json({ error: "Credit deduction failed" });
 
@@ -119,9 +109,9 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
       enable_base64_output: false,
       ...(imgSize ? { size: imgSize } : {}),
     };
-    console.log(`WS generate_img: size=${imgSize} images=${images.length} endpoint=bytedance/seedream-v5.0-pro/edit`);
+    console.log(`WS generate_img: size=${imgSize} images=${images.length} endpoint=bytedance/seedream-v4.5/edit`);
 
-    const wsRes = await fetch(`${WS_BASE}/bytedance/seedream-v5.0-pro/edit`, {
+    const wsRes = await fetch(`${WS_BASE}/bytedance/seedream-v4.5/edit`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${WS_KEY}` },
       body: JSON.stringify(wsBody)
     });
@@ -146,25 +136,92 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
   }
 }
 
-// ── action: generate_vid (Seedance 2.5 Spicy I2V) ────────────────────────────
-async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
-  const { prompt, image_url, duration = 5, resolution = "720p", aspect_ratio = "16:9" } = body;
-  if (!image_url || !isSafeUrl(image_url)) return res.status(400).json({ error: "Invalid image URL" });
-  // Duration: 4-30 seconds
-  const safeDuration = Math.min(30, Math.max(4, Math.round(Number(duration) || 5)));
-  const safeResolution = ["480p","720p","1080p"].includes(resolution) ? resolution : "720p";
-  const safeAspect = ["16:9","9:16","1:1","4:3","3:4"].includes(aspect_ratio) ? aspect_ratio : "16:9";
+// ── action: generate_vid_edit (Seedance 2.5 video-edit — character swap) ─────
+async function generateVidEdit(body, userId, WS_KEY, SERVICE_KEY, res) {
+  const { prompt, video_url, image_urls = [], duration = 10, resolution = "720p" } = body;
+  if (!video_url || !isSafeUrl(video_url)) return res.status(400).json({ error: "Invalid video URL" });
+  const images = Array.isArray(image_urls) ? image_urls.filter(Boolean) : [];
+  if (images.length === 0) return res.status(400).json({ error: "At least one reference image required" });
+  for (const u of images) { if (!isSafeUrl(u)) return res.status(400).json({ error: `Invalid image URL: ${u}` }); }
 
-  // Credit table per resolution and duration range
-  const getCredits = (res, dur) => {
-    const table = {
-      "480p": dur <= 10 ? 3 : dur <= 16 ? 4 : dur <= 23 ? 5 : 6,
-      "720p": dur <= 10 ? 5 : dur <= 16 ? 6 : dur <= 23 ? 7 : 8,
-      "1080p": dur <= 10 ? 8 : dur <= 16 ? 10 : dur <= 23 ? 14 : 20,
-    };
-    return table[res] ?? 5;
+  const safeDuration = Math.max(5, Math.min(30, Number(duration) || 10));
+  const safeRes = ["480p","720p","1080p"].includes(resolution) ? resolution : "720p";
+
+  // Credit table buckets [credits, maxDuration]: 480p / 720p / 1080p
+  const creditTable = {
+    "480p": [[3,12],[7,18],[12,24],[17,30]],
+    "720p": [[10,12],[15,18],[20,24],[25,30]],
+    "1080p":[[15,12],[20,18],[25,24],[30,30]],
   };
-  const creditsNeeded = getCredits(safeResolution, safeDuration);
+  const buckets = creditTable[safeRes];
+  const creditsNeeded = (buckets.find(([,max]) => safeDuration <= max) || buckets[buckets.length-1])[0];
+
+  const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
+  const prof = (await profRes.json())?.[0];
+  if (!prof?.plan || prof.plan === "none") return res.status(403).json({ error: "No active plan" });
+  if (prof.subscription_status === "payment_failed") return res.status(403).json({ error: "Payment issue" });
+  if ((prof.videos_remaining ?? 0) < creditsNeeded) return res.status(402).json({ error: `Need ${creditsNeeded} video credits. Have ${prof.videos_remaining ?? 0}.` });
+
+  const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&videos_remaining=gte.${creditsNeeded}`, {
+    method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining - creditsNeeded })
+  });
+  if (!deductRes.ok) return res.status(409).json({ error: "Credit deduction failed" });
+
+  const effectivePrompt = prompt?.trim() ||
+    "Replace the main character in the video with the person in the reference image(s), preserving the original body shape, movements, and lip sync exactly.";
+
+  const genRes = await fetch(`${SB_URL}/rest/v1/generations`, {
+    method: "POST", headers: sbH(SERVICE_KEY),
+    body: JSON.stringify({ user_id: userId, type: "video", status: "processing", prompt: effectivePrompt.slice(0, 3500), result_url: "pending|ws-vid-edit" })
+  });
+  const gen = (await genRes.json())?.[0];
+  const genId = gen?.id;
+
+  try {
+    const wsBody = {
+      prompt: effectivePrompt.slice(0, 3500),
+      video: video_url,
+      images,
+      duration: safeDuration,
+      resolution: safeRes,
+      enable_prompt_expansion: false,
+      seed: -1,
+    };
+    console.log(`WS generate_vid_edit: dur=${safeDuration} res=${safeRes} credits=${creditsNeeded} imgs=${images.length}`);
+
+    const wsRes = await fetch(`${WS_BASE}/bytedance/seedance-2.5/video-edit`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${WS_KEY}` },
+      body: JSON.stringify(wsBody)
+    });
+    const wsData = await wsRes.json();
+    console.log(`WS vid-edit response status=${wsRes.status} data=${JSON.stringify(wsData).slice(0, 200)}`);
+
+    if (!wsRes.ok || !wsData?.data?.id) {
+      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining }) });
+      if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) });
+      return res.status(500).json({ error: wsData?.message || wsData?.error || `Wavespeed error ${wsRes.status}` });
+    }
+
+    const requestId = wsData.data.id;
+    if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ result_url: `${requestId}|ws-vid-edit` }) });
+    return res.status(200).json({ request_id: requestId, endpoint: "ws-vid-edit", gen_id: genId, credits_used: creditsNeeded });
+  } catch(e) {
+    console.error("generateVidEdit error:", e.message);
+    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining }) }).catch(() => {});
+    if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// ── action: generate_vid ─────────────────────────────────────────────────────
+async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
+  const { prompt, image_url, duration = 5, resolution = "1080p" } = body;
+  if (!prompt?.trim()) return res.status(400).json({ error: "Prompt required" });
+  if (!image_url || !isSafeUrl(image_url)) return res.status(400).json({ error: "Invalid image URL" });
+  const safeDuration = [5, 10, 15].includes(Number(duration)) ? Number(duration) : 5;
+  const safeResolution = ["1080p", "2k", "4k"].includes(resolution) ? resolution : "1080p";
+  const creditTable = { 5: {"1080p":2,"2k":3,"4k":3}, 10: {"1080p":3,"2k":4,"4k":4}, 15: {"1080p":3,"2k":4,"4k":5} };
+  const creditsNeeded = (creditTable[safeDuration] || creditTable[5])[safeResolution] ?? 2;
 
   const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
   const prof = (await profRes.json())?.[0];
@@ -185,18 +242,10 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
   const genId = gen?.id;
 
   try {
-    const wsBody = {
-      prompt: (prompt || "").trim().slice(0, 2500) || "Cinematic, smooth motion, continue the scene naturally in one continuous shot",
-      image: image_url,
-      resolution: safeResolution,
-      duration: safeDuration,
-      aspect_ratio: safeAspect,
-      generate_audio: true,
-      seed: -1,
-    };
+    const wsBody = { prompt: prompt.trim().slice(0, 3500), image: image_url, duration: safeDuration, resolution: safeResolution, shot_type: "single", enable_prompt_expansion: false, seed: -1 };
     console.log(`WS generate_vid: dur=${safeDuration} res=${safeResolution} credits=${creditsNeeded}`);
 
-    const wsRes = await fetch(`${WS_BASE}/bytedance/seedance-2.5/image-to-video-spicy`, {
+    const wsRes = await fetch(`${WS_BASE}/alibaba/wan-2.6/image-to-video-pro`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${WS_KEY}` },
       body: JSON.stringify(wsBody)
     });
@@ -291,7 +340,7 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const { action, user_token } = body;
   if (!user_token) return res.status(401).json({ error: "Auth required" });
-  if (!["generate_img","generate_vid","status"].includes(action)) return res.status(400).json({ error: "Invalid action" });
+  if (!["generate_img","generate_vid","generate_vid_edit","status"].includes(action)) return res.status(400).json({ error: "Invalid action" });
 
   let userId;
   try { userId = await verifyToken(user_token); }
@@ -304,5 +353,6 @@ export default async function handler(req, res) {
 
   if (action === "generate_img") return generateImg(body, userId, WS_KEY, SERVICE_KEY, res);
   if (action === "generate_vid") return generateVid(body, userId, WS_KEY, SERVICE_KEY, res);
+  if (action === "generate_vid_edit") return generateVidEdit(body, userId, WS_KEY, SERVICE_KEY, res);
   if (action === "status") return pollStatus(body, userId, WS_KEY, SERVICE_KEY, res);
 }

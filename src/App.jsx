@@ -161,6 +161,7 @@ const TEXTS = {
     tab_gallery: "📁 Galería",
     tab_motion: "🎭 Motion",
     tab_director: "🎬 Director",
+    tab_vid_edit: "🎭 Personaje",
     library: "Biblioteca",
     no_gens: "Sin generaciones aún",
     prompt_img: "Describe la imagen que quieres generar...",
@@ -280,6 +281,7 @@ const TEXTS = {
     tab_gallery: "📁 Gallery",
     tab_motion: "🎭 Motion",
     tab_director: "🎬 Director",
+    tab_vid_edit: "🎭 Char Swap",
     library: "Library",
     no_gens: "No generations yet",
     prompt_img: "Describe the image you want to generate...",
@@ -439,7 +441,7 @@ const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"];
 const SAMPLE = ["Luxury perfume bottle on black marble, volumetric lighting, 8K", "Latin woman CEO in modern office, golden hour, shallow DOF", "Gourmet burger floating, ingredients exploding, dark bg, studio light", "Futuristic car in neon-lit Tokyo street, rain reflections, cinematic"];
 
 const P = { LAND: 0, AUTH: 1, DASH: 2, PLANS: 3 };
-const T = { IMG: 0, VID: 1, GAL: 2, MOT: 3, DIR: 4, WS_IMG: 5, WS_VID: 6 };
+const T = { IMG: 0, VID: 1, GAL: 2, MOT: 3, DIR: 4, WS_IMG: 5, WS_VID: 6, VID_EDIT: 7 };
 
 // ─── HOOKS ───
 function useW() {
@@ -472,7 +474,7 @@ function Generating({ type, duration, lang, genStatus }) {
   const phase = genStatus?.phase || "generating";
   const pos = genStatus?.position;
   const elapsed = genStatus?.elapsed || 0;
-  const isVidType = type === T.VID || type === T.WS_VID || type === T.MOT || type === T.DIR;
+  const isVidType = type === T.VID || type === T.WS_VID || type === T.MOT || type === T.DIR || type === T.VID_EDIT;
   const estMin = isVidType ? "2" : "0:15";
   const estMax = isVidType ? "8" : "1";
 
@@ -711,14 +713,22 @@ export default function App() {
   const [wsImgUploading, setWsImgUploading] = useState(false);
   const [wsImgError, setWsImgError] = useState(null);
 
-  // Wavespeed Vid (Seedance 2.5 Spicy I2V)
+  // Wavespeed Vid (WAN 2.6 I2V Pro)
   const [wsVidPrompt, setWsVidPrompt] = useState("");
   const [wsVidImage, setWsVidImage] = useState(null);
   const [wsVidDuration, setWsVidDuration] = useState(5);
-  const [wsVidRes, setWsVidRes] = useState("720p");
-  const [wsVidAspect, setWsVidAspect] = useState("16:9");
+  const [wsVidRes, setWsVidRes] = useState("1080p");
   const [wsVidUploading, setWsVidUploading] = useState(false);
   const [wsVidError, setWsVidError] = useState(null);
+  // ── VID_EDIT (Cambio de Personaje) states ──────────────────────────────────
+  const [vidEditPrompt, setVidEditPrompt] = useState("");
+  const [vidEditVideo, setVidEditVideo] = useState(null);   // { url, preview, name }
+  const [vidEditImages, setVidEditImages] = useState([]);   // [{ url, preview }]
+  const [vidEditDuration, setVidEditDuration] = useState(10);
+  const [vidEditRes, setVidEditRes] = useState("720p");
+  const [vidEditVidUploading, setVidEditVidUploading] = useState(false);
+  const [vidEditImgUploading, setVidEditImgUploading] = useState(false);
+  const [vidEditError, setVidEditError] = useState(null);
   const [genning, setGenning] = useState(false);
   const [genBtnLocked, setGenBtnLocked] = useState(false); // prevents double-click for 5s after submit
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
@@ -2413,8 +2423,9 @@ export default function App() {
                 { k: T.DIR, l: t("tab_director") },
                 { k: T.WS_IMG, l: lang === "es" ? "✨ Img Pro" : "✨ Img Pro" },
                 { k: T.WS_VID, l: lang === "es" ? "🌊 Vid Pro" : "🌊 Vid Pro" },
+                { k: T.VID_EDIT, l: t("tab_vid_edit") },
               ].map(tb => (
-                <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : tb.k === T.DIR ? "rgba(0,240,255,.1)" : tb.k === T.WS_IMG ? "rgba(255,184,0,.1)" : tb.k === T.WS_VID ? "rgba(0,200,255,.1)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : tab === tb.k && tb.k === T.DIR ? "1px solid rgba(0,240,255,.2)" : tab === tb.k && tb.k === T.WS_IMG ? "1px solid rgba(255,184,0,.3)" : tab === tb.k && tb.k === T.WS_VID ? "1px solid rgba(0,200,255,.3)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
+                <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : tb.k === T.DIR ? "rgba(0,240,255,.1)" : tb.k === T.WS_IMG ? "rgba(255,184,0,.1)" : tb.k === T.WS_VID ? "rgba(0,200,255,.1)" : tb.k === T.VID_EDIT ? "rgba(180,74,255,.1)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : tab === tb.k && tb.k === T.DIR ? "1px solid rgba(0,240,255,.2)" : tab === tb.k && tb.k === T.WS_IMG ? "1px solid rgba(255,184,0,.3)" : tab === tb.k && tb.k === T.WS_VID ? "1px solid rgba(0,200,255,.3)" : tab === tb.k && tb.k === T.VID_EDIT ? "1px solid rgba(180,74,255,.3)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
               ))}
             </div>
           ) : (
@@ -2440,8 +2451,9 @@ export default function App() {
                 {[
                   { k: T.WS_IMG, l: "✨ Img Pro" },
                   { k: T.WS_VID, l: "🌊 Vid Pro" },
+                  { k: T.VID_EDIT, l: t("tab_vid_edit") },
                 ].map(tb => (
-                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.WS_IMG ? "rgba(255,184,0,.15)" : "rgba(0,200,255,.12)") : "transparent", border: tab === tb.k ? (tb.k === T.WS_IMG ? "1px solid rgba(255,184,0,.3)" : "1px solid rgba(0,200,255,.3)") : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
+                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.WS_IMG ? "rgba(255,184,0,.15)" : tb.k === T.WS_VID ? "rgba(0,200,255,.12)" : "rgba(180,74,255,.12)") : "transparent", border: tab === tb.k ? (tb.k === T.WS_IMG ? "1px solid rgba(255,184,0,.3)" : tb.k === T.WS_VID ? "1px solid rgba(0,200,255,.3)" : "1px solid rgba(180,74,255,.3)") : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
                 ))}
               </div>
             </div>
@@ -3568,7 +3580,7 @@ export default function App() {
 
           {/* ── Wavespeed Img Pro (Seedream 4.5 Edit) ── */}
           {tab === T.WS_IMG && (() => {
-            const canGen = !genning && !wsImgUploading && wsImgImages.length > 0 && wsImgPrompt.trim() && (profile?.images_remaining ?? 0) >= 2;
+            const canGen = !genning && !wsImgUploading && wsImgImages.length > 0 && wsImgPrompt.trim();
 
             const uploadWsImg = async (file) => {
               if (!file) return;
@@ -3631,7 +3643,7 @@ export default function App() {
               <div style={{ animation: "fadeUp .4s ease" }}>
                 <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 12, background: "rgba(255,184,0,.04)", border: "1px solid rgba(255,184,0,.15)" }}>
                   <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 2px" }}>✨ Imagen Premium Pro</p>
-                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Motor premium · Tipografía nítida · Siempre 2K · 2 créditos" : "Premium engine · Crisp typography · Always 2K · 2 credits"}</p>
+                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Edición avanzada con IA · Tipografía nítida · Alta resolución" : "Advanced AI editing · Crisp typography · High resolution"}</p>
                 </div>
 
                 {/* Image upload grid */}
@@ -3698,7 +3710,7 @@ export default function App() {
 
                 <button onClick={handleWsImgGen} disabled={!canGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#ffb800,#ff8800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(255,184,0,.25)" : "none" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar (2 créditos)" : "✨ Generate (2 credits)")}
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar (1 crédito)" : "✨ Generate (1 credit)")}
                 </button>
 
                 {genResult && !genning && tab === T.WS_IMG && (
@@ -3716,14 +3728,13 @@ export default function App() {
 
           {/* ── Wavespeed Vid Pro (WAN 2.6 I2V Pro) ── */}
           {tab === T.WS_VID && (() => {
-            // Credit table: 480p(4-10=3,11-16=4,17-23=5,24-30=6) 720p(4-10=5,11-16=6,17-23=7,24-30=8) 1080p(4-10=8,11-16=10,17-23=14,24-30=20)
-            const getWsVidCredits = (res, dur) => {
-              if (res === "480p") return dur <= 10 ? 3 : dur <= 16 ? 4 : dur <= 23 ? 5 : 6;
-              if (res === "720p") return dur <= 10 ? 5 : dur <= 16 ? 6 : dur <= 23 ? 7 : 8;
-              return dur <= 10 ? 8 : dur <= 16 ? 10 : dur <= 23 ? 14 : 20; // 1080p
+            const wsVidCreditTable = {
+              5:  { "1080p": 2, "2k": 3, "4k": 3 },
+              10: { "1080p": 3, "2k": 4, "4k": 4 },
+              15: { "1080p": 3, "2k": 4, "4k": 5 },
             };
-            const wsVidCredits = getWsVidCredits(wsVidRes, wsVidDuration);
-            const canGen = !genning && !wsVidUploading && wsVidImage?.url && (profile?.videos_remaining ?? 0) >= wsVidCredits;
+            const wsVidCredits = (wsVidCreditTable[wsVidDuration] || wsVidCreditTable[5])[wsVidRes] ?? 2;
+            const canGen = !genning && !wsVidUploading && wsVidImage?.url && wsVidPrompt.trim() && (profile?.videos_remaining ?? 0) >= wsVidCredits;
 
             const uploadWsVid = async (file) => {
               if (!file) return;
@@ -3758,7 +3769,7 @@ export default function App() {
               try {
                 const r = await fetch("/api/wavespeed", {
                   method: "POST", headers: {"Content-Type":"application/json"},
-                  body: JSON.stringify({ action: "generate_vid", prompt: wsVidPrompt.trim(), image_url: wsVidImage.url, duration: wsVidDuration, resolution: wsVidRes, aspect_ratio: wsVidAspect, user_token: session?.access_token }),
+                  body: JSON.stringify({ action: "generate_vid", prompt: wsVidPrompt.trim(), image_url: wsVidImage.url, duration: wsVidDuration, resolution: wsVidRes, user_token: session?.access_token }),
                 });
                 const data = await r.json();
                 if (data.error) { setGenError(data.error); setGenning(false); return; }
@@ -3766,39 +3777,38 @@ export default function App() {
                 const pollStart = Date.now(); let attempts = 0;
                 const poll = async () => {
                   attempts++;
-                  if (attempts > 200) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
+                  if (attempts > 150) { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); return; }
                   try {
                     const sr = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ action: "status", request_id, type: "video", user_token: session?.access_token, gen_id, credits_used: wsVidCredits }) });
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { setGenStatus({ phase: "done", position: null, elapsed }); await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError("❌ " + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining })); } } catch {} return; }
+                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining })); } } catch {} return; }
                     setGenStatus({ phase: "generating", position: null, elapsed });
                     setTimeout(poll, 5000);
                   } catch { setTimeout(poll, 6000); }
                 };
-                setTimeout(poll, 8000);
+                setTimeout(poll, 5000);
               } catch(e) { setGenError(e.message); setGenning(false); }
             };
 
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
-                {/* Header */}
                 <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 12, background: "rgba(0,200,255,.04)", border: "1px solid rgba(0,200,255,.15)" }}>
                   <p style={{ fontSize: 11, fontWeight: 700, color: "#00c8ff", margin: "0 0 2px" }}>🌊 Video Premium Pro</p>
-                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Video cinemático · Hasta 30 segundos · Alta resolución · Toma continua" : "Cinematic video · Up to 30 seconds · High resolution · Continuous shot"}</p>
+                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Video cinemático desde imagen · Alta resolución · Audio nativo" : "Cinematic video from image · High resolution · Native audio"}</p>
                 </div>
 
-                {/* Image upload — frame inicial */}
+                {/* Image upload */}
                 <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, marginBottom: 6 }}>🖼️ {lang === "es" ? "Frame inicial *" : "Starting frame *"}</p>
-                  <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: isDesk ? 160 : 130, borderRadius: 12, border: wsVidImage ? "1px solid rgba(0,200,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: wsVidImage ? "rgba(0,200,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
+                  <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, marginBottom: 6 }}>{lang === "es" ? "🖼️ Imagen de referencia *" : "🖼️ Reference image *"}</p>
+                  <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 130, borderRadius: 12, border: wsVidImage ? "1px solid rgba(0,200,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: wsVidImage ? "rgba(0,200,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
                     {wsVidImage
                       ? <><img src={wsVidImage.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           {wsVidUploading && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 20, height: 20, border: "2px solid rgba(0,200,255,.3)", borderTop: "2px solid #00c8ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /></div>}
-                          <button onClick={e => { e.preventDefault(); setWsVidImage(null); }} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                          <button onClick={e => { e.preventDefault(); setWsVidImage(null); }} style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 10, cursor: "pointer" }}>×</button>
                         </>
-                      : <><span style={{ fontSize: 28, marginBottom: 6 }}>🖼️</span><span style={{ fontSize: 10, color: "#5a5a70" }}>{lang === "es" ? "Sube el frame inicial" : "Upload starting frame"}</span><span style={{ fontSize: 9, color: "#3a3a50", marginTop: 4 }}>{lang === "es" ? "La cámara arranca desde esta imagen" : "Camera starts from this image"}</span></>}
+                      : <><span style={{ fontSize: 28, marginBottom: 6 }}>🖼️</span><span style={{ fontSize: 10, color: "#5a5a70" }}>{lang === "es" ? "Subí tu imagen" : "Upload your image"}</span></>}
                     <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadWsVid(e.target.files[0])} />
                   </label>
                   {wsVidError && <p style={{ fontSize: 10, color: "#ff4d6a", marginTop: 6 }}>{wsVidError}</p>}
@@ -3806,65 +3816,42 @@ export default function App() {
 
                 {/* Prompt */}
                 <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de la escena" : "Scene description"}</p>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena *" : "Scene description *"}</p>
                   <textarea value={wsVidPrompt} onChange={e => setWsVidPrompt(e.target.value)}
-                    placeholder={lang === "es" ? "Describe el movimiento y la escena. Si no escribís nada, se genera en toma continua natural..." : "Describe motion and scene. Leave empty for natural continuous shot..."}
-                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={2500} />
-                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{wsVidPrompt.length}/2500</p>
+                    placeholder={lang === "es" ? "Describe el movimiento y la escena. Ej: Cámara se aleja lentamente, personaje mira hacia el horizonte, luz dorada de atardecer, cinemático..." : "Describe the motion and scene. E.g. Camera slowly pulls back, character looks toward the horizon, golden sunset light, cinematic..."}
+                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
+                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{wsVidPrompt.length}/3500</p>
                 </div>
 
-                {/* Aspect Ratio */}
+                {/* Resolution */}
                 <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Proporción" : "Aspect ratio"}</p>
+                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Resolución" : "Resolution"}</p>
                   <div style={{ display: "flex", gap: 4 }}>
-                    {[["16:9","16:9"],["9:16","9:16"],["1:1","1:1"],["4:3","4:3"],["3:4","3:4"]].map(([v,l]) => (
-                      <button key={v} onClick={() => setWsVidAspect(v)}
-                        style={{ flex: 1, padding: "7px 2px", fontSize: 10, fontWeight: wsVidAspect === v ? 700 : 400, color: wsVidAspect === v ? "#00c8ff" : "#5a5a70", background: wsVidAspect === v ? "rgba(0,200,255,.08)" : "rgba(255,255,255,.02)", border: wsVidAspect === v ? "1px solid rgba(0,200,255,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                        <RatioShape r={v} active={wsVidAspect === v} color="#00c8ff" />
+                    {[["1080p","HD"],["2k","2K"],["4k","4K"]].map(([v,l]) => (
+                      <button key={v} onClick={() => setWsVidRes(v)} style={{ flex: 1, padding: "7px 4px", fontSize: 10, fontWeight: wsVidRes === v ? 700 : 400, color: wsVidRes === v ? "#00c8ff" : "#5a5a70", background: wsVidRes === v ? "rgba(0,200,255,.08)" : "rgba(255,255,255,.02)", border: wsVidRes === v ? "1px solid rgba(0,200,255,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        <svg width="14" height="10" viewBox="0 0 14 10"><rect x="1" y="1" width="12" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
                         {l}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Resolution */}
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Calidad" : "Quality"}</p>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {[["480p","SD"],["720p","HD"],["1080p","FHD"]].map(([v,l]) => (
-                      <button key={v} onClick={() => setWsVidRes(v)}
-                        style={{ flex: 1, padding: "8px 4px", fontSize: 10, fontWeight: wsVidRes === v ? 700 : 400, color: wsVidRes === v ? "#00c8ff" : "#5a5a70", background: wsVidRes === v ? "rgba(0,200,255,.08)" : "rgba(255,255,255,.02)", border: wsVidRes === v ? "1px solid rgba(0,200,255,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
-                        <div style={{ fontSize: 12, fontWeight: 700 }}>{l}</div>
-                        <div style={{ fontSize: 8, color: wsVidRes === v ? "#00c8ff" : "#3a3a50", marginTop: 2 }}>{v}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Duration slider */}
+                {/* Duration */}
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>{lang === "es" ? "Duración" : "Duration"}</p>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 18, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: "#00c8ff" }}>{wsVidDuration}s</span>
-                      <span style={{ fontSize: 10, color: "#00c8ff", background: "rgba(0,200,255,.08)", border: "1px solid rgba(0,200,255,.2)", borderRadius: 5, padding: "2px 8px", fontWeight: 700 }}>{wsVidCredits} {lang === "es" ? "cred." : "cred."}</span>
+                      <span style={{ fontSize: 16, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: "#00c8ff" }}>{wsVidDuration}s</span>
+                      <span style={{ fontSize: 10, color: "#00c8ff", background: "rgba(0,200,255,.08)", border: "1px solid rgba(0,200,255,.2)", borderRadius: 5, padding: "2px 8px", fontWeight: 700 }}>{wsVidCredits} {lang === "es" ? "créditos" : "credits"}</span>
                     </div>
                   </div>
-                  <input type="range" min={4} max={30} step={1} value={wsVidDuration}
+                  <input type="range" min={5} max={15} step={5} value={wsVidDuration}
                     onChange={e => setWsVidDuration(Number(e.target.value))}
                     style={{ width: "100%", accentColor: "#00c8ff", cursor: "pointer", height: 4 }} />
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-                    <span style={{ fontSize: 9, color: "#3a3a50" }}>4s</span>
-                    <span style={{ fontSize: 9, color: "#3a3a50" }}>10s</span>
-                    <span style={{ fontSize: 9, color: "#3a3a50" }}>16s</span>
-                    <span style={{ fontSize: 9, color: "#3a3a50" }}>23s</span>
-                    <span style={{ fontSize: 9, color: "#3a3a50" }}>30s</span>
+                    {[5,10,15].map(d => <span key={d} style={{ fontSize: 9, color: d === wsVidDuration ? "#00c8ff" : "#3a3a50" }}>{d}s</span>)}
                   </div>
-                  {/* Credit info per resolution */}
-                  <div style={{ marginTop: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(0,200,255,.03)", border: "1px solid rgba(0,200,255,.08)", fontSize: 9, color: "#3a3a50", lineHeight: 1.6 }}>
-                    SD: 3·4·5·6 cr &nbsp;|&nbsp; HD: 5·6·7·8 cr &nbsp;|&nbsp; FHD: 8·10·14·20 cr
-                    <span style={{ color: "#5a5a70" }}> (por rango 4-10s · 11-16s · 17-23s · 24-30s)</span>
-                  </div>
+                  <p style={{ fontSize: 9, color: "#3a3a50", marginTop: 4, textAlign: "center" }}>5s: HD=2 · 2K/4K=3 &nbsp;|&nbsp; 10s: HD=3 · 2K/4K=4 &nbsp;|&nbsp; 15s: HD=3 · 2K=4 · 4K=5</p>
                 </div>
 
                 {/* Credits warning */}
@@ -3872,7 +3859,7 @@ export default function App() {
                   const vidPacks = [{ id: "vid_s", label: "Pack S", amount: 5, price: 12.99 }, { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 }, { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 }];
                   return (
                     <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14 }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 8px" }}>🎬 {lang === "es" ? `Necesitás ${wsVidCredits} créditos` : `Need ${wsVidCredits} credits`}</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 8px" }}>{lang === "es" ? "🎬 Sin créditos de video" : "🎬 Out of video credits"}</p>
                       <div style={{ display: "flex", gap: 6 }}>
                         {vidPacks.map(pk => (
                           <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)} style={{ flex: 1, padding: "8px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
@@ -3886,26 +3873,206 @@ export default function App() {
                   );
                 })()}
 
-                {/* Loading screen */}
                 {genning && (
                   <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}>
                     <Generating type={T.WS_VID} duration={wsVidDuration} lang={lang} genStatus={genStatus} />
                   </div>
                 )}
 
-                {/* Generate button */}
                 <button onClick={handleWsVidGen} disabled={!canGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#00c8ff,#0080ff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(0,200,255,.25)" : "none" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsVidUploading ? "⏳..." : !wsVidImage ? (lang === "es" ? "Sube el frame inicial primero" : "Upload starting frame first") : (profile?.videos_remaining ?? 0) < wsVidCredits ? (lang === "es" ? `Sin créditos (necesitás ${wsVidCredits})` : `Not enough credits (need ${wsVidCredits})`) : (lang === "es" ? `🌊 Generar Video Pro (${wsVidCredits} créditos)` : `🌊 Generate Video Pro (${wsVidCredits} credits)`)}
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsVidUploading ? "⏳..." : !wsVidImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsVidPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.videos_remaining ?? 0) < wsVidCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🌊 Generar Vid Pro (${wsVidCredits} créditos)` : `🌊 Generate Vid Pro (${wsVidCredits} credits)`)}
                 </button>
 
-                {/* Result */}
                 {genResult && !genning && tab === T.WS_VID && (
                   <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,200,255,.2)", animation: "fadeUp .5s ease" }}>
                     <video src={genResult.url} controls autoPlay playsInline style={{ width: "100%", display: "block", borderRadius: "14px 14px 0 0" }} />
                     <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
-                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {lang === "es" ? "Video Pro" : "Pro Video"} · {wsVidDuration}s · {wsVidRes}</span>
+                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {lang === "es" ? "Video Pro" : "Pro Video"}</span>
                       <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-vid-pro-${Date.now()}.mp4`)} style={{ fontSize: 11, color: "#00c8ff", background: "rgba(0,200,255,.08)", border: "1px solid rgba(0,200,255,.2)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Cambio de Personaje (VID_EDIT) ── */}
+          {tab === T.VID_EDIT && (() => {
+            // Credit table: [credits, maxDuration] per resolution
+            const veCreditsTable = {
+              "480p": [[3,12],[7,18],[12,24],[17,30]],
+              "720p": [[10,12],[15,18],[20,24],[25,30]],
+              "1080p":[[15,12],[20,18],[25,24],[30,30]],
+            };
+            const veBuckets = veCreditsTable[vidEditRes] || veCreditsTable["720p"];
+            const veCredits = (veBuckets.find(([,mx]) => vidEditDuration <= mx) || veBuckets[veBuckets.length-1])[0];
+            const canVeGen = !genning && !vidEditVidUploading && !vidEditImgUploading && vidEditVideo?.url && vidEditImages.length > 0 && (profile?.videos_remaining ?? 0) >= veCredits;
+
+            const uploadVeVideo = async (file) => {
+              if (!file) return;
+              setVidEditError(null);
+              if (!file.type.startsWith("video/")) { setVidEditError(lang === "es" ? "Solo videos." : "Videos only."); return; }
+              setVidEditVidUploading(true);
+              try {
+                const dataUrlVid = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(file); });
+                const r = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ data_url: dataUrlVid, user_token: session?.access_token }) });
+                const d = await r.json();
+                if (d.error) throw new Error(d.error);
+                setVidEditVideo({ file, preview: URL.createObjectURL(file), name: file.name, url: d.url });
+              } catch(e) { setVidEditError(e.message); }
+              finally { setVidEditVidUploading(false); }
+            };
+
+            const uploadVeImage = async (file) => {
+              if (!file) return;
+              if (vidEditImages.length >= 10) { setVidEditError(lang === "es" ? "Máximo 10 imágenes." : "Max 10 images."); return; }
+              setVidEditImgUploading(true);
+              try {
+                const dataUrl = await new Promise((res, rej) => {
+                  const img = new Image();
+                  img.onload = () => {
+                    const MAX = 1200; let w = img.width, h = img.height;
+                    if (w > MAX || h > MAX) { if (w > h) { h = Math.round((h/w)*MAX); w = MAX; } else { w = Math.round((w/h)*MAX); h = MAX; } }
+                    const c = document.createElement("canvas"); c.width = w; c.height = h;
+                    c.getContext("2d").drawImage(img, 0, 0, w, h);
+                    res(c.toDataURL("image/jpeg", 0.88));
+                  };
+                  img.onerror = () => rej(new Error("Load failed"));
+                  img.src = URL.createObjectURL(file);
+                });
+                const r = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }) });
+                const d = await r.json();
+                if (d.error) throw new Error(d.error);
+                setVidEditImages(prev => [...prev, { file, preview: URL.createObjectURL(file), url: d.url }]);
+              } catch(e) { setVidEditError(e.message); }
+              finally { setVidEditImgUploading(false); }
+            };
+
+            const handleVidEditGen = async () => {
+              if (!canVeGen) return;
+              setGenning(true); setGenError(null);
+              setGenStatus({ phase: "queued", position: null, elapsed: 0 });
+              try {
+                const body = {
+                  action: "generate_vid_edit",
+                  user_token: session?.access_token,
+                  prompt: vidEditPrompt.trim() || "",
+                  video_url: vidEditVideo.url,
+                  image_urls: vidEditImages.map(i => i.url),
+                  duration: vidEditDuration,
+                  resolution: vidEditRes,
+                };
+                const r = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+                const d = await r.json();
+                if (d.error) throw new Error(d.error);
+                const { request_id, gen_id, credits_used } = d;
+                let elapsed = 0;
+                for (let i = 0; i < 180; i++) {
+                  await new Promise(r => setTimeout(r, 4000));
+                  elapsed += 4;
+                  setGenStatus(s => ({ ...s, phase: "processing", elapsed }));
+                  const sr = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ action: "status", request_id, type: "video", gen_id, credits_used, user_token: session?.access_token }) });
+                  const sd = await sr.json();
+                  if (sd.status === "completed" && sd.url) { setGenResult({ url: sd.url }); break; }
+                  if (sd.status === "failed") throw new Error(sd.error || "Generation failed");
+                  if (sd.queue_position != null) setGenStatus(s => ({ ...s, phase: "queued", position: sd.queue_position }));
+                }
+              } catch(e) { setGenError(e.message); }
+              finally { setGenning(false); }
+            };
+
+            return (
+              <div style={{ animation: "fadeUp .4s ease" }}>
+                <p style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 14, lineHeight: 1.4 }}>
+                  {lang === "es" ? "Reemplazá el personaje de un video con las fotos de referencia." : "Replace the character in a video using reference photos."}
+                </p>
+
+                {/* Video upload */}
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 6 }}>{lang === "es" ? "Video original *" : "Source video *"}</p>
+                  {vidEditVideo ? (
+                    <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", border: "1px solid rgba(180,74,255,.3)" }}>
+                      <video src={vidEditVideo.preview} controls style={{ width: "100%", maxHeight: 200, display: "block", background: "#000" }} />
+                      <button onClick={() => setVidEditVideo(null)} style={{ position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: "50%", background: "rgba(0,0,0,.6)", border: "none", color: "#fff", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                      <div style={{ padding: "6px 12px", fontSize: 10, color: "#5a5a70" }}>{vidEditVideo.name}</div>
+                    </div>
+                  ) : (
+                    <label style={{ display: "block", border: "2px dashed rgba(180,74,255,.25)", borderRadius: 12, padding: "22px 0", textAlign: "center", cursor: vidEditVidUploading ? "wait" : "pointer", background: "rgba(180,74,255,.03)" }}>
+                      <input type="file" accept="video/*" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadVeVideo(f); e.target.value = ""; }} />
+                      <span style={{ fontSize: 22 }}>🎬</span>
+                      <p style={{ fontSize: 12, color: "#8a8a9e", margin: "6px 0 0" }}>{vidEditVidUploading ? (lang === "es" ? "Subiendo..." : "Uploading...") : (lang === "es" ? "Subir video" : "Upload video")}</p>
+                    </label>
+                  )}
+                </div>
+
+                {/* Reference images */}
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 6 }}>{lang === "es" ? `Fotos del personaje * (${vidEditImages.length}/10)` : `Character photos * (${vidEditImages.length}/10)`}</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6 }}>
+                    {vidEditImages.map((img, idx) => (
+                      <div key={idx} style={{ position: "relative", aspectRatio: "1", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(180,74,255,.2)" }}>
+                        <img src={img.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <button onClick={() => setVidEditImages(prev => prev.filter((_,i) => i !== idx))} style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: "50%", background: "rgba(0,0,0,.7)", border: "none", color: "#fff", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>✕</button>
+                      </div>
+                    ))}
+                    {vidEditImages.length < 10 && (
+                      <label style={{ aspectRatio: "1", border: "2px dashed rgba(180,74,255,.2)", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: vidEditImgUploading ? "wait" : "pointer", background: "rgba(180,74,255,.03)" }}>
+                        <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadVeImage(f); e.target.value = ""; }} />
+                        <span style={{ fontSize: 18 }}>{vidEditImgUploading ? "⏳" : "+"}</span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* Prompt */}
+                <div style={{ marginBottom: 12 }}>
+                  <textarea value={vidEditPrompt} onChange={e => setVidEditPrompt(e.target.value)}
+                    placeholder={lang === "es" ? "Descripción opcional — por defecto aplica cambio de personaje conservando movimientos y lip sync." : "Optional prompt — defaults to character swap preserving body movements and lip sync."}
+                    rows={3} style={{ ...inp, resize: "none", lineHeight: 1.5, borderRadius: 12, fontSize: 13 }} />
+                </div>
+
+                {/* Resolution + Duration */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 10, color: "#5a5a70", marginBottom: 4 }}>{lang === "es" ? "Resolución" : "Resolution"}</p>
+                    <select value={vidEditRes} onChange={e => setVidEditRes(e.target.value)} style={{ ...inp, padding: "8px 10px", fontSize: 12 }}>
+                      <option value="480p">480p</option>
+                      <option value="720p">720p</option>
+                      <option value="1080p">1080p</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 10, color: "#5a5a70", marginBottom: 4 }}>{lang === "es" ? `Duración: ${vidEditDuration}s` : `Duration: ${vidEditDuration}s`}</p>
+                    <input type="range" min={5} max={30} step={1} value={vidEditDuration} onChange={e => setVidEditDuration(Number(e.target.value))} style={{ width: "100%", accentColor: "#b44aff" }} />
+                  </div>
+                </div>
+
+                {/* Credit info */}
+                <div style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
+                  <span>{lang === "es" ? `Costo: ${veCredits} créditos de video` : `Cost: ${veCredits} video credits`}</span>
+                  <span style={{ color: (profile?.videos_remaining ?? 0) >= veCredits ? "#6a6" : "#a44" }}>{lang === "es" ? `Disponibles: ${profile?.videos_remaining ?? 0}` : `Available: ${profile?.videos_remaining ?? 0}`}</span>
+                </div>
+
+                {vidEditError && <p style={{ color: "#f55", fontSize: 11, marginBottom: 10 }}>⚠ {vidEditError}</p>}
+
+                {genning && tab === T.VID_EDIT && (
+                  <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}>
+                    <Generating type={T.VID_EDIT} duration={vidEditDuration} lang={lang} genStatus={genStatus} />
+                  </div>
+                )}
+
+                <button onClick={handleVidEditGen} disabled={!canVeGen}
+                  style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canVeGen ? "#fff" : "#3a3a50", background: canVeGen ? "linear-gradient(135deg,#b44aff,#7a00ff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canVeGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canVeGen ? "0 0 22px rgba(180,74,255,.3)" : "none" }}>
+                  {genning ? (lang === "es" ? "Procesando..." : "Processing...") : vidEditVidUploading || vidEditImgUploading ? "⏳..." : !vidEditVideo ? (lang === "es" ? "Subí un video primero" : "Upload a video first") : vidEditImages.length === 0 ? (lang === "es" ? "Agregá al menos una foto" : "Add at least one photo") : (profile?.videos_remaining ?? 0) < veCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Cambiar Personaje (${veCredits} créditos)` : `🎭 Swap Character (${veCredits} credits)`)}
+                </button>
+
+                {genResult && !genning && tab === T.VID_EDIT && (
+                  <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(180,74,255,.3)", animation: "fadeUp .5s ease" }}>
+                    <video src={genResult.url} controls autoPlay playsInline style={{ width: "100%", display: "block", borderRadius: "14px 14px 0 0" }} />
+                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
+                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {lang === "es" ? "Cambio de Personaje" : "Character Swap"}</span>
+                      <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-char-swap-${Date.now()}.mp4`)} style={{ fontSize: 11, color: "#b44aff", background: "rgba(180,74,255,.08)", border: "1px solid rgba(180,74,255,.2)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
                     </div>
                   </div>
                 )}
