@@ -3899,13 +3899,13 @@ export default function App() {
 
           {/* ── Cambio de Personaje (VID_EDIT) ── */}
           {tab === T.VID_EDIT && (() => {
-            // Credit table: [credits, maxDuration] per resolution
+            // Credit table: [credits, maxDuration] per resolution (auto = 720p)
             const veCreditsTable = {
               "480p": [[3,12],[7,18],[12,24],[17,30]],
               "720p": [[10,12],[15,18],[20,24],[25,30]],
               "1080p":[[15,12],[20,18],[25,24],[30,30]],
             };
-            const veBuckets = veCreditsTable[vidEditRes] || veCreditsTable["720p"];
+            const veBuckets = veCreditsTable["720p"];
             const veCredits = (veBuckets.find(([,mx]) => vidEditDuration <= mx) || veBuckets[veBuckets.length-1])[0];
             const canVeGen = !genning && !vidEditVidUploading && !vidEditImgUploading && vidEditVideo?.url && vidEditImages.length > 0 && (profile?.videos_remaining ?? 0) >= veCredits;
 
@@ -3915,11 +3915,24 @@ export default function App() {
               if (!file.type.startsWith("video/")) { setVidEditError(lang === "es" ? "Solo videos." : "Videos only."); return; }
               setVidEditVidUploading(true);
               try {
-                const dataUrlVid = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(file); });
-                const r = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ data_url: dataUrlVid, user_token: session?.access_token }) });
-                const d = await r.json();
-                if (d.error) throw new Error(d.error);
-                setVidEditVideo({ file, preview: URL.createObjectURL(file), name: file.name, url: d.url });
+                // Read video duration from browser
+                const previewUrl = URL.createObjectURL(file);
+                const detectedDuration = await new Promise((res) => {
+                  const vid = document.createElement("video");
+                  vid.preload = "metadata";
+                  vid.onloadedmetadata = () => { res(Math.min(30, Math.max(5, Math.round(vid.duration)))); URL.revokeObjectURL(vid.src); };
+                  vid.onerror = () => res(10);
+                  vid.src = previewUrl;
+                });
+                // Use presigned URL for large video files
+                const initR = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ mime_type: file.type, file_name: file.name, user_token: session?.access_token }) });
+                const initD = await initR.json();
+                if (initD.error) throw new Error(initD.error);
+                // PUT directly to presigned URL
+                const putR = await fetch(initD.upload_url, { method: "PUT", headers: {"Content-Type": file.type}, body: file });
+                if (!putR.ok) throw new Error("Upload failed");
+                setVidEditDuration(detectedDuration);
+                setVidEditVideo({ file, preview: previewUrl, name: file.name, url: initD.file_url });
               } catch(e) { setVidEditError(e.message); }
               finally { setVidEditVidUploading(false); }
             };
@@ -3961,7 +3974,7 @@ export default function App() {
                   video_url: vidEditVideo.url,
                   image_urls: vidEditImages.map(i => i.url),
                   duration: vidEditDuration,
-                  resolution: vidEditRes,
+                  resolution: "720p",
                 };
                 const r = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
                 const d = await r.json();
@@ -3995,7 +4008,7 @@ export default function App() {
                     <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", border: "1px solid rgba(180,74,255,.3)" }}>
                       <video src={vidEditVideo.preview} controls style={{ width: "100%", maxHeight: 200, display: "block", background: "#000" }} />
                       <button onClick={() => setVidEditVideo(null)} style={{ position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: "50%", background: "rgba(0,0,0,.6)", border: "none", color: "#fff", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
-                      <div style={{ padding: "6px 12px", fontSize: 10, color: "#5a5a70" }}>{vidEditVideo.name}</div>
+                      <div style={{ padding: "6px 12px", fontSize: 10, color: "#5a5a70" }}>{vidEditVideo.name} · {vidEditDuration}s</div>
                     </div>
                   ) : (
                     <label style={{ display: "block", border: "2px dashed rgba(180,74,255,.25)", borderRadius: 12, padding: "22px 0", textAlign: "center", cursor: vidEditVidUploading ? "wait" : "pointer", background: "rgba(180,74,255,.03)" }}>
@@ -4032,21 +4045,12 @@ export default function App() {
                     rows={3} style={{ ...inp, resize: "none", lineHeight: 1.5, borderRadius: 12, fontSize: 13 }} />
                 </div>
 
-                {/* Resolution + Duration */}
-                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 10, color: "#5a5a70", marginBottom: 4 }}>{lang === "es" ? "Resolución" : "Resolution"}</p>
-                    <select value={vidEditRes} onChange={e => setVidEditRes(e.target.value)} style={{ ...inp, padding: "8px 10px", fontSize: 12 }}>
-                      <option value="480p">480p</option>
-                      <option value="720p">720p</option>
-                      <option value="1080p">1080p</option>
-                    </select>
+                {/* Auto duration info */}
+                {vidEditVideo && (
+                  <div style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 10, background: "rgba(180,74,255,.06)", border: "1px solid rgba(180,74,255,.15)", borderRadius: 8, padding: "7px 12px" }}>
+                    🎬 {lang === "es" ? `Duración detectada: ${vidEditDuration}s · Resolución: automática` : `Detected duration: ${vidEditDuration}s · Resolution: auto`}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 10, color: "#5a5a70", marginBottom: 4 }}>{lang === "es" ? `Duración: ${vidEditDuration}s` : `Duration: ${vidEditDuration}s`}</p>
-                    <input type="range" min={5} max={30} step={1} value={vidEditDuration} onChange={e => setVidEditDuration(Number(e.target.value))} style={{ width: "100%", accentColor: "#b44aff" }} />
-                  </div>
-                </div>
+                )}
 
                 {/* Credit info */}
                 <div style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
