@@ -3916,12 +3916,23 @@ export default function App() {
               setVidEditVidUploading(true);
               try {
                 const previewUrl = URL.createObjectURL(file);
-                // Detect duration
-                const detectedDuration = await new Promise((res) => {
+                // Detect duration + dimensions
+                const { detectedDuration, detectedRes, detectedAspect } = await new Promise((res) => {
                   const vid = document.createElement("video");
                   vid.preload = "metadata";
-                  vid.onloadedmetadata = () => res(Math.min(30, Math.max(5, Math.round(vid.duration))));
-                  vid.onerror = () => res(10);
+                  vid.onloadedmetadata = () => {
+                    const dur = Math.min(30, Math.max(5, Math.round(vid.duration)));
+                    const w = vid.videoWidth, h = vid.videoHeight;
+                    // Aspect ratio string
+                    const gcd = (a,b) => b ? gcd(b, a%b) : a;
+                    const d = gcd(w, h);
+                    const aspect = `${w/d}:${h/d}`;
+                    // Map to resolution: use short side
+                    const shortSide = Math.min(w, h);
+                    const autoRes = shortSide >= 900 ? "1080p" : shortSide >= 600 ? "720p" : "480p";
+                    res({ detectedDuration: dur, detectedRes: autoRes, detectedAspect: aspect });
+                  };
+                  vid.onerror = () => res({ detectedDuration: 10, detectedRes: "720p", detectedAspect: "16:9" });
                   vid.src = previewUrl;
                 });
                 // Upload directly to Supabase Storage (no size limit via API)
@@ -3945,7 +3956,8 @@ export default function App() {
                 if (!signD.signedURL) throw new Error("Could not get signed URL");
                 const videoUrl = `${SB_URL}/storage/v1${signD.signedURL}`;
                 setVidEditDuration(detectedDuration);
-                setVidEditVideo({ file, preview: previewUrl, name: file.name, url: videoUrl });
+                setVidEditRes(detectedRes);
+                setVidEditVideo({ file, preview: previewUrl, name: file.name, url: videoUrl, aspect: detectedAspect, res: detectedRes });
               } catch(e) { setVidEditError(e.message); }
               finally { setVidEditVidUploading(false); }
             };
@@ -3987,7 +3999,7 @@ export default function App() {
                   video_url: vidEditVideo.url,
                   image_urls: vidEditImages.map(i => i.url),
                   duration: vidEditDuration,
-                  resolution: "720p",
+                  resolution: vidEditRes,
                 };
                 const r = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
                 const d = await r.json();
@@ -4061,7 +4073,7 @@ export default function App() {
                 {/* Auto duration info */}
                 {vidEditVideo && (
                   <div style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 10, background: "rgba(180,74,255,.06)", border: "1px solid rgba(180,74,255,.15)", borderRadius: 8, padding: "7px 12px" }}>
-                    🎬 {lang === "es" ? `Duración detectada: ${vidEditDuration}s · Resolución: automática` : `Detected duration: ${vidEditDuration}s · Resolution: auto`}
+                    🎬 {lang === "es" ? `Duración: ${vidEditDuration}s · Aspecto: ${vidEditVideo.aspect || "auto"} · Calidad: ${vidEditRes}` : `Duration: ${vidEditDuration}s · Aspect: ${vidEditVideo.aspect || "auto"} · Quality: ${vidEditRes}`}
                   </div>
                 )}
 
