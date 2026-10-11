@@ -3926,7 +3926,9 @@ export default function App() {
                 });
                 // Upload directly to Supabase Storage (no size limit via API)
                 const ext = file.name.split(".").pop() || "mp4";
-                const path = `${session.user.id}/${Date.now()}.${ext}`;
+                const uid = session?.user?.id || profile?.userId;
+                if (!uid) throw new Error("Not authenticated");
+                const path = `${uid}/${Date.now()}.${ext}`;
                 const sbUp = await fetch(`${SB_URL}/storage/v1/object/motion-refs/${path}`, {
                   method: "POST",
                   headers: { apikey: SB_KEY, Authorization: `Bearer ${session.access_token}`, "Content-Type": file.type, "x-upsert": "true" },
