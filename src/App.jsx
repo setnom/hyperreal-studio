@@ -3915,24 +3915,36 @@ export default function App() {
               if (!file.type.startsWith("video/")) { setVidEditError(lang === "es" ? "Solo videos." : "Videos only."); return; }
               setVidEditVidUploading(true);
               try {
-                // Read video duration from browser
                 const previewUrl = URL.createObjectURL(file);
+                // Detect duration
                 const detectedDuration = await new Promise((res) => {
                   const vid = document.createElement("video");
                   vid.preload = "metadata";
-                  vid.onloadedmetadata = () => { res(Math.min(30, Math.max(5, Math.round(vid.duration)))); URL.revokeObjectURL(vid.src); };
+                  vid.onloadedmetadata = () => res(Math.min(30, Math.max(5, Math.round(vid.duration))));
                   vid.onerror = () => res(10);
                   vid.src = previewUrl;
                 });
-                // Use presigned URL for large video files
-                const initR = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ mime_type: file.type, file_name: file.name, user_token: session?.access_token }) });
-                const initD = await initR.json();
-                if (initD.error) throw new Error(initD.error);
-                // PUT directly to presigned URL
-                const putR = await fetch(initD.upload_url, { method: "PUT", headers: {"Content-Type": file.type}, body: file });
-                if (!putR.ok) throw new Error("Upload failed");
+                // Read as base64
+                const dataUrl = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(file); });
+                let videoUrl;
+                if (dataUrl.length <= 3 * 1024 * 1024) {
+                  // Small enough — upload via API
+                  const r = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }) });
+                  const d = await r.json();
+                  if (d.error) throw new Error(d.error);
+                  videoUrl = d.url;
+                } else {
+                  // Large — presigned PUT
+                  const ext = file.name.split(".").pop() || "mp4";
+                  const initR = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ mime_type: file.type, file_name: `ve_video.${ext}`, user_token: session?.access_token }) });
+                  const initD = await initR.json();
+                  if (!initD.upload_url) throw new Error(initD.error || "No upload URL");
+                  const putR = await fetch(initD.upload_url, { method: "PUT", headers: {"Content-Type": file.type}, body: file });
+                  if (!putR.ok) throw new Error(`Upload failed: ${putR.status}`);
+                  videoUrl = initD.file_url;
+                }
                 setVidEditDuration(detectedDuration);
-                setVidEditVideo({ file, preview: previewUrl, name: file.name, url: initD.file_url });
+                setVidEditVideo({ file, preview: previewUrl, name: file.name, url: videoUrl });
               } catch(e) { setVidEditError(e.message); }
               finally { setVidEditVidUploading(false); }
             };
