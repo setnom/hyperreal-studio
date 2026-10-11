@@ -3905,7 +3905,7 @@ export default function App() {
               "720p": [[10,12],[15,18],[20,24],[25,30]],
               "1080p":[[15,12],[20,18],[25,24],[30,30]],
             };
-            const veBuckets = veCreditsTable["720p"];
+            const veBuckets = veCreditsTable[vidEditRes] || veCreditsTable["720p"];
             const veCredits = (veBuckets.find(([,mx]) => vidEditDuration <= mx) || veBuckets[veBuckets.length-1])[0];
             const canVeGen = !genning && !vidEditVidUploading && !vidEditImgUploading && vidEditVideo?.url && vidEditImages.length > 0 && (profile?.videos_remaining ?? 0) >= veCredits;
 
