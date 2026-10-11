@@ -4070,12 +4070,24 @@ export default function App() {
                     rows={3} style={{ ...inp, resize: "none", lineHeight: 1.5, borderRadius: 12, fontSize: 13 }} />
                 </div>
 
-                {/* Auto duration info */}
+                {/* Auto duration + aspect info */}
                 {vidEditVideo && (
                   <div style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 10, background: "rgba(180,74,255,.06)", border: "1px solid rgba(180,74,255,.15)", borderRadius: 8, padding: "7px 12px" }}>
-                    🎬 {lang === "es" ? `Duración: ${vidEditDuration}s · Aspecto: ${vidEditVideo.aspect || "auto"} · Calidad: ${vidEditRes}` : `Duration: ${vidEditDuration}s · Aspect: ${vidEditVideo.aspect || "auto"} · Quality: ${vidEditRes}`}
+                    🎬 {lang === "es" ? `Duración: ${vidEditDuration}s · Aspecto: ${vidEditVideo.aspect || "auto"}` : `Duration: ${vidEditDuration}s · Aspect: ${vidEditVideo.aspect || "auto"}`}
                   </div>
                 )}
+
+                {/* Quality selector */}
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 6 }}>{lang === "es" ? "Calidad de salida" : "Output quality"}</p>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {[["480p", lang === "es" ? "Rápido" : "Fast"], ["720p", lang === "es" ? "Recomendado" : "Recommended"], ["1080p", "HD"]].map(([q, label]) => (
+                      <button key={q} onClick={() => setVidEditRes(q)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: vidEditRes === q ? 700 : 400, color: vidEditRes === q ? "#fff" : "#5a5a70", background: vidEditRes === q ? "rgba(180,74,255,.2)" : "rgba(255,255,255,.03)", border: vidEditRes === q ? "1px solid rgba(180,74,255,.4)" : "1px solid rgba(255,255,255,.06)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
+                        {q}<br/><span style={{ fontSize: 9, opacity: .7 }}>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 {/* Credit info */}
                 <div style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
