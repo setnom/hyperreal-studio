@@ -787,12 +787,13 @@ export default function App() {
     }
   }, [tab, profile?.plan]);
 
-  // Close top-up menu on outside click
+  // Close top-up menu on outside click (setTimeout avoids same-event close)
   useEffect(() => {
     if (!showTopUpMenu) return;
+    let timer;
     const close = () => setShowTopUpMenu(false);
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
+    timer = setTimeout(() => document.addEventListener("click", close), 0);
+    return () => { clearTimeout(timer); document.removeEventListener("click", close); };
   }, [showTopUpMenu]);
 
   // Auto-redirect logged-in users away from landing page — only if not mid-load
@@ -2359,7 +2360,7 @@ export default function App() {
         <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 16, background: `${hasPlan ? planData.color : "#5a5a70"}12`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}30`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>{t("plan_label")} {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}</span>
         {hasPlan && <span style={{ display: "inline-block", animation: "nudge 4s ease-in-out 3s infinite" }}><button onClick={() => setPage(P.PLANS)} style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, boxShadow: "0 0 8px rgba(0,255,136,.2)" }}>{t("change_plan")}</button></span>}
         {hasPlan && (
-          <span style={{ display: "inline-block", position: "relative", animation: "nudge 4s ease-in-out 1.5s infinite" }}>
+          <span style={{ display: "inline-block", position: "relative" }}>
             <button onClick={() => setShowTopUpMenu(v => !v)} style={{ fontSize: 10, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, boxShadow: "0 0 10px rgba(255,184,0,.45)" }}>{t("top_up")} ▾</button>
             {showTopUpMenu && (
               <div style={{ position: "absolute", top: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", zIndex: 999, background: "#16162a", border: "1px solid rgba(255,184,0,.3)", borderRadius: 12, padding: 12, width: 260, boxShadow: "0 8px 32px rgba(0,0,0,.6)" }} onClick={e => e.stopPropagation()}>
