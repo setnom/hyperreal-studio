@@ -4097,6 +4097,38 @@ export default function App() {
 
                 {vidEditError && <p style={{ color: "#f55", fontSize: 11, marginBottom: 10 }}>⚠ {vidEditError}</p>}
 
+                {/* Video pack section when credits insufficient */}
+                {(profile?.videos_remaining ?? 0) < veCredits && (() => {
+                  const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
+                  const vidPacks = [
+                    { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
+                    { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 },
+                    { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 },
+                  ];
+                  return (
+                    <div style={{ padding: "14px", borderRadius: 12, background: "rgba(180,74,255,.06)", border: "1px solid rgba(180,74,255,.2)", marginBottom: 14 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>{lang === "es" ? "🎭 Sin créditos suficientes" : "🎭 Not enough credits"}</p>
+                      <p style={{ fontSize: 11, color: "#8a8a9e", margin: "0 0 10px" }}>{lang === "es" ? `Necesitás ${veCredits} créditos · Tenés ${profile?.videos_remaining ?? 0}` : `Need ${veCredits} credits · You have ${profile?.videos_remaining ?? 0}`}</p>
+                      {isPackEligible ? (
+                        <>
+                          <p style={{ fontSize: 11, color: "#8a8a9e", margin: "0 0 8px" }}>{lang === "es" ? "Recargá créditos de video:" : "Top up video credits:"}</p>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {vidPacks.map(pk => (
+                              <button key={pk.id} onClick={() => openPack(pk.id, profile?.email || session?.user?.email)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: 700, color: "#fff", background: "rgba(180,74,255,.15)", border: "1px solid rgba(180,74,255,.35)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
+                                {pk.label}<br/><span style={{ fontSize: 10, opacity: .8 }}>{pk.amount} vid</span><br/><span style={{ fontSize: 10, color: "#b44aff" }}>${pk.price}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", padding: "10px", fontSize: 12, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg,#b44aff,#7a00ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
+                          {lang === "es" ? "⬆️ Mejorar plan" : "⬆️ Upgrade plan"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {genning && tab === T.VID_EDIT && (
                   <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}>
                     <Generating type={T.VID_EDIT} duration={vidEditDuration} lang={lang} genStatus={genStatus} />
