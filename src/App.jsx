@@ -731,6 +731,7 @@ export default function App() {
   const [vidEditVidUploading, setVidEditVidUploading] = useState(false);
   const [vidEditImgUploading, setVidEditImgUploading] = useState(false);
   const [vidEditError, setVidEditError] = useState(null);
+  const [showTopUpMenu, setShowTopUpMenu] = useState(false);
   const [genning, setGenning] = useState(false);
   const [genBtnLocked, setGenBtnLocked] = useState(false); // prevents double-click for 5s after submit
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
@@ -785,6 +786,14 @@ export default function App() {
       if (motionDur > maxDur) setMotionDur(maxDur);
     }
   }, [tab, profile?.plan]);
+
+  // Close top-up menu on outside click
+  useEffect(() => {
+    if (!showTopUpMenu) return;
+    const close = () => setShowTopUpMenu(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showTopUpMenu]);
 
   // Auto-redirect logged-in users away from landing page — only if not mid-load
   useEffect(() => {
@@ -2349,7 +2358,33 @@ export default function App() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 16, background: `${hasPlan ? planData.color : "#5a5a70"}12`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}30`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>{t("plan_label")} {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}</span>
         {hasPlan && <span style={{ display: "inline-block", animation: "nudge 4s ease-in-out 3s infinite" }}><button onClick={() => setPage(P.PLANS)} style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, boxShadow: "0 0 8px rgba(0,255,136,.2)" }}>{t("change_plan")}</button></span>}
-        {hasPlan && <span style={{ display: "inline-block", animation: "nudge 4s ease-in-out 1.5s infinite" }}><button onClick={() => { const pk = tab === T.IMG ? "img_s" : "vid_s"; openPack(pk, profile?.email || session?.user?.email); }} style={{ fontSize: 10, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, boxShadow: "0 0 10px rgba(255,184,0,.45)" }}>{t("top_up")}</button></span>}
+        {hasPlan && (
+          <span style={{ display: "inline-block", position: "relative", animation: "nudge 4s ease-in-out 1.5s infinite" }}>
+            <button onClick={() => setShowTopUpMenu(v => !v)} style={{ fontSize: 10, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, boxShadow: "0 0 10px rgba(255,184,0,.45)" }}>{t("top_up")} ▾</button>
+            {showTopUpMenu && (
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", zIndex: 999, background: "#16162a", border: "1px solid rgba(255,184,0,.3)", borderRadius: 12, padding: 12, width: 260, boxShadow: "0 8px 32px rgba(0,0,0,.6)" }} onClick={e => e.stopPropagation()}>
+                <div style={{ position: "absolute", top: -6, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderBottom: "6px solid rgba(255,184,0,.3)" }} />
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 8px" }}>🖼️ {lang === "es" ? "Créditos de imagen" : "Image credits"}</p>
+                <div style={{ display: "flex", gap: 5, marginBottom: 10 }}>
+                  {[["img_s",20,"$5.99"],["img_m",50,"$12.99"],["img_l",120,"$27.99"]].map(([id,amt,price]) => (
+                    <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "7px 3px", fontSize: 10, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>
+                      {amt} img<br/><span style={{ fontSize: 9 }}>{price}</span>
+                    </button>
+                  ))}
+                </div>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#b44aff", margin: "0 0 8px" }}>🎬 {lang === "es" ? "Créditos de video" : "Video credits"}</p>
+                <div style={{ display: "flex", gap: 5 }}>
+                  {[["vid_s",5,"$12.99"],["vid_m",12,"$27.99"],["vid_l",30,"$59.99"]].map(([id,amt,price]) => (
+                    <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "7px 3px", fontSize: 10, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg,#b44aff,#7a00ff)", border: "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>
+                      {amt} vid<br/><span style={{ fontSize: 9 }}>{price}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setShowTopUpMenu(false)} style={{ position: "absolute", top: 6, right: 8, background: "none", border: "none", color: "#5a5a70", fontSize: 14, cursor: "pointer", lineHeight: 1 }}>×</button>
+              </div>
+            )}
+          </span>
+        )}
       </div>
 
       {/* Dashboard layout */}
