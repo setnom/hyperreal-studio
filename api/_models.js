@@ -60,7 +60,10 @@ export const VIDEO_MODELS = [
   // ── Seedance ──
   { id: "seedance25", family: "Seedance", name: "Seedance 2.5", badge: "Top", kind: "seedance", category: "create",
     durRange: [4, 30], aspects: ASPECTS,
-    res: { "480p": { perSec: 19, fal: 0.2205, vin: 12, falVin: 0.1323 }, "720p": { perSec: 40, fal: 0.473, vin: 24, falVin: 0.2838 } }, defRes: "720p", billing: "sum",
+    // Priced for ≥40% margin on monthly plans ($0.025/credit) per Juan's decision (Nov 2026)
+    res: { "480p":  { perSec: 15, fal: 0.2205, vin: 9,  falVin: 0.1323 },
+           "720p":  { perSec: 32, fal: 0.473,  vin: 19, falVin: 0.2838 },
+           "1080p": { perSec: 78, fal: 1.164,  vin: 47, falVin: 0.6984 } }, defRes: "720p", billing: "sum",
     modes: [
       { id: "frames", frames: 2, endFrame: true },
       { id: "refs",   images: 9, videos: 3, audios: 3, videoSec: 15, hint: { es: "Imagen, video o audio · @Image1 @Video1 @Audio1", en: "Image, video or audio · @Image1 @Video1 @Audio1" } },
@@ -69,8 +72,8 @@ export const VIDEO_MODELS = [
     ep: { t2v: "bytedance/seedance-2.5/text-to-video", i2v: "bytedance/seedance-2.5/image-to-video", ref: "bytedance/seedance-2.5/reference-to-video" } },
   { id: "seedance25_draft", family: "Seedance", name: "Seedance 2.5 Draft", badge: "Borrador", kind: "seedance", category: "create", draft: true,
     durRange: [4, 30], aspects: ASPECTS,
-    res: { "480p": { perSec: 19, fal: 0.2205, vin: 12, falVin: 0.1323 } }, defRes: "480p", billing: "sum",
-    complete: { perSec: 98, fal: 1.164, ep: "bytedance/seedance-2.5/draft/complete" },
+    res: { "480p": { perSec: 15, fal: 0.2205, vin: 9, falVin: 0.1323 } }, defRes: "480p", billing: "sum",
+    complete: { perSec: 78, fal: 1.164, ep: "bytedance/seedance-2.5/draft/complete" },
     modes: [
       { id: "refs",   images: 9, videos: 3, audios: 3, videoSec: 15, hint: { es: "Imagen, video o audio", en: "Image, video or audio" } },
       { id: "frames", frames: 2, endFrame: true },

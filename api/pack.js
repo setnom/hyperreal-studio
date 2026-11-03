@@ -4,9 +4,11 @@ import { IMG_UNIT, VID_UNIT } from './_credits.js';
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
+// amount (legacy units) → accepted Stripe totals in cents. images ×8 credits, videos ×60 credits.
+// Large packs (Nov 2026): 1200 cr $39.99 · 1800 cr $57.99 · 3000 cr $89.99 — old prices kept so in-flight purchases still apply.
 const PACK_AMOUNTS_CENTS = {
-  images: { 20: 599, 50: 1299, 120: 2799 },
-  videos: { 5: 1299, 12: 2799, 30: 5999 },
+  images: { 20: [599], 50: [1299], 120: [2799] },
+  videos: { 5: [1299], 12: [2799], 20: [3999], 30: [5799, 5999], 50: [8999] },
 };
 
 async function verifyToken(user_token) {
@@ -40,7 +42,9 @@ export default async function handler(req, res) {
   if (!user_token) return res.status(401).json({ error: "Auth required" });
 
   const amountNum = parseInt(amount);
-  const expectedCents = PACK_AMOUNTS_CENTS[type]?.[amountNum];
+  const allowedCents = PACK_AMOUNTS_CENTS[type]?.[amountNum] || [];
+  const expectedCents = allowedCents[0];
+  const centsOk = (c) => allowedCents.includes(c);
   if (!expectedCents) return res.status(400).json({ error: `Invalid pack: ${type} x${amount}` });
 
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -84,7 +88,7 @@ export default async function handler(req, res) {
       const session = await stripe.checkout.sessions.retrieve(session_id);
       console.log(`Session: status=${session.payment_status} amount=${session.amount_total} expected=${expectedCents}`);
 
-      if (session.payment_status === "paid" && session.amount_total === expectedCents) {
+      if (session.payment_status === "paid" && centsOk(session.amount_total)) {
         const paymentId = session.payment_intent || session_id;
 
         if (processedPayments.includes(paymentId)) {
@@ -117,7 +121,7 @@ export default async function handler(req, res) {
         for (const pi of pis.data) {
           if (pi.status !== "succeeded") continue;
           if (Date.now() / 1000 - pi.created > WINDOW) continue;
-          if (pi.amount !== expectedCents) continue;
+          if (!centsOk(pi.amount)) continue;
           if (processedPayments.includes(pi.id)) {
             return res.status(409).json({ error: "This payment has already been applied to your account." });
           }
@@ -132,7 +136,7 @@ export default async function handler(req, res) {
         for (const s of sessions.data) {
           if (s.payment_status !== "paid") continue;
           if (Date.now() / 1000 - s.created > WINDOW) continue;
-          if (s.amount_total !== expectedCents) continue;
+          if (!centsOk(s.amount_total)) continue;
           const pid = s.payment_intent || s.id;
           if (processedPayments.includes(pid)) {
             return res.status(409).json({ error: "This payment has already been applied to your account." });

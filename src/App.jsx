@@ -60,9 +60,9 @@ const PACKS = {
   img_s:  { link: "https://buy.stripe.com/bJeaEX9PkaCdbq77zVeME0L", type: "images", amount: 20,  price: 5.99,  label: "Pack S", emoji: "📦" },
   img_m:  { link: "https://buy.stripe.com/fZu9AT2mS4dP1Px3jFeME0M", type: "images", amount: 50,  price: 12.99, label: "Pack M", emoji: "📦" },
   img_l:  { link: "https://buy.stripe.com/bJe6oHbXsh0BgKrg6reME0N", type: "images", amount: 120, price: 27.99, label: "Pack L", emoji: "📦" },
-  vid_s:  { link: "https://buy.stripe.com/6oUaEXe5A11D3XFf2neME0O", type: "videos", amount: 5,   price: 12.99, label: "Pack S", emoji: "🎬" },
-  vid_m:  { link: "https://buy.stripe.com/cNi4gz8Lgh0B2TBdYjeME0P", type: "videos", amount: 12,  price: 27.99, label: "Pack M", emoji: "🎬" },
-  vid_l:  { link: "https://buy.stripe.com/3cI3cv9Pk9y9dyfbQbeME0Q",              type: "videos", amount: 30,  price: 59.99, label: "Pack L", emoji: "🎬" },
+  vid_s:  { link: "https://buy.stripe.com/6oUaEXe5A11D3XFf2neME0O", type: "videos", amount: 20,  price: 39.99, label: "Pack S", emoji: "🎬" },
+  vid_m:  { link: "https://buy.stripe.com/cNi4gz8Lgh0B2TBdYjeME0P", type: "videos", amount: 30,  price: 57.99, label: "Pack M", emoji: "🎬" },
+  vid_l:  { link: "https://buy.stripe.com/3cI3cv9Pk9y9dyfbQbeME0Q",              type: "videos", amount: 50,  price: 89.99, label: "Pack L", emoji: "🎬" },
 };
 
 // Plans that can purchase extra packs (basic and above)
@@ -3030,7 +3030,7 @@ export default function App() {
                 </div>
                 <p style={{ fontSize: 11, fontWeight: 700, color: "#b44aff", margin: "0 0 10px", letterSpacing: .5 }}>⚡ {lang === "es" ? "Packs grandes" : "Large packs"}</p>
                 <div style={{ display: "flex", gap: 6 }}>
-                  {[["vid_s",5,"$12.99"],["vid_m",12,"$27.99"],["vid_l",30,"$59.99"]].map(([id,amt,price]) => (
+                  {[["vid_s",20,"$39.99"],["vid_m",30,"$57.99"],["vid_l",50,"$89.99"]].map(([id,amt,price]) => (
                     <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "9px 4px", fontSize: 10, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg,#b44aff,#7a00ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", lineHeight: 1.4 }}>
                       {amt * VID_UNIT} cr<br/><span style={{ fontSize: 9, opacity: .8 }}>{price}</span>
                     </button>
@@ -3168,9 +3168,9 @@ export default function App() {
                   { id: "img_l", label: "Pack L", amount: 120, price: 27.99 },
                 ];
                 const vidPacks = [
-                  { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
-                  { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 },
-                  { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 },
+                  { id: "vid_s", label: "Pack S", amount: 20, price: 39.99 },
+                  { id: "vid_m", label: "Pack M", amount: 30, price: 57.99 },
+                  { id: "vid_l", label: "Pack L", amount: 50, price: 89.99 },
                 ];
                 const packs = isImg ? imgPacks : vidPacks;
                 return (
@@ -3533,9 +3533,9 @@ export default function App() {
                 {hasPlan && (profile?.credits ?? 0) < motionCredits && (() => {
                   const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
                   const vidPacks = [
-                    { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
-                    { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 },
-                    { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 },
+                    { id: "vid_s", label: "Pack S", amount: 20, price: 39.99 },
+                    { id: "vid_m", label: "Pack M", amount: 30, price: 57.99 },
+                    { id: "vid_l", label: "Pack L", amount: 50, price: 89.99 },
                   ];
                   return (
                     <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
@@ -3971,9 +3971,9 @@ export default function App() {
                 {hasPlan && (profile?.credits ?? 0) < dirCredits && (() => {
                   const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
                   const vidPacks = [
-                    { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
-                    { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 },
-                    { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 },
+                    { id: "vid_s", label: "Pack S", amount: 20, price: 39.99 },
+                    { id: "vid_m", label: "Pack M", amount: 30, price: 57.99 },
+                    { id: "vid_l", label: "Pack L", amount: 50, price: 89.99 },
                   ];
                   return (
                     <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
@@ -4180,9 +4180,9 @@ export default function App() {
                   </div>
                 )}
 
-                <button onClick={handleWsImgGen} disabled={!canGen}
+                <button onClick={(profile?.credits ?? 0) < 18 ? () => (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? setShowTopUpMenu(true) : setPage(P.PLANS)) : handleWsImgGen} disabled={(profile?.credits ?? 0) >= 18 && !canGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#ffb800,#ff8800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(255,184,0,.25)" : "none" }}>
-                  {(profile?.credits ?? 0) < 18 && !genning ? (lang === "es" ? "Sin créditos suficientes (18 necesarios)" : "Not enough credits (18 needed)") : genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar · ⚡ 18 créditos" : "✨ Generate · ⚡ 18 credits")}
+                  {(profile?.credits ?? 0) < 18 && !genning ? (lang === "es" ? "⚡ Recargar créditos · necesitas 18" : "⚡ Top up credits · need 18") : genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar · ⚡ 18 créditos" : "✨ Generate · ⚡ 18 credits")}
                 </button>
 
                 {genResult && !genning && tab === T.WS_IMG && (
@@ -4328,7 +4328,7 @@ export default function App() {
 
                 {/* Credits warning */}
                 {hasPlan && (profile?.credits ?? 0) < wsVidCredits && (() => {
-                  const vidPacks = [{ id: "vid_s", label: "Pack S", amount: 5, price: 12.99 }, { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 }, { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 }];
+                  const vidPacks = [{ id: "vid_s", label: "Pack S", amount: 20, price: 39.99 }, { id: "vid_m", label: "Pack M", amount: 30, price: 57.99 }, { id: "vid_l", label: "Pack L", amount: 50, price: 89.99 }];
                   return (
                     <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14 }}>
                       <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 8px" }}>{lang === "es" ? "⚡ Sin créditos suficientes" : "⚡ Not enough credits"}</p>
@@ -4572,9 +4572,9 @@ export default function App() {
                 {/* Video pack section when credits insufficient */}
                 {(profile?.credits ?? 0) < veCredits && (() => {
                   const vidPacks = [
-                    { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
-                    { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 },
-                    { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 },
+                    { id: "vid_s", label: "Pack S", amount: 20, price: 39.99 },
+                    { id: "vid_m", label: "Pack M", amount: 30, price: 57.99 },
+                    { id: "vid_l", label: "Pack L", amount: 50, price: 89.99 },
                   ];
                   return (
                     <div style={{ padding: "14px", borderRadius: 12, background: "rgba(255,184,0,.06)", border: "1px solid rgba(255,184,0,.25)", marginBottom: 14 }}>
@@ -4622,11 +4622,12 @@ export default function App() {
           {(tab === T.IMG || tab === T.VID) && (() => {
             const jobLimit = ({ test: 1, basic: 2, pro: 3, creator: 4 })[profile?.plan] || 1;
             const atLimit = activeJobs.length >= jobLimit;
+            const needTopUp = hasPlan && ((tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost));
             return (
             <div style={{ padding: "12px 14px 16px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0d0d14", flexShrink: 0 }}>
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || atLimit || (tab === T.VID && curVidBlocked) || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost))}
+              <button onClick={!hasPlan ? () => setPage(P.PLANS) : needTopUp ? () => (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? setShowTopUpMenu(true) : setPage(P.PLANS)) : handleGen} disabled={!needTopUp && hasPlan && (genBtnLocked || atLimit || (tab === T.VID && curVidBlocked) || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost))}
                 style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
-                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? curImgCost : curVidCost; const have = profile?.credits ?? 0; const vLabel = curVidModel.draft ? (lang === "es" ? "Generar borrador" : "Generate draft") : (lang === "es" ? "Generar" : "Generate"); return have < c ? (lang === "es" ? `Sin créditos suficientes (${c} necesarios)` : `Not enough credits (${c} needed)`) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : vLabel} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : vLabel} · ⚡ ${c}`); })()}
+                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? curImgCost : curVidCost; const have = profile?.credits ?? 0; const vLabel = curVidModel.draft ? (lang === "es" ? "Generar borrador" : "Generate draft") : (lang === "es" ? "Generar" : "Generate"); return have < c ? (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? (lang === "es" ? `⚡ Recargar créditos · necesitas ${c}` : `⚡ Top up credits · need ${c}`) : (lang === "es" ? `Mejorar plan · necesitas ${c} créditos` : `Upgrade plan · need ${c} credits`)) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : vLabel} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : vLabel} · ⚡ ${c}`); })()}
               </button>
               {activeJobs.length > 0 && <div style={{ marginTop: 9, fontSize: 11, color: "#6a6a82", textAlign: "center" }}>{lang === "es" ? `${activeJobs.length}/${jobLimit} generando · puedes seguir creando` : `${activeJobs.length}/${jobLimit} generating · keep creating`}</div>}
               {genError && <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 7, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", textAlign: "center" }}>
