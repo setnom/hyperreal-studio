@@ -59,7 +59,8 @@ export default async function handler(req, res) {
 
   const safeDuration = [5,6,7,8,9,10,11,12,13,14,15].includes(Number(duration)) ? Number(duration) : 5;
   const safeAspect = ["9:16","16:9","1:1","4:3","3:4","21:9"].includes(aspect_ratio) ? aspect_ratio : "9:16";
-  const creditsNeeded = COSTS.legacyVideo(calcCredits(safeDuration)); // 180 / 240 / 300
+  // Seedance 2.0 720p ≈ $0.303/s → 26 credits/s keeps ≥40% margin; never cheaper than the old table
+  const creditsNeeded = Math.max(COSTS.legacyVideo(calcCredits(safeDuration)), 26 * safeDuration);
 
   let authUser;
   try { authUser = await verifyToken(user_token); }

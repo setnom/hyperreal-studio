@@ -1,4 +1,5 @@
-import { COSTS, deductCredits, addCredits, insufficientMsg } from "./_credits.js";
+import { deductCredits, addCredits, insufficientMsg } from "./_credits.js";
+import { VIDEO_MODELS, IMAGE_MODELS, findImageModel, videoCredits, imageCredits } from "./_models.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
@@ -77,6 +78,17 @@ async function verifyToken(user_token) {
   return user.id;
 }
 
+const ALLOWED_MEDIA_HOSTS = [
+  "pygcsyqahhdtmwmqklnl.supabase.co", "storage.googleapis.com",
+  "fal.run", "cdn.fal.run", "v3b.fal.media", "v2.fal.media", "fal.media", "nanobanano.studio",
+];
+function isSafeImageUrl(u) {
+  try {
+    const p = new URL(u);
+    return p.protocol === "https:" && ALLOWED_MEDIA_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("." + h));
+  } catch { return false; }
+}
+
 function sanitizePrompt(prompt) {
   if (typeof prompt !== "string") return "";
   return prompt.replace(/[\x00-\x1F\x7F]/g, " ").trim().slice(0, MAX_PROMPT_LEN);
@@ -96,7 +108,7 @@ export default async function handler(req, res) {
   if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
   const { type, prompt: rawPrompt, user_prompt: rawUserPrompt, aspect_ratio, style_id, image_quality, duration, audio,
-          image_urls, start_frame, end_frame, multishot, max_realism, user_token } = req.body || {};
+          image_urls, start_frame, end_frame, multishot, max_realism, model_id, video_url, user_token } = req.body || {};
 
   // Validate style_id against allowed values only
   const VALID_STYLE_IDS = ["photorealistic", "cinematic", "product", "portrait", "pixar", "ads", "neutral", "restore", "colorize"];
@@ -161,7 +173,29 @@ export default async function handler(req, res) {
     Math.max(typeof duration === "number" && isFinite(duration) ? Math.floor(duration) : 5, 1),
     MAX_DURATION[userPlan] || 5
   );
-  const creditCost = isVid ? COSTS.video(allowedDuration) : COSTS.image(max_realism === true);
+  const imageResolution = (() => {
+    const planMax = RESOLUTION_MAP[userPlan] || "1K";
+    const ORDER = ["1K", "2K", "4K"];
+    const requestedRes = ["1K", "2K", "4K"].includes(image_quality) ? image_quality : "1K";
+    return ORDER[Math.min(ORDER.indexOf(requestedRes), ORDER.indexOf(planMax))];
+  })();
+
+  // Model selection (server decides price — never trust the client)
+  // Backward compat: old clients send max_realism instead of model_id
+  const vModel = isVid ? (VIDEO_MODELS.find(m => m.id === model_id) || VIDEO_MODELS[0]) : null;
+  const iModel = !isVid ? (IMAGE_MODELS.find(m => m.id === model_id) || findImageModel(max_realism === true ? "gpt2" : "nb2")) : null;
+  const refList = Array.isArray(image_urls) ? image_urls.filter(u => typeof u === "string" && isSafeImageUrl(u)) : [];
+  const hasRefs = !isVid && refList.length > 0 && (iModel.maxRefs || 0) > 0;
+  const hasStart = typeof start_frame === "string" && isSafeImageUrl(start_frame);
+  const hasEnd   = typeof end_frame   === "string" && isSafeImageUrl(end_frame);
+  const hasVideo = typeof video_url === "string" && isSafeImageUrl(video_url);
+
+  if (isVid && vModel.needsImage && !hasStart)
+    return res.status(400).json({ error: `${vModel.name} necesita una imagen inicial. / requires a start image.` });
+  if (isVid && vModel.needsVideo && !hasVideo)
+    return res.status(400).json({ error: `${vModel.name} necesita un video. / requires a video.` });
+
+  const creditCost = isVid ? videoCredits(vModel, allowedDuration) : imageCredits(iModel, imageResolution, hasRefs);
   if (creditsBalance < creditCost)
     return res.status(403).json({ error: insufficientMsg(creditCost, creditsBalance) });
 
@@ -184,7 +218,6 @@ export default async function handler(req, res) {
   } catch { /* if check fails, allow — don't block */ }
 
   // Atomic credit deduction (compare-and-swap in _credits.js)
-  const imgCreditsToUse = (!isVid && max_realism === true) ? 3 : 1; // legacy, kept for logging
   let creditsAfter;
   try {
     const d = await deductCredits(userId, creditCost, SERVICE_KEY);
@@ -199,81 +232,51 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to deduct credit. Please try again." });
   }
 
-  const imageResolution = (() => {
-    const planMax = RESOLUTION_MAP[userPlan] || "1K";
-    const ORDER = ["1K", "2K", "4K"];
-    const requestedRes = ["1K", "2K", "4K"].includes(image_quality) ? image_quality : "1K";
-    // Never exceed plan max
-    const maxIdx = ORDER.indexOf(planMax);
-    const reqIdx = ORDER.indexOf(requestedRes);
-    return ORDER[Math.min(reqIdx, maxIdx)];
-  })();
   try {
     let endpoint, body;
 
-    // URL validation for reference images — used in both image and video paths
-    const ALLOWED_IMAGE_HOSTS = [
-      "pygcsyqahhdtmwmqklnl.supabase.co",
-      "storage.googleapis.com",
-      "fal.run", "cdn.fal.run",
-      "v3b.fal.media", "v2.fal.media", "fal.media",
-      "nanobanano.studio",
-    ];
-    const isSafeImageUrl = (u) => {
-      try {
-        const p = new URL(u);
-        return p.protocol === "https:" && ALLOWED_IMAGE_HOSTS.some(h => p.hostname === h || p.hostname.endsWith("." + h));
-      } catch { return false; }
-    };
-
     if (!isVid) {
-      const hasRefs = Array.isArray(image_urls) && image_urls.length > 0
-        && image_urls.every(u => typeof u === "string" && isSafeImageUrl(u));
-
-      if (max_realism === true) {
-        // ✨ Máximo Realismo — GPT Image 2 via fal.ai
-        // Map aspect ratio to GPT Image 2 image_size format
-        const GPT_SIZE_MAP = {
-          "1:1":   "square_hd",
-          "16:9":  "landscape_16_9",
-          "9:16":  "portrait_16_9",
-          "4:3":   "landscape_4_3",
-          "3:4":   "portrait_4_3",
-          "auto":  "auto",
-        };
-        const gptSize = GPT_SIZE_MAP[safeRatio] || "square_hd";
-        const gptBaseBody = {
-          prompt,
-          quality: "high",       // Always high
-          output_format: "png",
-          num_images: 1,
-          ...(gptSize !== "auto" ? { image_size: gptSize } : {}),
-        };
-        if (hasRefs) {
-          endpoint = "openai/gpt-image-2/edit";
-          body = { ...gptBaseBody, image_urls: image_urls.slice(0, 14) };
-        } else {
-          endpoint = "fal-ai/gpt-image-2";
-          body = gptBaseBody;
-        }
-      } else {
-        // Standard — Nano Banana 2
-        endpoint = hasRefs ? "fal-ai/nano-banana-2/edit" : "fal-ai/nano-banana-2";
+      const refs = hasRefs ? refList.slice(0, iModel.maxRefs) : [];
+      endpoint = hasRefs && iModel.edit ? iModel.edit : iModel.t2i;
+      if (iModel.kind === "gpt") {
+        const GPT_SIZE_MAP = { "1:1": "square_hd", "16:9": "landscape_16_9", "9:16": "portrait_16_9", "4:3": "landscape_4_3", "3:4": "portrait_4_3" };
+        body = { prompt, quality: "high", output_format: "png", num_images: 1 };
+        if (GPT_SIZE_MAP[safeRatio]) body.image_size = GPT_SIZE_MAP[safeRatio];
+      } else if (iModel.kind === "nano") {
         body = { prompt, resolution: imageResolution, limit_generations: true };
         if (safeRatio !== "auto") body.aspect_ratio = safeRatio;
-        if (hasRefs) body.image_urls = image_urls.slice(0, 14);
+      } else {
+        // flux / seedream — fal image_size presets
+        const SIZE_MAP = { "1:1": "square_hd", "16:9": "landscape_16_9", "9:16": "portrait_16_9", "4:3": "landscape_4_3", "3:4": "portrait_4_3" };
+        body = { prompt, num_images: 1, image_size: SIZE_MAP[safeRatio] || "square_hd" };
       }
+      if (refs.length) body.image_urls = refs;
     } else {
-      const hasStart = typeof start_frame === "string" && isSafeImageUrl(start_frame);
-      const hasEnd   = typeof end_frame   === "string" && isSafeImageUrl(end_frame);
-      endpoint = (hasStart || hasEnd)
-        ? "fal-ai/kling-video/v3/standard/image-to-video"
-        : "fal-ai/kling-video/v3/standard/text-to-video";
-      body = { prompt, duration: allowedDuration, aspect_ratio: safeRatio, generate_audio: audio === true };
-      if (hasStart) body.image_url = start_frame;
-      if (hasEnd)   body.tail_image_url = end_frame;
-      if (multishot === true) body.multi_shot = true;
+      const m = vModel;
+      const dur = String(m.fixedSec || allowedDuration);
+      if (m.kind === "klingEdit") {
+        endpoint = m.v2v;
+        body = { prompt, video_url };
+        const vrefs = Array.isArray(image_urls) ? image_urls.filter(u => typeof u === "string" && isSafeImageUrl(u)).slice(0, 4) : [];
+        if (hasStart) vrefs.unshift(start_frame);
+        if (vrefs.length) body.image_urls = vrefs;
+      } else if (m.kind === "seedance") {
+        endpoint = hasStart && m.i2v ? m.i2v : m.t2v;
+        body = { prompt, duration: dur, aspect_ratio: safeRatio, resolution: "720p", generate_audio: true, enable_safety_checker: true, end_user_id: userId };
+        if (hasStart) body.image_url = start_frame;
+        if (hasEnd)   body.end_image_url = end_frame;
+      } else {
+        // kling3 / kling4 family
+        const useI2V = (hasStart || m.needsImage) && m.i2v;
+        endpoint = useI2V ? m.i2v : m.t2v;
+        body = { prompt, duration: dur, generate_audio: audio === true };
+        if (!useI2V) body.aspect_ratio = safeRatio;
+        if (hasStart) { body.start_image_url = start_frame; body.image_url = start_frame; }
+        if (hasEnd && m.endFrame) body.end_image_url = end_frame;
+      }
+      if (!endpoint) throw new Error(`Model ${m.id} has no endpoint for this input`);
     }
+    console.log(`generate: model=${isVid ? vModel.id : iModel.id} endpoint=${endpoint} credits=${creditCost} user=${userId}`);
 
     const WEBHOOK_URL = "https://nanobanano.studio/api/webhook?source=fal";
     const falRes = await fetch(`https://queue.fal.run/${endpoint}?fal_webhook=${encodeURIComponent(WEBHOOK_URL)}`, {
@@ -281,7 +284,11 @@ export default async function handler(req, res) {
       headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await falRes.json();
+    const data = await falRes.json().catch(() => ({}));
+    if (!falRes.ok && !data.request_id) {
+      console.error("fal submit error:", falRes.status, JSON.stringify(data).slice(0, 300));
+      throw new Error(data?.detail?.[0]?.msg || data?.detail || data?.error || `fal error ${falRes.status}`);
+    }
 
     if (data.request_id) {
       try {
@@ -305,12 +312,12 @@ export default async function handler(req, res) {
           body: JSON.stringify({
             user_id: userId,
             type: "generation",
-            description: `${isVid ? "Video" : "Imagen"} generada${max_realism ? " (Máximo Realismo)" : ""}`,
+            description: `${isVid ? "Video" : "Imagen"} · ${isVid ? vModel.name : iModel.name}`,
             images_delta: 0,
             videos_delta: 0,
             credits_delta: -creditCost,
             credits_after: creditsAfter,
-            meta: { endpoint, style: safeStyleId, max_realism: max_realism === true },
+            meta: { endpoint, style: safeStyleId, model: isVid ? vModel.id : iModel.id },
           }),
         });
       } catch {}
@@ -323,6 +330,7 @@ export default async function handler(req, res) {
     }
 
     const url = !isVid ? data.images?.[0]?.url : data.video?.url;
+    if (!url) throw new Error("No result from model");
     return res.status(200).json({ success: true, completed: true, url, type, resolution: !isVid ? imageResolution : undefined });
 
   } catch (err) {

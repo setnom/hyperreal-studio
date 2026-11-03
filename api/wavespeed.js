@@ -91,7 +91,7 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
   const prof = (await profRes.json())?.[0];
   if (!prof?.plan || prof.plan === "none") return res.status(403).json({ error: "No active plan" });
   if (prof.subscription_status === "payment_failed") return res.status(403).json({ error: "Payment issue" });
-  const creditsNeeded = COSTS.legacyImage(1); // 8
+  const creditsNeeded = 18; // Img Pro (Seedream 4.5 edit) — fixed 18 credits per image
   if ((prof.credits ?? 0) < creditsNeeded) return res.status(402).json({ error: insufficientMsg(creditsNeeded, prof.credits ?? 0) });
 
   const deduct = await deductCredits(userId, creditsNeeded, SERVICE_KEY);
