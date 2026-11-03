@@ -2347,10 +2347,15 @@ export default function App() {
     { k: T.VID_EDIT,icon: "🔄", label: lang==="es"?"Cambio Personaje":"Char Swap", color: "#b44aff" },
   ];
 
-  return wrap(
+  return (
+    <div style={{ minHeight: "100vh", background: "#06060e", color: "#e8e8ef", fontFamily: "'Syne', sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 20% 0%, rgba(0,240,255,.07) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(180,74,255,.06) 0%, transparent 50%)" }} />
+      {payMsg && <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 9999, padding: "10px 20px", borderRadius: 8, background: payMsg.includes("✓") ? "rgba(0,240,255,.12)" : "rgba(255,184,0,.12)", border: `1px solid ${payMsg.includes("✓") ? "rgba(0,240,255,.3)" : "rgba(255,184,0,.3)"}`, fontSize: 13, color: payMsg.includes("✓") ? "#00f0ff" : "#ffb800", animation: "fadeUp .4s ease", whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,.5)" }}>{payMsg}</div>}
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes nudge{0%,70%,100%{transform:translateY(0)}75%{transform:translateY(-3px)}82%{transform:translateY(1px)}88%{transform:translateY(-2px)}95%{transform:translateY(0)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a50}button:active{transform:scale(.97)!important}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.3)!important}::selection{background:rgba(0,240,255,.2)}`}</style>
     <>
       {/* ── FULL-SCREEN SHELL ── */}
-      <div style={{ display: "flex", minHeight: "100vh", margin: isDesk ? "-32px -40px -80px" : "-20px -16px -60px", background: "#07071a" }}>
+      <div style={{ display: "flex", minHeight: "100vh", background: "#07071a", position: "relative", zIndex: 1 }}>
 
         {/* ── LEFT SIDEBAR ── */}
         <div style={{ width: isDesk ? 72 : 0, minWidth: isDesk ? 72 : 0, display: isDesk ? "flex" : "none", flexDirection: "column", alignItems: "center", background: "#0b0b1f", borderRight: "1px solid rgba(255,255,255,.05)", paddingTop: 16, paddingBottom: 16, gap: 4, position: "sticky", top: 0, height: "100vh", overflowY: "auto", zIndex: 50 }}>
@@ -4379,5 +4384,6 @@ export default function App() {
       <CancelModal />
       <PaymentFailedModal />
     </>
+    </div>
   );
 }
