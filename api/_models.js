@@ -109,6 +109,20 @@ export const VIDEO_MODELS = [
     ep: { t2v: "minimax/h3-max/text-to-video", i2v: "minimax/h3-max/image-to-video", ref: "minimax/h3-max/reference-to-video" } },
 ];
 
+// ── NanoJutsu (Jutsu tab) — Seedance 2.5 reference-to-video with hidden expert prompts ──
+// Output length follows the source video (4–30 s). fal bills input + output seconds (×0.6 rate) → credits = vin × (in + out).
+VIDEO_MODELS.push({
+  id: "nanojutsu", family: "NanoJutsu", name: "NanoJutsu", badge: "Nuevo", kind: "jutsu", category: "jutsu",
+  res: { "480p":  { perSec: 15, fal: 0.2205, vin: 9,  falVin: 0.1323 },
+         "720p":  { perSec: 32, fal: 0.473,  vin: 19, falVin: 0.2838 },
+         "1080p": { perSec: 78, fal: 1.164,  vin: 47, falVin: 0.6984 } }, defRes: "480p",
+  modes: [
+    { id: "motion", source: true, sourceSec: 30, minSourceSec: 4, images: 12, outFromSource: true },
+    { id: "swap",   source: true, sourceSec: 30, minSourceSec: 4, images: 12, outFromSource: true },
+  ],
+  ep: { ref: "bytedance/seedance-2.5/reference-to-video" },
+});
+
 export const findVideoModel = (id) => VIDEO_MODELS.find(m => m.id === id) || VIDEO_MODELS[0];
 export const modelResolutions = (m) => Object.keys(m.res);
 export const pickRes = (m, res) => (m.res[res] ? res : m.defRes);
@@ -125,6 +139,11 @@ export function videoCredits(model, durationSec, res, inputSec = 0, mode = "fram
   const r = model.res[pickRes(model, res)];
   const md = pickMode(model, mode);
   const inSec = Math.ceil(inputSec || 0);
+  // NanoJutsu: output = source length; billed input + output
+  if (md.outFromSource) {
+    const src = Math.min(30, Math.max(4, inSec || md.sourceSec));
+    return Math.ceil(r.vin * (src + src));
+  }
   // Edit modes: output length = source length
   if (md.id === "edit") {
     const src = Math.max(3, inSec || md.sourceSec);

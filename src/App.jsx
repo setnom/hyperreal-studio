@@ -708,6 +708,11 @@ export default function App() {
   const [vidRefAuds, setVidRefAuds] = useState([]);  // [{url, name}] reference audio
   const [vidFrames, setVidFrames] = useState([]);    // File[] keyframes (Kling 4.0: up to 10)
   const [vidRefUploadingN, setVidRefUploadingN] = useState(0);
+  const [jutsuMode, setJutsuMode] = useState("motion"); // motion | swap
+  const [jutsuVideo, setJutsuVideo] = useState(null);   // {url, preview, duration, name}
+  const [jutsuImages, setJutsuImages] = useState([]);   // File[]
+  const [jutsuRes, setJutsuRes] = useState("480p");
+  const [jutsuPromptOn, setJutsuPromptOn] = useState(true);
   const maxRealism = imgModelId === "gpt2"; // legacy flag kept for older code paths
   const [vidDur, setVidDur] = useState(5);
   const [vidRatio, setVidRatio] = useState("16:9");
@@ -1459,20 +1464,21 @@ export default function App() {
   };
 
   const handleGen = async () => {
-    if ((!prompt.trim() && style !== "restore" && style !== "colorize") || !profile || !session) return;
-    const isVid = tab === T.VID;
-    const vM = findVideoModel(vidModelId), iM = findImageModel(imgModelId);
-    const vMd = pickMode(vM, vidMode);
+    const J = tab === T.VID_EDIT; // NanoJutsu reuses the video pipeline
+    if ((!J && !prompt.trim() && style !== "restore" && style !== "colorize") || !profile || !session) return;
+    const isVid = tab === T.VID || J;
+    const vM = findVideoModel((J ? "nanojutsu" : vidModelId)), iM = findImageModel(imgModelId);
+    const vMd = pickMode(vM, (J ? jutsuMode : vidMode));
     const vModeNow = vMd.id;
     const vMulti = isVid && vModeNow === "frames" && (vMd.frames || 0) > 2;
     const vStart = vMulti ? vidFrames[0] : startFrame;
     const vEnd = vMulti ? (vidFrames.length > 1 ? vidFrames[vidFrames.length - 1] : null) : (vMd.endFrame ? endFrame : null);
     const vMiddle = vMulti ? vidFrames.slice(1, -1) : [];
-    const vInSec = (vMd.source ? (vidRefVideo?.duration || 0) : 0) + (vModeNow === "refs" ? vidRefVids.reduce((a, v) => a + (v.duration || 0), 0) : 0);
-    const creditCostNow = isVid ? videoCredits(vM, vidDur, vidRes, vInSec, vModeNow, { nImages: vidOmniImages.length, nAudios: vidRefAuds.length }) : imageCredits(iM, imgQuality, refImages.length > 0 && iM.maxRefs > 0);
-    if (isVid && vMd.source && !vidRefVideo?.url) { setGenError(lang === "es" ? "Sube el video primero." : "Upload the video first."); return; }
-    if (isVid && vModeNow === "refs" && vidOmniImages.length + vidRefVids.length === 0) { setGenError(lang === "es" ? "Añade al menos una imagen o video de referencia." : "Add at least one image or video reference."); return; }
-    if (isVid && vModeNow === "frames" && (vMd.needsImage || vM.res[pickRes(vM, vidRes)]?.needsImage) && !vStart) { setGenError(lang === "es" ? `${vM.name} necesita un fotograma inicial.` : `${vM.name} needs a start frame.`); return; }
+    const vInSec = (vMd.source ? ((J ? jutsuVideo : vidRefVideo)?.duration || 0) : 0) + (vModeNow === "refs" ? vidRefVids.reduce((a, v) => a + (v.duration || 0), 0) : 0);
+    const creditCostNow = isVid ? videoCredits(vM, vidDur, (J ? jutsuRes : vidRes), vInSec, vModeNow, { nImages: (J ? jutsuImages : vidOmniImages).length, nAudios: vidRefAuds.length }) : imageCredits(iM, imgQuality, refImages.length > 0 && iM.maxRefs > 0);
+    if (isVid && vMd.source && !(J ? jutsuVideo : vidRefVideo)?.url) { setGenError(lang === "es" ? "Sube el video primero." : "Upload the video first."); return; }
+    if (isVid && vModeNow === "refs" && (J ? jutsuImages : vidOmniImages).length + vidRefVids.length === 0) { setGenError(lang === "es" ? "Añade al menos una imagen o video de referencia." : "Add at least one image or video reference."); return; }
+    if (isVid && vModeNow === "frames" && (vMd.needsImage || vM.res[pickRes(vM, (J ? jutsuRes : vidRes))]?.needsImage) && !vStart) { setGenError(lang === "es" ? `${vM.name} necesita un fotograma inicial.` : `${vM.name} needs a start frame.`); return; }
     if (isVid && vidRefUploadingN > 0) { setGenError(lang === "es" ? "Espera a que terminen de subir los archivos." : "Wait for uploads to finish."); return; }
     if ((profile.credits ?? 0) < creditCostNow) return;
 
@@ -1537,7 +1543,7 @@ export default function App() {
         if (isVid && vModeNow === "frames" && vStart) startFrameUrl = await uploadFile(vStart);
         if (isVid && vModeNow === "frames" && vEnd) endFrameUrl = await uploadFile(vEnd);
         if (isVid && vModeNow === "frames") { for (const f of vMiddle) middleFrameUrls.push(await uploadFile(f)); }
-        if (isVid && (vModeNow === "refs" || vModeNow === "edit")) { for (const f of vidOmniImages.slice(0, vMd.images || 0)) imageUrls.push(await uploadFile(f)); }
+        if (isVid && (vModeNow === "refs" || vModeNow === "edit" || vMd.outFromSource)) { for (const f of (J ? jutsuImages : vidOmniImages).slice(0, vMd.images || 0)) imageUrls.push(await uploadFile(f)); }
       } catch (uploadErr) {
         setGenError("Error al subir frame. Intenta con una imagen más pequeña.");
         endJob();
@@ -1551,17 +1557,17 @@ export default function App() {
         body: JSON.stringify({
           type: isVid ? "video" : "image",
           prompt: buildStyledPrompt(prompt, tab === T.IMG ? style : "cinematic"),
-          user_prompt: prompt.trim(), // raw user input — saved to DB, never sent to fal.ai
+          user_prompt: J ? (jutsuPromptOn ? prompt.trim() : "") : prompt.trim(), // raw user input — saved to DB, never sent to fal.ai
           style_id: tab === T.IMG ? style : "cinematic",
           aspect_ratio: isVid ? vidRatio : ratio,
           image_quality: !isVid ? imgQuality : undefined,
           max_realism: !isVid ? maxRealism : undefined,
-          model_id: isVid ? vidModelId : imgModelId,
-          video_url: isVid && vMd.source ? vidRefVideo?.url : undefined,
+          model_id: isVid ? (J ? "nanojutsu" : vidModelId) : imgModelId,
+          video_url: isVid && vMd.source ? (J ? jutsuVideo : vidRefVideo)?.url : undefined,
           video_urls: isVid && vModeNow === "refs" && vidRefVids.length ? vidRefVids.map(v => v.url) : undefined,
           audio_urls: isVid && vModeNow === "refs" && vidRefAuds.length ? vidRefAuds.map(a => a.url) : undefined,
           middle_frames: isVid && middleFrameUrls.length ? middleFrameUrls : undefined,
-          resolution: isVid ? pickRes(vM, vidRes) : undefined,
+          resolution: isVid ? pickRes(vM, (J ? jutsuRes : vidRes)) : undefined,
           mode: isVid ? vModeNow : undefined,
           plan: profile.plan || "basic",
           duration: isVid ? vidDur : undefined,
@@ -2963,6 +2969,149 @@ export default function App() {
     );
   };
 
+  // ── NANOJUTSU PANEL (Jutsu tab) ──
+  const jutsuModel = findVideoModel("nanojutsu");
+  const jutsuMd = pickMode(jutsuModel, jutsuMode);
+  const jutsuResNow = pickRes(jutsuModel, jutsuRes);
+  const curJutsuCost = videoCredits(jutsuModel, 0, jutsuResNow, jutsuVideo?.duration || 0, jutsuMd.id);
+  const curJutsuBlocked = !jutsuVideo?.url || jutsuImages.length === 0 || vidRefUploadingN > 0;
+
+  const renderJutsuPanel = () => {
+    const card = { background: "#16161d", border: "1px solid rgba(255,255,255,.06)", borderRadius: 14 };
+    const isSwap = jutsuMd.id === "swap";
+    const dropIcons = (icons) => (
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+        {icons.map((ic, i) => <span key={i} style={{ width: 40, height: 40, borderRadius: "50%", background: "linear-gradient(180deg,#2a2a34,#1a1a22)", border: "1px solid rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, marginLeft: i ? -8 : 0, boxShadow: "0 2px 8px rgba(0,0,0,.4)" }}>{ic}</span>)}
+      </div>
+    );
+    const thumb = (src, onRemove, label, isVideo) => (
+      <div style={{ position: "relative", width: 56, height: 56, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.1)", flexShrink: 0, background: "#0d0d14" }}>
+        {isVideo ? <video src={src} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+        {label && <span style={{ position: "absolute", bottom: 0, left: 0, right: 0, fontSize: 8, textAlign: "center", background: "rgba(0,0,0,.65)", color: "#fff", padding: "1px 0" }}>{label}</span>}
+        <button onClick={onRemove} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,.7)", border: "none", color: "#fff", fontSize: 10, cursor: "pointer", lineHeight: 1 }}>×</button>
+      </div>
+    );
+    return (
+      <div>
+        {/* Hero */}
+        <div style={{ position: "relative", height: 132, borderRadius: 16, overflow: "hidden", marginBottom: 10, background: "radial-gradient(120% 140% at 80% 10%, #b44aff55 0%, #111118 60%)", border: "1px solid rgba(255,255,255,.08)" }}>
+          <video key={jutsuMd.id} src={`/models/${isSwap ? "nanojutsu_swap" : "nanojutsu"}.mp4`} autoPlay muted loop playsInline onError={e => { e.currentTarget.style.display = "none"; }} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.78) 100%)" }} />
+          <div style={{ position: "absolute", left: 14, bottom: 12 }}>
+            <p style={{ margin: 0, fontSize: 24, fontWeight: 900, color: "#e8f542", letterSpacing: -.5, fontFamily: "'Inter',sans-serif" }}>NANOJUTSU</p>
+            <p style={{ margin: "2px 0 0", fontSize: 12, color: "#d8d8e4" }}>{lang === "es" ? "Manipulación de la realidad" : "Reality manipulation"}</p>
+          </div>
+        </div>
+
+        {/* Mode tabs */}
+        <div style={{ display: "flex", gap: 3, padding: 3, borderRadius: 12, background: "#16161d", border: "1px solid rgba(255,255,255,.06)", marginBottom: 10 }}>
+          {[["motion", lang === "es" ? "Transferencia de movimiento" : "Motion transfer", "◌"], ["swap", lang === "es" ? "Intercambio de objetos" : "Object swap", "⧉"]].map(([k, l, ic]) => (
+            <button key={k} onClick={() => setJutsuMode(k)} title={l} style={{ flex: 1, minWidth: 0, padding: "9px 6px", borderRadius: 9, border: jutsuMd.id === k ? "1px solid rgba(255,255,255,.1)" : "1px solid transparent", background: jutsuMd.id === k ? "#24242e" : "transparent", color: jutsuMd.id === k ? "#f0f0f6" : "#6a6a82", fontSize: 12, fontWeight: jutsuMd.id === k ? 600 : 400, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ic} {l}</button>
+          ))}
+        </div>
+
+        {/* Source video */}
+        <div style={{ border: "1px dashed rgba(255,255,255,.12)", borderRadius: 14, padding: jutsuVideo ? 12 : "24px 12px", marginBottom: 10, background: "rgba(255,255,255,.015)" }}>
+          {jutsuVideo ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {thumb(jutsuVideo.preview, () => setJutsuVideo(null), `${Math.round(jutsuVideo.duration)}s`, true)}
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 12, color: "#e8e8f0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{jutsuVideo.name}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 10, color: "#6a6a82" }}>@Video1 · {jutsuVideo.duration.toFixed(1)}s</p>
+              </div>
+            </div>
+          ) : (
+            <label style={{ display: "block", textAlign: "center", cursor: "pointer" }}>
+              {dropIcons(["🎞️"])}
+              <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "#e8e8f0", lineHeight: 1.3 }}>
+                {vidRefUploadingN > 0 ? (lang === "es" ? "⏳ Subiendo..." : "⏳ Uploading...") : isSwap ? (lang === "es" ? "Añade un video de referencia para editar" : "Add a reference video to edit") : (lang === "es" ? "Añade un video de referencia para extraer el movimiento" : "Add a reference video to extract the motion")}
+              </span>
+              <span style={{ display: "block", fontSize: 11, color: "#6a6a82", marginTop: 5 }}>{lang === "es" ? "Duración del video: de 4 a 30 segundos" : "Video length: 4 to 30 seconds"}</span>
+              <input type="file" accept="video/mp4,video/quicktime,video/webm" hidden onChange={async e => {
+                const f = e.target.files?.[0]; e.target.value = "";
+                if (!f) return;
+                const preview = URL.createObjectURL(f);
+                const dur = await new Promise(r => { const v = document.createElement("video"); v.preload = "metadata"; v.onloadedmetadata = () => r(v.duration || 0); v.onerror = () => r(0); v.src = preview; });
+                if (dur && (dur < 3.7 || dur > 30.5)) { setGenError(lang === "es" ? `El video dura ${dur.toFixed(1)}s. Debe durar de 4 a 30 segundos.` : `Video is ${dur.toFixed(1)}s. It must be 4–30 seconds.`); return; }
+                setGenError("");
+                addRefVideo(f, 30, (v) => setJutsuVideo(v));
+              }} />
+            </label>
+          )}
+        </div>
+
+        {/* Reference images */}
+        <div style={{ border: "1px dashed rgba(255,255,255,.12)", borderRadius: 14, padding: jutsuImages.length ? 12 : "24px 12px", marginBottom: 10, background: "rgba(255,255,255,.015)" }}>
+          {jutsuImages.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+              {jutsuImages.map((f, i) => <span key={i}>{thumb(URL.createObjectURL(f), () => setJutsuImages(p => p.filter((_, j) => j !== i)), `@Image${i + 1}`)}</span>)}
+            </div>
+          )}
+          {jutsuImages.length < jutsuMd.images && (
+            <label style={{ display: "block", textAlign: "center", cursor: "pointer" }}>
+              {!jutsuImages.length && dropIcons(["🙂", "👕", "📦"])}
+              <span style={{ display: "block", fontSize: jutsuImages.length ? 12 : 14, fontWeight: 600, color: "#e8e8f0", lineHeight: 1.3 }}>
+                {jutsuImages.length ? `+ ${lang === "es" ? "Añadir más" : "Add more"}` : isSwap ? (lang === "es" ? "Añade el objeto nuevo" : "Add the new object") : (lang === "es" ? "Añade tus personajes, productos o ropa" : "Add your characters, products or clothing")}
+              </span>
+              {!jutsuImages.length && <span style={{ display: "block", fontSize: 11, color: "#6a6a82", marginTop: 5 }}>{isSwap ? (lang === "es" ? `Fotos del objeto (varios ángulos) · hasta ${jutsuMd.images}` : `Photos of the object (several angles) · up to ${jutsuMd.images}`) : (lang === "es" ? `Hasta ${jutsuMd.images} imágenes` : `Up to ${jutsuMd.images} images`)}</span>}
+              <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={e => { const fs = Array.from(e.target.files || []).filter(f => f.type.startsWith("image/")); e.target.value = ""; setJutsuImages(p => [...p, ...fs].slice(0, jutsuMd.images)); }} />
+            </label>
+          )}
+        </div>
+
+        {/* Prompt card with toggle */}
+        <div style={{ ...card, marginBottom: 10, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: jutsuPromptOn ? "1px solid rgba(255,255,255,.06)" : "none" }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#f0f0f6" }}>Prompt</span>
+            <button onClick={() => setJutsuPromptOn(v => !v)} style={{ width: 40, height: 22, borderRadius: 11, border: "none", background: jutsuPromptOn ? "#e8f542" : "rgba(255,255,255,.12)", position: "relative", cursor: "pointer" }}>
+              <span style={{ position: "absolute", top: 3, left: jutsuPromptOn ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
+            </button>
+          </div>
+          {jutsuPromptOn && (
+            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
+              placeholder={isSwap
+                ? (lang === "es" ? "Describe qué cambiar — p. ej. 'reemplaza la taza por el termo de @Image1' o 'cambia la botella de la mesa'. Menciona las imágenes o videos adjuntos usando @..." : "Describe what to change — e.g. 'replace the mug with the bottle in @Image1'. Mention attachments with @...")
+                : (lang === "es" ? "Describe tu nueva escena — p. ej. 'el personaje de @Image1 bailando en una azotea' o 'mismos movimientos, nueva ubicación: Tokio de noche'. Menciona las imágenes o videos adjuntos usando @..." : "Describe your new scene — e.g. 'the character from @Image1 dancing on a rooftop'. Mention attachments with @...")}
+              style={{ width: "100%", background: "transparent", border: "none", color: "#e8e8f0", fontSize: 14, lineHeight: 1.5, resize: "none", fontFamily: "inherit", padding: "12px 14px" }} />
+          )}
+        </div>
+
+        {/* Model + quality cards */}
+        <div style={{ ...card, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", marginBottom: 8 }}>
+          <span>
+            <span style={{ display: "block", fontSize: 10, color: "#6a6a82" }}>{lang === "es" ? "Modelo" : "Model"}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#e8e8f0", fontWeight: 500, marginTop: 2 }}>
+              NanoJutsu <span style={{ color: "#e8f542" }}>〰</span>
+              <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "rgba(232,245,66,.12)", color: "#e8f542" }}>{lang === "es" ? "Nuevo" : "New"}</span>
+            </span>
+          </span>
+        </div>
+        <button onClick={() => setVidPop(vidPop === "jres" ? null : "jres")} style={{ ...card, width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", marginBottom: 8, cursor: "pointer", fontFamily: "inherit", textAlign: "left", borderColor: vidPop === "jres" ? "rgba(232,196,58,.4)" : "rgba(255,255,255,.06)" }}>
+          <span>
+            <span style={{ display: "block", fontSize: 10, color: "#6a6a82" }}>{lang === "es" ? "Calidad" : "Quality"}</span>
+            <span style={{ display: "block", fontSize: 14, color: "#e8e8f0", fontWeight: 500, marginTop: 2 }}>{jutsuResNow}</span>
+          </span>
+          <span style={{ color: "#5a5a78" }}>›</span>
+        </button>
+        {vidPop === "jres" && (
+          <div style={{ ...card, padding: 6, marginBottom: 8 }}>
+            <p style={{ fontSize: 11, color: "#6a6a82", margin: "4px 10px 6px" }}>{lang === "es" ? "Calidad" : "Quality"}</p>
+            {Object.entries(jutsuModel.res).map(([k, r]) => (
+              <button key={k} onClick={() => { setJutsuRes(k); setVidPop(null); }} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 10px", borderRadius: 8, border: "none", background: jutsuResNow === k ? "rgba(255,255,255,.06)" : "transparent", color: "#e8e8f0", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
+                <span>{k}</span>
+                <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <span style={{ fontSize: 10, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>⚡{r.vin * 2}/s</span>
+                  {jutsuResNow === k && <span>✓</span>}
+                </span>
+              </button>
+            ))}
+            <p style={{ fontSize: 10, color: "#5a5a78", margin: "6px 10px 4px" }}>{lang === "es" ? "Se cobra por segundo del video que subes (entrada + salida)." : "Charged per second of your uploaded video (input + output)."}</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ── NB REDESIGN v14: Higgsfield-style layout ──
   const navTabs = [
     { k: T.IMG,     label: lang==="es"?"Imagen":"Image",    color: "#00f0ff" },
@@ -3058,10 +3207,10 @@ export default function App() {
 
         {/* ── LEFT PANEL: form controls (Higgsfield left column) ── */}
         {tab !== T.GAL && (
-          <div style={{ ...((tab === T.IMG || tab === T.VID) ? { width: isDesk ? (tab === T.VID ? 360 : 300) : "100%", minWidth: isDesk ? (tab === T.VID ? 360 : 300) : "unset", maxWidth: isDesk ? (tab === T.VID ? 360 : 300) : "unset" } : { flex: 1, width: "100%" }), borderRight: isDesk && (tab === T.IMG || tab === T.VID) ? "1px solid rgba(255,255,255,.05)" : "none", ...(isDesk ? { height: "100%", minHeight: 0 } : {}), overflowY: "auto", background: "#0d0d14", display: "flex", flexDirection: "column" }}>
+          <div style={{ ...((tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) ? { width: isDesk ? (tab !== T.IMG ? 360 : 300) : "100%", minWidth: isDesk ? (tab !== T.IMG ? 360 : 300) : "unset", maxWidth: isDesk ? (tab !== T.IMG ? 360 : 300) : "unset" } : { flex: 1, width: "100%" }), borderRight: isDesk && (tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) ? "1px solid rgba(255,255,255,.05)" : "none", ...(isDesk ? { height: "100%", minHeight: 0 } : {}), overflowY: "auto", background: "#0d0d14", display: "flex", flexDirection: "column" }}>
 
             {/* ── TAB CONTENT (form) ── */}
-            <div style={{ flex: 1, padding: (tab === T.IMG || tab === T.VID) ? "16px 14px 0" : (isDesk ? "28px 32px" : "14px"), overflowY: "auto", width: "100%", maxWidth: (tab === T.IMG || tab === T.VID) ? "none" : 920, margin: "0 auto" }}>
+            <div style={{ flex: 1, padding: (tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) ? "16px 14px 0" : (isDesk ? "28px 32px" : "14px"), overflowY: "auto", width: "100%", maxWidth: (tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) ? "none" : 920, margin: "0 auto" }}>
 
           {(tab === T.IMG || tab === T.VID) && (
             <div style={{ animation: "fadeUp .4s ease" }}>
@@ -4370,264 +4519,19 @@ export default function App() {
           })()}
 
           {/* ── Cambio de Personaje (VID_EDIT) ── */}
-          {tab === T.VID_EDIT && (() => {
-            // Credit table: [credits, maxDuration] per resolution (auto = 720p)
-            const veCreditsTable = {
-              "480p": [[3,12],[7,18],[12,24],[17,30]],
-              "720p": [[10,12],[15,18],[20,24],[25,30]],
-              "1080p":[[15,12],[20,18],[25,24],[30,30]],
-            };
-            const veBuckets = veCreditsTable[vidEditRes] || veCreditsTable["720p"];
-            const veCredits = (veBuckets.find(([,mx]) => vidEditDuration <= mx) || veBuckets[veBuckets.length-1])[0] * VID_UNIT;
-            const canVeGen = !genning && !vidEditVidUploading && !vidEditImgUploading && vidEditVideo?.url && vidEditImages.length > 0 && (profile?.credits ?? 0) >= veCredits;
-
-            const uploadVeVideo = async (file) => {
-              if (!file) return;
-              setVidEditError(null);
-              if (!file.type.startsWith("video/")) { setVidEditError(lang === "es" ? "Solo videos." : "Videos only."); return; }
-              setVidEditVidUploading(true);
-              try {
-                const previewUrl = URL.createObjectURL(file);
-                // Detect duration + dimensions
-                const { detectedDuration, detectedRes, detectedAspect } = await new Promise((res) => {
-                  const vid = document.createElement("video");
-                  vid.preload = "metadata";
-                  vid.onloadedmetadata = () => {
-                    const dur = Math.min(30, Math.max(5, Math.round(vid.duration)));
-                    const w = vid.videoWidth, h = vid.videoHeight;
-                    // Aspect ratio string
-                    const gcd = (a,b) => b ? gcd(b, a%b) : a;
-                    const d = gcd(w, h);
-                    const aspect = `${w/d}:${h/d}`;
-                    // Map to resolution: use short side
-                    const shortSide = Math.min(w, h);
-                    const autoRes = shortSide >= 900 ? "1080p" : shortSide >= 600 ? "720p" : "480p";
-                    res({ detectedDuration: dur, detectedRes: autoRes, detectedAspect: aspect });
-                  };
-                  vid.onerror = () => res({ detectedDuration: 10, detectedRes: "720p", detectedAspect: "16:9" });
-                  vid.src = previewUrl;
-                });
-                // Upload directly to Supabase Storage (no size limit via API)
-                const ext = file.name.split(".").pop() || "mp4";
-                const uid = session?.user?.id || profile?.userId;
-                if (!uid) throw new Error("Not authenticated");
-                const path = `${uid}/${Date.now()}.${ext}`;
-                const sbUp = await fetch(`${SB_URL}/storage/v1/object/motion-refs/${path}`, {
-                  method: "POST",
-                  headers: { apikey: SB_KEY, Authorization: `Bearer ${session.access_token}`, "Content-Type": file.type, "x-upsert": "true" },
-                  body: file,
-                });
-                if (!sbUp.ok) throw new Error(`Upload error: ${sbUp.status}`);
-                // Get signed URL (1h)
-                const signR = await fetch(`${SB_URL}/storage/v1/object/sign/motion-refs/${path}`, {
-                  method: "POST",
-                  headers: { apikey: SB_KEY, Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
-                  body: JSON.stringify({ expiresIn: 3600 }),
-                });
-                const signD = await signR.json();
-                if (!signD.signedURL) throw new Error("Could not get signed URL");
-                const videoUrl = `${SB_URL}/storage/v1${signD.signedURL}`;
-                setVidEditDuration(detectedDuration);
-                setVidEditRes(detectedRes);
-                setVidEditVideo({ file, preview: previewUrl, name: file.name, url: videoUrl, aspect: detectedAspect, res: detectedRes });
-              } catch(e) { setVidEditError(e.message); }
-              finally { setVidEditVidUploading(false); }
-            };
-
-            const uploadVeImage = async (file) => {
-              if (!file) return;
-              if (vidEditImages.length >= 10) { setVidEditError(lang === "es" ? "Máximo 10 imágenes." : "Max 10 images."); return; }
-              setVidEditImgUploading(true);
-              try {
-                const dataUrl = await new Promise((res, rej) => {
-                  const img = new Image();
-                  img.onload = () => {
-                    const MAX = 1200; let w = img.width, h = img.height;
-                    if (w > MAX || h > MAX) { if (w > h) { h = Math.round((h/w)*MAX); w = MAX; } else { w = Math.round((w/h)*MAX); h = MAX; } }
-                    const c = document.createElement("canvas"); c.width = w; c.height = h;
-                    c.getContext("2d").drawImage(img, 0, 0, w, h);
-                    res(c.toDataURL("image/jpeg", 0.88));
-                  };
-                  img.onerror = () => rej(new Error("Load failed"));
-                  img.src = URL.createObjectURL(file);
-                });
-                const r = await fetch("/api/upload", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ data_url: dataUrl, user_token: session?.access_token }) });
-                const d = await r.json();
-                if (d.error) throw new Error(d.error);
-                setVidEditImages(prev => [...prev, { file, preview: URL.createObjectURL(file), url: d.url }]);
-              } catch(e) { setVidEditError(e.message); }
-              finally { setVidEditImgUploading(false); }
-            };
-
-            const handleVidEditGen = async () => {
-              if (!canVeGen) return;
-              setGenning(true); setGenError(null);
-              setGenStatus({ phase: "queued", position: null, elapsed: 0 });
-              try {
-                const body = {
-                  action: "generate_vid_edit",
-                  user_token: session?.access_token,
-                  prompt: vidEditPrompt.trim() || "",
-                  video_url: vidEditVideo.url,
-                  image_urls: vidEditImages.map(i => i.url),
-                  duration: vidEditDuration,
-                  resolution: vidEditRes,
-                };
-                const r = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
-                const d = await r.json();
-                if (d.error) throw new Error(d.error);
-                const { request_id, gen_id, credits_used } = d;
-                let elapsed = 0;
-                for (let i = 0; i < 180; i++) {
-                  await new Promise(r => setTimeout(r, 4000));
-                  elapsed += 4;
-                  setGenStatus(s => ({ ...s, phase: "processing", elapsed }));
-                  const sr = await fetch("/api/wavespeed", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ action: "status", request_id, type: "video", gen_id, credits_used, user_token: session?.access_token }) });
-                  const sd = await sr.json();
-                  if (sd.status === "completed" && sd.url) { setGenResult({ url: sd.url }); break; }
-                  if (sd.status === "failed") throw new Error(sd.error || "Generation failed");
-                  if (sd.queue_position != null) setGenStatus(s => ({ ...s, phase: "queued", position: sd.queue_position }));
-                }
-              } catch(e) { setGenError(e.message); }
-              finally { setGenning(false); }
-            };
-
-            return (
-              <div style={{ animation: "fadeUp .4s ease" }}>
-                <p style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 14, lineHeight: 1.4 }}>
-                  {lang === "es" ? "Reemplazá el personaje de un video con las fotos de referencia." : "Replace the character in a video using reference photos."}
-                </p>
-
-                {/* Video upload */}
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 6 }}>{lang === "es" ? "Video original *" : "Source video *"}</p>
-                  {vidEditVideo ? (
-                    <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", border: "1px solid rgba(180,74,255,.3)" }}>
-                      <video src={vidEditVideo.preview} controls style={{ width: "100%", maxHeight: 200, display: "block", background: "#000" }} />
-                      <button onClick={() => setVidEditVideo(null)} style={{ position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: "50%", background: "rgba(0,0,0,.6)", border: "none", color: "#fff", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
-                      <div style={{ padding: "6px 12px", fontSize: 10, color: "#5a5a70" }}>{vidEditVideo.name} · {vidEditDuration}s</div>
-                    </div>
-                  ) : (
-                    <label style={{ display: "block", border: "2px dashed rgba(180,74,255,.25)", borderRadius: 12, padding: "22px 0", textAlign: "center", cursor: vidEditVidUploading ? "wait" : "pointer", background: "rgba(180,74,255,.03)" }}>
-                      <input type="file" accept="video/*" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadVeVideo(f); e.target.value = ""; }} />
-                      <span style={{ fontSize: 22 }}>🎬</span>
-                      <p style={{ fontSize: 12, color: "#8a8a9e", margin: "6px 0 0" }}>{vidEditVidUploading ? (lang === "es" ? "Subiendo..." : "Uploading...") : (lang === "es" ? "Subir video" : "Upload video")}</p>
-                    </label>
-                  )}
-                </div>
-
-                {/* Reference images */}
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 6 }}>{lang === "es" ? `Fotos del personaje * (${vidEditImages.length}/10)` : `Character photos * (${vidEditImages.length}/10)`}</p>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6 }}>
-                    {vidEditImages.map((img, idx) => (
-                      <div key={idx} style={{ position: "relative", aspectRatio: "1", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(180,74,255,.2)" }}>
-                        <img src={img.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        <button onClick={() => setVidEditImages(prev => prev.filter((_,i) => i !== idx))} style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: "50%", background: "rgba(0,0,0,.7)", border: "none", color: "#fff", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>✕</button>
-                      </div>
-                    ))}
-                    {vidEditImages.length < 10 && (
-                      <label style={{ aspectRatio: "1", border: "2px dashed rgba(180,74,255,.2)", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: vidEditImgUploading ? "wait" : "pointer", background: "rgba(180,74,255,.03)" }}>
-                        <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadVeImage(f); e.target.value = ""; }} />
-                        <span style={{ fontSize: 18 }}>{vidEditImgUploading ? "⏳" : "+"}</span>
-                      </label>
-                    )}
-                  </div>
-                </div>
-
-                {/* Prompt */}
-                <div style={{ marginBottom: 12 }}>
-                  <textarea value={vidEditPrompt} onChange={e => setVidEditPrompt(e.target.value)}
-                    placeholder={lang === "es" ? "Descripción opcional — por defecto aplica cambio de personaje conservando movimientos y lip sync." : "Optional prompt — defaults to character swap preserving body movements and lip sync."}
-                    rows={3} style={{ ...inp, resize: "none", lineHeight: 1.5, borderRadius: 12, fontSize: 13 }} />
-                </div>
-
-                {/* Auto duration + aspect info */}
-                {vidEditVideo && (
-                  <div style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 10, background: "rgba(180,74,255,.06)", border: "1px solid rgba(180,74,255,.15)", borderRadius: 8, padding: "7px 12px" }}>
-                    🎬 {lang === "es" ? `Duración: ${vidEditDuration}s · Aspecto: ${vidEditVideo.aspect || "auto"}` : `Duration: ${vidEditDuration}s · Aspect: ${vidEditVideo.aspect || "auto"}`}
-                  </div>
-                )}
-
-                {/* Quality selector */}
-                <div style={{ marginBottom: 14 }}>
-                  <p style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 6 }}>{lang === "es" ? "Calidad de salida" : "Output quality"}</p>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {[["480p", lang === "es" ? "Rápido" : "Fast"], ["720p", lang === "es" ? "Recomendado" : "Recommended"], ["1080p", "HD"]].map(([q, label]) => (
-                      <button key={q} onClick={() => setVidEditRes(q)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: vidEditRes === q ? 700 : 400, color: vidEditRes === q ? "#fff" : "#5a5a70", background: vidEditRes === q ? "rgba(180,74,255,.2)" : "rgba(255,255,255,.03)", border: vidEditRes === q ? "1px solid rgba(180,74,255,.4)" : "1px solid rgba(255,255,255,.06)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                        {q}<br/><span style={{ fontSize: 9, opacity: .7 }}>{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Credit info */}
-                <div style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
-                  <span>{lang === "es" ? `Costo: ${veCredits} créditos` : `Cost: ${veCredits} credits`}</span>
-                  <span style={{ color: (profile?.credits ?? 0) >= veCredits ? "#6a6" : "#a44" }}>{lang === "es" ? `Disponibles: ${profile?.credits ?? 0}` : `Available: ${profile?.credits ?? 0}`}</span>
-                </div>
-
-                {vidEditError && <p style={{ color: "#f55", fontSize: 11, marginBottom: 10 }}>⚠ {vidEditError}</p>}
-
-                {/* Video pack section when credits insufficient */}
-                {(profile?.credits ?? 0) < veCredits && (() => {
-                  const vidPacks = [
-                    { id: "vid_s", label: "Pack S", amount: 20, price: 39.99 },
-                    { id: "vid_m", label: "Pack M", amount: 30, price: 57.99 },
-                    { id: "vid_l", label: "Pack L", amount: 50, price: 89.99 },
-                  ];
-                  return (
-                    <div style={{ padding: "14px", borderRadius: 12, background: "rgba(255,184,0,.06)", border: "1px solid rgba(255,184,0,.25)", marginBottom: 14 }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: "#ffb800", margin: "0 0 4px" }}>⚡ {lang === "es" ? "Sin créditos suficientes" : "Not enough credits"}</p>
-                      <p style={{ fontSize: 11, color: "#8a8a9e", margin: "0 0 10px" }}>{lang === "es" ? `Necesitás ${veCredits} créditos · Tenés ${profile?.credits ?? 0}` : `Need ${veCredits} credits · You have ${profile?.credits ?? 0}`}</p>
-                      <p style={{ fontSize: 11, color: "#8a8a9e", margin: "0 0 8px" }}>{lang === "es" ? "Recargá créditos:" : "Top up credits:"}</p>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        {vidPacks.map(pk => (
-                          <button key={pk.id} onClick={() => openPack(pk.id, profile?.email || session?.user?.email)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 8px rgba(255,184,0,.3)" }}>
-                            {pk.label}<br/><span style={{ fontSize: 10 }}>{pk.amount * (pk.type === "images" ? IMG_UNIT : VID_UNIT)} cr</span><br/><span style={{ fontSize: 10 }}>${pk.price}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {genning && tab === T.VID_EDIT && (
-                  <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}>
-                    <Generating type={T.VID_EDIT} duration={vidEditDuration} lang={lang} genStatus={genStatus} />
-                  </div>
-                )}
-
-                <button onClick={handleVidEditGen} disabled={!canVeGen}
-                  style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canVeGen ? "#fff" : "#3a3a50", background: canVeGen ? "linear-gradient(135deg,#b44aff,#7a00ff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canVeGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canVeGen ? "0 0 22px rgba(180,74,255,.3)" : "none" }}>
-                  {genning ? (lang === "es" ? "Procesando..." : "Processing...") : vidEditVidUploading || vidEditImgUploading ? "⏳..." : !vidEditVideo ? (lang === "es" ? "Subí un video primero" : "Upload a video first") : vidEditImages.length === 0 ? (lang === "es" ? "Agregá al menos una foto" : "Add at least one photo") : (profile?.credits ?? 0) < veCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Cambiar Personaje (${veCredits} créditos)` : `🎭 Swap Character (${veCredits} credits)`)}
-                </button>
-
-                {genResult && !genning && tab === T.VID_EDIT && (
-                  <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(180,74,255,.3)", animation: "fadeUp .5s ease" }}>
-                    <video src={genResult.url} controls autoPlay playsInline style={{ width: "100%", display: "block", borderRadius: "14px 14px 0 0" }} />
-                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
-                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {lang === "es" ? "Cambio de Personaje" : "Character Swap"}</span>
-                      <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-char-swap-${Date.now()}.mp4`)} style={{ fontSize: 11, color: "#b44aff", background: "rgba(180,74,255,.08)", border: "1px solid rgba(180,74,255,.2)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
+          {tab === T.VID_EDIT && renderJutsuPanel()}
             </div>
 
           {/* ── PINNED GENERATE BUTTON (bottom of left panel) ── */}
-          {(tab === T.IMG || tab === T.VID) && (() => {
+          {(tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) && (() => {
             const jobLimit = ({ test: 1, basic: 2, pro: 3, creator: 4 })[profile?.plan] || 1;
             const atLimit = activeJobs.length >= jobLimit;
-            const needTopUp = hasPlan && ((tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost));
+            const needTopUp = hasPlan && ((tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost) || (tab === T.VID_EDIT && (profile?.credits ?? 0) < curJutsuCost));
             return (
             <div style={{ padding: "12px 14px 16px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0d0d14", flexShrink: 0 }}>
-              <button onClick={!hasPlan ? () => setPage(P.PLANS) : needTopUp ? () => (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? setShowTopUpMenu(true) : setPage(P.PLANS)) : handleGen} disabled={!needTopUp && hasPlan && (genBtnLocked || atLimit || (tab === T.VID && curVidBlocked) || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost))}
-                style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
-                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? curImgCost : curVidCost; const have = profile?.credits ?? 0; const vLabel = curVidModel.draft ? (lang === "es" ? "Generar borrador" : "Generate draft") : (lang === "es" ? "Generar" : "Generate"); return have < c ? (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? (lang === "es" ? `⚡ Recargar créditos · necesitas ${c}` : `⚡ Top up credits · need ${c}`) : (lang === "es" ? `Mejorar plan · necesitas ${c} créditos` : `Upgrade plan · need ${c} credits`)) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : vLabel} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : vLabel} · ⚡ ${c}`); })()}
+              <button onClick={!hasPlan ? () => setPage(P.PLANS) : needTopUp ? () => (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? setShowTopUpMenu(true) : setPage(P.PLANS)) : handleGen} disabled={!needTopUp && hasPlan && (genBtnLocked || atLimit || (tab === T.VID && curVidBlocked) || (tab === T.VID_EDIT && curJutsuBlocked) || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost))}
+                style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : atLimit || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : atLimit || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: atLimit || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
+                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? curImgCost : tab === T.VID_EDIT ? curJutsuCost : curVidCost; const have = profile?.credits ?? 0; const vLabel = tab === T.VID_EDIT ? (lang === "es" ? "Generar" : "Generate") : curVidModel.draft ? (lang === "es" ? "Generar borrador" : "Generate draft") : (lang === "es" ? "Generar" : "Generate"); return have < c ? (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? (lang === "es" ? `⚡ Recargar créditos · necesitas ${c}` : `⚡ Top up credits · need ${c}`) : (lang === "es" ? `Mejorar plan · necesitas ${c} créditos` : `Upgrade plan · need ${c} credits`)) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : vLabel} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : vLabel} · ⚡ ${c}`); })()}
               </button>
               {activeJobs.length > 0 && <div style={{ marginTop: 9, fontSize: 11, color: "#6a6a82", textAlign: "center" }}>{lang === "es" ? `${activeJobs.length}/${jobLimit} generando · puedes seguir creando` : `${activeJobs.length}/${jobLimit} generating · keep creating`}</div>}
               {genError && <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 7, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", textAlign: "center" }}>
@@ -4647,7 +4551,7 @@ export default function App() {
         )}
 
         {/* ── RIGHT OUTPUT PANEL: Higgsfield-style thumbnail feed ── */}
-        {(tab === T.IMG || tab === T.VID) && (
+        {(tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) && (
           <div style={{ flex: 1, minWidth: 0, ...(isDesk ? { height: "100%", overflowY: "auto" } : {}), padding: isDesk ? "20px 24px 40px" : "14px", background: "#0a0a0f" }}>
             {(() => {
               const wantType = tab === T.IMG ? "image" : "video";

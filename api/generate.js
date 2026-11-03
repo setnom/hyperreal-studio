@@ -90,6 +90,12 @@ function isSafeImageUrl(u) {
   } catch { return false; }
 }
 
+// ── NanoJutsu hidden prompts (never shown to the user) ──
+const JUTSU_PROMPTS = {
+  motion: "Recreate @Video1 shot-for-shot with the new subject from the reference images. Replace the main character in @Video1 with the person or character shown in @Image1; additional references (@Image2, @Image3…) define their outfit, accessories, products or props. Preserve EXACTLY from @Video1: every body movement, gesture, pose, step, timing and rhythm; facial expressions and head motion; lip movements perfectly synced to the original speech; camera framing, camera movement, lens and focal length; shot composition and duration; lighting direction, color temperature and shadows; the background, set and every secondary person and object. Take from the references: identity, face, skin tone, hairstyle, body proportions, clothing, accessories and products, consistent and photorealistic in every frame with no flicker, warping, morphing or identity drift. Match the new subject to the scene's lighting, film grain, depth of field and motion blur so it looks filmed in-camera. Keep the original audio, voices and dialogue timing.",
+  swap: "Edit @Video1 by replacing exactly ONE object with the object shown in @Image1 (any additional images show other angles or details of that same object). Find the object in @Video1 that is equivalent to @Image1 in function, category or placement (a drink for a drink, a bag for a bag, a phone for a phone, a shoe for a shoe, a car for a car), or the object named in the additional instructions, and swap it for an exact replica of @Image1: same shape, proportions, materials, colors, logos, labels, printed text and fine details. Scale it correctly for the scene and for the hands or body interacting with it, and keep every interaction identical: grip, finger placement, contact points and occlusions when hands or people pass in front of it. Track it perfectly through camera movement, rotation, perspective changes, motion blur, depth of field and focus pulls. Relight it to match the scene: light direction, intensity, color temperature, reflections, specular highlights, and cast and contact shadows. Everything else in @Video1 must stay identical: people, faces, movements, lip sync, background, camera, framing, timing, color grade and audio. Do not add, remove or alter any other object. No flicker, morphing or texture swimming.",
+};
+
 function sanitizePrompt(prompt) {
   if (typeof prompt !== "string") return "";
   return prompt.replace(/[\x00-\x1F\x7F]/g, " ").trim().slice(0, MAX_PROMPT_LEN);
@@ -119,7 +125,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Authentication required" });
 
   const isDraftComplete = type === "video" && mode === "complete";
-  const prompt = sanitizePrompt(rawPrompt) || (isDraftComplete ? "draft" : "");
+  const isJutsu = type === "video" && model_id === "nanojutsu";
+  const prompt = isJutsu ? (sanitizePrompt(rawUserPrompt) || "jutsu") : (sanitizePrompt(rawPrompt) || (isDraftComplete ? "draft" : ""));
   if (!prompt) return res.status(400).json({ error: "Prompt required" });
 
   if (!VALID_TYPES.includes(type))
@@ -212,6 +219,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: `${vModel.name} necesita un video. / requires a video.` });
     if (vMd.id === "refs" && vImgs.length + vVids.length === 0)
       return res.status(400).json({ error: "Añade al menos una imagen o video de referencia. / Add at least one reference." });
+    if (vMd.outFromSource && vImgs.length === 0)
+      return res.status(400).json({ error: vMd.id === "swap" ? "Sube una imagen del objeto nuevo. / Upload the new object image." : "Sube al menos una imagen de tu personaje. / Upload at least one character image." });
     if (vAuds.length && vImgs.length + vVids.length === 0)
       return res.status(400).json({ error: "El audio necesita al menos una imagen o video. / Audio needs an image or video." });
   }
@@ -239,6 +248,8 @@ export default async function handler(req, res) {
     }
     if (inputSec > maxIn + 0.5)
       return res.status(400).json({ error: `Los videos suman ${inputSec.toFixed(1)}s. Máximo ${maxIn}s. / Videos too long.` });
+    if (vMd.minSourceSec && inputSec < vMd.minSourceSec - 0.3)
+      return res.status(400).json({ error: `El video debe durar al menos ${vMd.minSourceSec}s. / Video must be at least ${vMd.minSourceSec}s.` });
     inputSec = Math.ceil(inputSec);
   }
 
@@ -335,6 +346,16 @@ export default async function handler(req, res) {
           endpoint = ep.t2v;
           body = { ...base, aspect_ratio: safeRatio };
         }
+      } else if (m.kind === "jutsu") {
+        endpoint = ep.ref;
+        const userExtra = sanitizePrompt(rawUserPrompt);
+        body = {
+          prompt: JUTSU_PROMPTS[vMode] + (userExtra ? ` Additional instructions: ${userExtra}` : ""),
+          duration: String(Math.min(30, Math.max(4, inputSec || 5))),
+          resolution: vRes, generate_audio: true, enable_safety_checker: true, end_user_id: userId,
+          video_urls: [vSource],
+        };
+        if (vImgs.length) body.image_urls = vImgs;
       } else if (m.kind === "seedance") {
         const base = { duration: dur, resolution: vRes, aspect_ratio: safeRatio, generate_audio: true, enable_safety_checker: true, end_user_id: userId };
         if (m.draft) base.draft = true;
