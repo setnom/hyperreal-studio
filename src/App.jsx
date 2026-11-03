@@ -423,10 +423,10 @@ const PLANS = [
     features: { es: ["40 imágenes premium (calidad 1K)/mes", "8 videos premium (5s)/mes", "2 generaciones simultáneas", "Calidad de imagen 1K", "Soporte por email"], en: ["40 premium images (1K quality)/mo", "8 premium videos (5s)/mo", "2 simultaneous generations", "1K image quality", "Email support"] },
     color: "#00f0ff", popular: false },
   { id: "pro", name: "Pro", nameEn: "Pro", price: 47.99, oldPrice: 99.99, images: 90, videos: 18, maxDuration: [5, 8], resolution: "2K",
-    features: { es: ["90 imágenes premium (calidad 2K)/mes", "18 videos premium (5-8s)/mes", "4 generaciones simultáneas", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["90 premium images (2K quality)/mo", "18 premium videos (5-8s)/mo", "4 simultaneous generations", "2K image quality", "Priority queue", "Priority support"] },
+    features: { es: ["90 imágenes premium (calidad 2K)/mes", "18 videos premium (5-8s)/mes", "3 generaciones simultáneas", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["90 premium images (2K quality)/mo", "18 premium videos (5-8s)/mo", "3 simultaneous generations", "2K image quality", "Priority queue", "Priority support"] },
     color: "#b44aff", popular: true },
   { id: "creator", name: "Creador", nameEn: "Creator", price: 99.99, oldPrice: 199, images: 200, videos: 30, maxDuration: [5, 8, 10], resolution: "4K",
-    features: { es: ["200 imágenes premium (calidad 4K)/mes", "30 videos premium (5-15s)/mes", "8 generaciones simultáneas", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 premium images (4K quality)/mo", "30 premium videos (5-15s)/mo", "8 simultaneous generations", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
+    features: { es: ["200 imágenes premium (calidad 4K)/mes", "30 videos premium (5-15s)/mes", "4 generaciones simultáneas", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 premium images (4K quality)/mo", "30 premium videos (5-15s)/mo", "4 simultaneous generations", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
     color: "#ff6b2b", popular: false },
 ];
 // Annual pricing (40% off monthly). annual = price per month when billed yearly
@@ -742,6 +742,7 @@ export default function App() {
   const [vidEditError, setVidEditError] = useState(null);
   const [showTopUpMenu, setShowTopUpMenu] = useState(false);
   const [genning, setGenning] = useState(false);
+  const [activeJobs, setActiveJobs] = useState([]); // concurrent IMG/VID jobs: {id, type}
   const [genBtnLocked, setGenBtnLocked] = useState(false); // prevents double-click for 5s after submit
   const [genStatus, setGenStatus] = useState({ phase: "idle", position: null, elapsed: 0 });
   const [gens, setGens] = useState([]);
@@ -1433,9 +1434,9 @@ export default function App() {
       return;
     }
     // Concurrent generation limit
-    const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+    const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 3, creator: 4 };
     const concurrentLimit = CONCURRENT_LIMITS[profile.plan] || 1;
-    const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|") && (Date.now() - new Date(g.created_at).getTime()) < 15 * 60 * 1000).length;
+    const pendingCount = activeJobs.length;
     if (pendingCount >= concurrentLimit) {
       setGenError(lang === "es"
         ? `⏳ Tenés ${pendingCount} generación${pendingCount > 1 ? "es" : ""} en curso. Tu plan ${profile.plan} permite máx ${concurrentLimit} simultánea${concurrentLimit > 1 ? "s" : ""}. Esperá que terminen.`
@@ -1445,9 +1446,11 @@ export default function App() {
       return;
     }
     setShowConcurrentUpgrade(false);
-    setGenning(true);
+    const jobId = Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+    setActiveJobs(j => [...j, { id: jobId, type: isVid ? "video" : "image", prompt: prompt.trim() }]);
+    const endJob = () => setActiveJobs(j => j.filter(x => x.id !== jobId));
     setGenBtnLocked(true);
-    setTimeout(() => setGenBtnLocked(false), 5000); // re-enable button after 5s
+    setTimeout(() => setGenBtnLocked(false), 1500); // short debounce against double-clicks
     setGenResult(null);
     setGenError("");
     setGenStatus({ phase: "queued", position: null, elapsed: 0 });
@@ -1465,7 +1468,7 @@ export default function App() {
           setGenError(lang === "en"
             ? `Error uploading reference image: ${uploadErr.message}. Max ${MAX_FILE_MB}MB per image (jpg, png, webp).`
             : `Error al subir imagen de referencia: ${uploadErr.message}. Máx ${MAX_FILE_MB}MB por imagen (jpg, png, webp).`);
-          setGenning(false);
+          endJob();
           return;
         }
       }
@@ -1478,7 +1481,7 @@ export default function App() {
         if (isVid && endFrame) endFrameUrl = await uploadFile(endFrame);
       } catch (uploadErr) {
         setGenError("Error al subir frame. Intenta con una imagen más pequeña.");
-        setGenning(false);
+        endJob();
         return;
       }
 
@@ -1509,13 +1512,14 @@ export default function App() {
 
       // If direct result (rare)
       if (submitData.completed && submitData.url) {
+        endJob();
         await saveGenResult(isVid, submitData);
         return;
       }
 
       if (!submitData.success || !submitData.request_id) {
         setGenError(submitData.error || "Error al enviar solicitud.");
-        setGenning(false);
+        endJob();
         return;
       }
 
@@ -1529,7 +1533,7 @@ export default function App() {
       const poll = async () => {
         if (attempts >= maxAttempts) {
           setGenError("La generación tardó demasiado. Contacta soporte.");
-          setGenning(false);
+          endJob();
           setGenStatus({ phase: "idle", position: null, elapsed: 0 });
           return;
         }
@@ -1554,13 +1558,14 @@ export default function App() {
                 icon: "/favicon.png",
               });
             }
+            endJob();
             await saveGenResult(isVid, { ...submitData, url: statusData.url });
             return;
           }
 
           if (statusData.status === "FAILED") { // with error refresh
             setGenError("La generación falló. Intenta con otro prompt.");
-            setGenning(false);
+            endJob();
             setGenStatus({ phase: "idle", position: null, elapsed: 0 });
             return;
           }
@@ -1584,7 +1589,7 @@ export default function App() {
     } catch (err) {
       console.error("Generation error:", err);
       setGenError(err.message || "Error de conexión con el servidor.");
-      setGenning(false);
+      endJob();
       setGenBtnLocked(false);
     }
   };
@@ -2448,7 +2453,6 @@ export default function App() {
         {/* Logo */}
         <div style={{ cursor: "pointer", marginRight: 20, flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }} onClick={() => setPage(P.LAND)}>
           {logo(26)}
-          {isDesk && <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e2ea", letterSpacing: -.3 }}>NanoBanano</span>}
         </div>
 
         {/* Nav tabs */}
@@ -2518,11 +2522,11 @@ export default function App() {
       )}
 
       {/* ── BODY: left form panel + right output panel ── */}
-      <div style={{ display: "flex", flexDirection: isDesk ? "row" : "column", minHeight: "calc(100vh - 48px)" }}>
+      <div style={{ display: "flex", flexDirection: isDesk ? "row" : "column", ...(isDesk ? { height: `calc(100vh - ${hasPlan ? 48 : 92}px)`, overflow: "hidden" } : { minHeight: "calc(100vh - 48px)" }) }}>
 
         {/* ── LEFT PANEL: form controls (Higgsfield left column) ── */}
         {tab !== T.GAL && (
-          <div style={{ ...((tab === T.IMG || tab === T.VID) ? { width: isDesk ? 300 : "100%", minWidth: isDesk ? 300 : "unset", maxWidth: isDesk ? 300 : "unset" } : { flex: 1, width: "100%" }), borderRight: isDesk && (tab === T.IMG || tab === T.VID) ? "1px solid rgba(255,255,255,.05)" : "none", overflowY: "auto", background: "#0d0d14", display: "flex", flexDirection: "column" }}>
+          <div style={{ ...((tab === T.IMG || tab === T.VID) ? { width: isDesk ? 300 : "100%", minWidth: isDesk ? 300 : "unset", maxWidth: isDesk ? 300 : "unset" } : { flex: 1, width: "100%" }), borderRight: isDesk && (tab === T.IMG || tab === T.VID) ? "1px solid rgba(255,255,255,.05)" : "none", ...(isDesk ? { height: "100%", minHeight: 0 } : {}), overflowY: "auto", background: "#0d0d14", display: "flex", flexDirection: "column" }}>
 
             {/* ── TAB CONTENT (form) ── */}
             <div style={{ flex: 1, padding: (tab === T.IMG || tab === T.VID) ? "16px 14px 0" : (isDesk ? "28px 32px" : "14px"), overflowY: "auto", width: "100%", maxWidth: (tab === T.IMG || tab === T.VID) ? "none" : 920, margin: "0 auto" }}>
@@ -2919,7 +2923,7 @@ export default function App() {
             const handleMotionGen = async () => {
               if (!canGenMotion) return;
               // Concurrent limit check
-              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 3, creator: 4 };
               const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
               const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|") && (Date.now() - new Date(g.created_at).getTime()) < 15 * 60 * 1000).length;
               if (pendingCount >= concurrentLimit) {
@@ -3250,7 +3254,7 @@ export default function App() {
             const handleDirGen = async () => {
               if (!canGenDir) return;
               // Concurrent limit check
-              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+              const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 3, creator: 4 };
               const concurrentLimit = CONCURRENT_LIMITS[profile?.plan] || 1;
               const pendingCount = gens.filter(g => g.status === "processing" && g.result_url?.includes("|") && (Date.now() - new Date(g.created_at).getTime()) < 15 * 60 * 1000).length;
               if (pendingCount >= concurrentLimit) {
@@ -4179,13 +4183,16 @@ export default function App() {
             </div>
 
           {/* ── PINNED GENERATE BUTTON (bottom of left panel) ── */}
-          {(tab === T.IMG || tab === T.VID) && (
+          {(tab === T.IMG || tab === T.VID) && (() => {
+            const jobLimit = ({ test: 1, basic: 2, pro: 3, creator: 4 })[profile?.plan] || 1;
+            const atLimit = activeJobs.length >= jobLimit;
+            return (
             <div style={{ padding: "12px 14px 16px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0d0d14", flexShrink: 0 }}>
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))}
-                style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
-                {!hasPlan ? t("plan_for_gen") : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : tab === T.IMG ? (maxRealism ? `✨ Generar · 3 créditos (${profile?.images_remaining ?? 0} disp.)` : `Generar imagen (${profile?.images_remaining ?? 0})`) : `Generar video (${profile?.videos_remaining ?? 0})`}
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))}
+                style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
+                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : tab === T.IMG ? (maxRealism ? `✨ Generar · 3 créditos (${profile?.images_remaining ?? 0} disp.)` : `Generar imagen (${profile?.images_remaining ?? 0})`) : `Generar video (${profile?.videos_remaining ?? 0})`}
               </button>
-              {genning && <div style={{ marginTop: 10, fontSize: 11, color: "#5a5a78", textAlign: "center" }}>{genStatus?.phase === "queued" ? (lang === "es" ? `En cola${genStatus?.position ? ` · #${genStatus.position}` : ""}…` : `Queued${genStatus?.position ? ` · #${genStatus.position}` : ""}…`) : (lang === "es" ? "Generando…" : "Generating…")}</div>}
+              {activeJobs.length > 0 && <div style={{ marginTop: 9, fontSize: 11, color: "#6a6a82", textAlign: "center" }}>{lang === "es" ? `${activeJobs.length}/${jobLimit} generando · puedes seguir creando` : `${activeJobs.length}/${jobLimit} generating · keep creating`}</div>}
               {genError && <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 7, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", textAlign: "center" }}>
                 {genError}
                 {showConcurrentUpgrade && (
@@ -4197,63 +4204,70 @@ export default function App() {
                 )}
               </div>}
             </div>
-          )}
+            );
+          })()}
         </div>
         )}
 
-        {/* ── RIGHT OUTPUT PANEL ── */}
-        {(tab === T.IMG || tab === T.VID) && (isDesk || genResult || genning) && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: genResult || genning ? "flex-start" : "center", padding: "32px 28px", overflowY: "auto", background: "#0a0a0f", minHeight: 0 }}>
-            {genning && (
-              <div style={{ width: "100%", maxWidth: 560, borderRadius: 18, overflow: "hidden", animation: "fadeUp .4s ease" }}>
-                <Generating type={tab} duration={vidDur} lang={lang} genStatus={genStatus} />
-              </div>
-            )}
-            {genResult && !genning && (tab === T.IMG || tab === T.VID) && (
-              <div style={{ width: "100%", maxWidth: 640, animation: "fadeUp .5s ease" }}>
-                <div style={{ borderRadius: 16, overflow: "hidden", border: "1px solid rgba(255,255,255,.07)", background: "#0d0d14" }}>
-                  {genResult.type === "image" ? (
-                    <img src={genResult.url} alt="Generated" style={{ width: "100%", display: "block" }} />
-                  ) : (
-                    <video src={genResult.url} controls autoPlay style={{ width: "100%", display: "block" }} />
-                  )}
-                  <div style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: "#5a5a70" }}>✓ {genResult.type === "image" ? "Imagen generada" : "Video generado"}</span>
-                      {genResult.resolution && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, background: "rgba(0,240,255,.1)", color: "#00f0ff", fontWeight: 600 }}>{genResult.resolution}</span>}
-                    </div>
-                    <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-${genResult.type === "image" ? "img" : "vid"}-${Date.now()}.${genResult.type === "image" ? "png" : "mp4"}`)} style={{ fontSize: 11, color: "#e8c23a", background: "rgba(232,196,58,.08)", border: "1px solid rgba(232,196,58,.2)", padding: "6px 14px", borderRadius: 7, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {t("download")}</button>
+        {/* ── RIGHT OUTPUT PANEL: Higgsfield-style thumbnail feed ── */}
+        {(tab === T.IMG || tab === T.VID) && (
+          <div style={{ flex: 1, minWidth: 0, ...(isDesk ? { height: "100%", overflowY: "auto" } : {}), padding: isDesk ? "20px 24px 40px" : "14px", background: "#0a0a0f" }}>
+            {(() => {
+              const wantType = tab === T.IMG ? "image" : "video";
+              const feed = gens.filter(g => g.type === wantType && (g.status === "processing" ? (activeJobs.length === 0 && Date.now() - new Date(g.created_at).getTime() < 15 * 60 * 1000) : !!g.url));
+              const tile = { position: "relative", aspectRatio: "3 / 4", borderRadius: 10, overflow: "hidden", background: "#13131a", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer" };
+              return (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: "#e2e2ea" }}>{tab === T.IMG ? (lang === "es" ? "Tus imágenes" : "Your images") : (lang === "es" ? "Tus videos" : "Your videos")} <span style={{ fontSize: 11, color: "#4a4a62", fontWeight: 400, marginLeft: 6 }}>{feed.length}</span></p>
+                    {feed.length > 0 && <button onClick={() => setTab(T.GAL)} style={{ fontSize: 11, color: "#8a8a9e", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>{lang === "es" ? "Ver galería →" : "View gallery →"}</button>}
                   </div>
-                </div>
-                {/* Recent in right panel */}
-                {gens.length > 1 && (
-                  <div style={{ marginTop: 20 }}>
-                    <p style={{ fontSize: 10, color: "#3a3a52", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>Recientes</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 6 }}>
-                      {gens.slice(0, 12).map((g, i) => (
-                        <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ aspectRatio: "1", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "opacity .15s" }} onMouseEnter={e => e.currentTarget.style.opacity = ".75"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
-                          {g.url && g.status !== "processing" ? (
-                            g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <video src={g.url} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          ) : <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,.03)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{g.status === "processing" ? <div style={{ width: 12, height: 12, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : "🖼️"}</div>}
+                  {feed.length === 0 && activeJobs.filter(j => j.type === wantType).length === 0 ? (
+                    <div style={{ height: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", opacity: .35 }}>
+                      <div style={{ fontSize: 44, marginBottom: 10 }}>{tab === T.IMG ? "🖼️" : "🎬"}</div>
+                      <p style={{ fontSize: 13, color: "#5a5a78" }}>{lang === "es" ? "Tus creaciones aparecerán aquí" : "Your creations will appear here"}</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${isDesk ? 170 : 110}px, 1fr))`, gap: 8 }}>
+                      {activeJobs.filter(j => j.type === wantType).map(j => (
+                        <div key={j.id} style={{ ...tile, cursor: "default", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 12, border: "1px solid rgba(232,196,58,.25)" }}>
+                          <div style={{ width: 22, height: 22, border: "2px solid rgba(232,196,58,.2)", borderTop: "2px solid #e8c23a", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
+                          <span style={{ fontSize: 10, color: "#8a8a9e" }}>{lang === "es" ? "Generando…" : "Generating…"}</span>
+                          {j.prompt && <span style={{ fontSize: 9, color: "#4a4a62", textAlign: "center", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>{j.prompt}</span>}
                         </div>
                       ))}
+                      {feed.slice(0, visibleCount).map(g => {
+                        const gi = gens.indexOf(g);
+                        const ready = g.url && g.status !== "processing";
+                        return (
+                          <div key={g.id || gi} onClick={() => ready && openPreview(g, gi)} style={tile}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,.2)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"; }}>
+                            {ready ? (
+                              g.type === "image"
+                                ? <img src={g.url} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={e => { e.currentTarget.style.display = "none"; }} />
+                                : <video src={g.url} muted playsInline preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
+                            ) : (
+                              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <div style={{ width: 20, height: 20, border: "2px solid rgba(232,196,58,.2)", borderTop: "2px solid #e8c23a", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
+                              </div>
+                            )}
+                            {favorites[g.id] && <div style={{ position: "absolute", top: 6, right: 6, fontSize: 11 }}>❤️</div>}
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {!genResult && !genning && (tab === T.IMG || tab === T.VID) && (
-              <div style={{ textAlign: "center", opacity: .35 }}>
-                <div style={{ fontSize: 48, marginBottom: 12 }}>{tab === T.IMG ? "🖼️" : "🎬"}</div>
-                <p style={{ fontSize: 13, color: "#5a5a78", fontWeight: 500 }}>{lang === "es" ? "Tu creación aparecerá aquí" : "Your creation will appear here"}</p>
-              </div>
-            )}
+                  )}
+                  {visibleCount < feed.length && <div ref={tab !== T.GAL ? gallerysentinel : undefined} style={{ height: 30 }} />}
+                </>
+              );
+            })()}
           </div>
         )}
 
         {/* ── GALLERY FULLSCREEN ── */}
         {tab === T.GAL && (
-          <div style={{ flex: 1, padding: isDesk ? "24px 28px" : "14px", overflowY: "auto", background: "#0a0a0f" }}>
+          <div style={{ flex: 1, minWidth: 0, ...(isDesk ? { height: "100%" } : {}), padding: isDesk ? "24px 28px" : "14px", overflowY: "auto", background: "#0a0a0f" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: "#e2e2ea" }}>{lang === "es" ? "Tu galería" : "Your gallery"} <span style={{ fontSize: 11, color: "#4a4a62", fontWeight: 400, marginLeft: 6 }}>{gens.length} {lang === "es" ? "creaciones" : "creations"}</span></p>
             </div>
@@ -4268,7 +4282,7 @@ export default function App() {
                   {gens.slice(0, visibleCount).map((g, i) => (
                     <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ breakInside: "avoid", marginBottom: 8, borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "opacity .15s" }} onMouseEnter={e => e.currentTarget.style.opacity = ".8"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
                       {g.url && g.status !== "processing" ? (
-                        g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", display: "block" }} /> : <video src={g.url} muted style={{ width: "100%", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
+                        g.type === "image" ? <img src={g.url} alt="" loading="lazy" style={{ width: "100%", display: "block" }} onError={e => { e.currentTarget.parentElement.style.display = "none"; }} /> : <video src={g.url} muted style={{ width: "100%", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
                       ) : (
                         <div style={{ height: 140, background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>
                           {g.status === "processing" ? <div style={{ width: 22, height: 22, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : (g.type === "image" ? "🖼️" : "🎬")}

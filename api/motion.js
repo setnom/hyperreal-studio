@@ -106,7 +106,7 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: `Not enough credits. Need ${creditsNeeded}, have ${videos_remaining}.` });
 
   // Concurrent limit check
-  const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 4, creator: 8 };
+  const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 3, creator: 4 };
   const concurrentLimit = CONCURRENT_LIMITS[plan] || 1;
   try {
     const pendingRes = await fetch(
