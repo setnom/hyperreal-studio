@@ -1,7 +1,7 @@
 Mini videos del encabezado de cada modelo (pestaña Video).
 Nombre del archivo = id del modelo + .mp4, por ejemplo:
   kling4.mp4  kling3_std.mp4  kling3_pro.mp4  kling_o3.mp4  kling3_turbo.mp4  kling_o3_edit.mp4
-  seedance25.mp4  seedance25_draft.mp4  seedance2.mp4  seedance2_fast.mp4  wan3.mp4  minimax_h3.mp4
+  seedance25.mp4  seedance25_draft.mp4  seedance2.mp4  seedance2_fast.mp4  wan3.mp4  flux3max.mp4  minimax_h3.mp4
 Formato recomendado: 3-5 s, 720x360 (horizontal 2:1), H.264, sin audio, menos de 1 MB.
 Si falta un archivo, se muestra un degradado con el color de la marca.
 

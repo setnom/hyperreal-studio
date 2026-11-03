@@ -98,6 +98,13 @@ export const VIDEO_MODELS = [
       { id: "refs",   images: 10, videos: 5, audios: 5, videoSec: 15, hint: { es: "Hasta 10 imágenes, 5 videos y 5 audios", en: "Up to 10 images, 5 videos and 5 audio files" } },
     ],
     ep: { t2v: "alibaba/wan-3.0/text-to-video", i2v: "alibaba/wan-3.0/image-to-video", ref: "alibaba/wan-3.0/reference-to-video" } },
+  // ── FLUX ──
+  { id: "flux3max", family: "FLUX", name: "FLUX 3 Max", badge: "Nuevo", kind: "flux3", category: "create",
+    durRange: [5, 20], aspects: ["16:9", "9:16", "1:1"], audioToggle: true,
+    // fal list price after the promo (Nov 7): 720p $0.17/s · 1080p $0.29/s
+    res: { "720p": { perSec: 15, fal: 0.17 }, "1080p": { perSec: 25, fal: 0.29 } }, defRes: "720p",
+    modes: [ { id: "frames", frames: 2, endFrame: true } ],
+    ep: { t2v: "blackforestlabs/flux-3-max/text-to-video", i2v: "blackforestlabs/flux-3-max/image-to-video" } },
   // ── MiniMax ──
   { id: "minimax_h3", family: "MiniMax", name: "MiniMax H3 Max", badge: "", kind: "minimax", category: "create",
     durRange: [5, 15], aspects: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
@@ -177,8 +184,11 @@ export const IMAGE_MODELS = [
     cost: 24, costWithRefs: 32, falCost: 0.211, falCostWithRefs: 0.37,
     t2i: "fal-ai/gpt-image-2", edit: "openai/gpt-image-2/edit", maxRefs: 14,
     // input image tokens scale with the number of refs → price by tiers (≥40% margin at $0.02/credit)
-    refTiers: [[4, 32], [9, 44], [14, 56]],
-    idSheetCost: 72 }, // ID Sheet: 2048×1152 high quality + up to 14 refs + long master prompt
+    // GPT is billed by tokens: output size × quality + every input image. Credits = base(quality) + 3 per reference (+2 ID Sheet long prompt)
+    gptQualities: { medium: { base: 10, fal: 0.06, label: { es: "Media", en: "Medium" } },
+                    high:   { base: 24, fal: 0.211, label: { es: "Alta", en: "High" } },
+                    high2k: { base: 48, fal: 0.475, label: { es: "Alta 2K", en: "High 2K" } } },
+    perRef: 3, idSheetExtra: 2 },
   { id: "flux2pro", family: "Black Forest Labs", name: "FLUX.2 Pro", badge: "",     kind: "flux",
     cost: 5, costWithRefs: 10, falCost: 0.045, falCostWithRefs: 0.09,
     t2i: "fal-ai/flux-2-pro", edit: "fal-ai/flux-2-pro/edit", maxRefs: 4 },
@@ -190,10 +200,10 @@ export const IMAGE_MODELS = [
 export const findImageModel = (id) => IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0];
 
 export function imageCredits(model, resolution = "1K", hasRefs = false, opts = {}) {
-  if (opts.style === "idsheet" && model.idSheetCost) return model.idSheetCost;
-  if (hasRefs && model.refTiers) {
-    const n = Math.max(1, Math.min(model.maxRefs || 1, Number(opts.nRefs) || 1));
-    return (model.refTiers.find(([max]) => n <= max) || model.refTiers[model.refTiers.length - 1])[1];
+  if (model.gptQualities) {
+    const q = model.gptQualities[opts.gptQuality] || model.gptQualities.high;
+    const n = hasRefs ? Math.max(1, Math.min(model.maxRefs || 1, Number(opts.nRefs) || 1)) : 0;
+    return q.base + n * (model.perRef || 0) + (opts.style === "idsheet" ? (model.idSheetExtra || 0) : 0);
   }
   if (hasRefs && model.costWithRefs) return model.costWithRefs;
   return typeof model.cost === "number" ? model.cost : (model.cost[resolution] ?? model.cost["1K"]);

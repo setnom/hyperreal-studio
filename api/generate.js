@@ -116,7 +116,7 @@ export default async function handler(req, res) {
   if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
   const { type, prompt: rawPrompt, user_prompt: rawUserPrompt, aspect_ratio, style_id, image_quality, duration, audio,
-          image_urls, start_frame, end_frame, multishot, max_realism, model_id, video_url, resolution, mode, video_urls, audio_urls, middle_frames, gen_id, user_token, char_height } = req.body || {};
+          image_urls, start_frame, end_frame, multishot, max_realism, model_id, video_url, resolution, mode, video_urls, audio_urls, middle_frames, gen_id, user_token, char_height, gpt_quality } = req.body || {};
 
   // Validate style_id against allowed values only
   const VALID_STYLE_IDS = ["photorealistic", "cinematic", "product", "portrait", "pixar", "ads", "neutral", "restore", "colorize", "idsheet"];
@@ -255,9 +255,10 @@ export default async function handler(req, res) {
   }
 
   const isIdSheet = !isVid && safeStyleId === "idsheet";
+  const safeGptQ = ["medium", "high", "high2k"].includes(gpt_quality) ? gpt_quality : "high";
   if (isIdSheet && (iModel.kind !== "gpt" || !hasRefs))
     return res.status(400).json({ error: "ID Sheet: usa GPT Image 2 y sube al menos 1 imagen del personaje. / ID Sheet needs GPT Image 2 and at least 1 character image." });
-  const creditCost = !isVid ? imageCredits(iModel, imageResolution, hasRefs, { nRefs: Math.min(refList.length, iModel.maxRefs || 0), style: safeStyleId })
+  const creditCost = !isVid ? imageCredits(iModel, imageResolution, hasRefs, { nRefs: Math.min(refList.length, iModel.maxRefs || 0), style: safeStyleId, gptQuality: safeGptQ })
     : isDraftComplete ? draftCompleteCredits(vModel, vDur)
     : videoCredits(vModel, vDur, vRes, inputSec, vMode, { nImages: vImgs.length, nAudios: vAuds.length });
   if (creditsBalance < creditCost)
@@ -268,7 +269,7 @@ export default async function handler(req, res) {
   const concurrentLimit = CONCURRENT_LIMITS[userPlan] || 1;
   try {
     const pendingRes = await fetch(
-      `${SB_URL}/rest/v1/generations?user_id=eq.${userId}&status=eq.processing&select=id`,
+      `${SB_URL}/rest/v1/generations?user_id=eq.${userId}&status=eq.processing&created_at=gte.${new Date(Date.now() - 25 * 60 * 1000).toISOString()}&select=id`,
       { headers: sbServiceHeaders() }
     );
     const pending = await pendingRes.json();
@@ -303,14 +304,15 @@ export default async function handler(req, res) {
       const refs = hasRefs ? refList.slice(0, iModel.maxRefs) : [];
       endpoint = hasRefs && iModel.edit ? iModel.edit : iModel.t2i;
       if (iModel.kind === "gpt") {
-        const GPT_SIZE_MAP = { "1:1": "square_hd", "16:9": "landscape_16_9", "9:16": "portrait_16_9", "4:3": "landscape_4_3", "3:4": "portrait_4_3" };
-        body = { prompt, quality: "high", output_format: "png", num_images: 1 };
-        if (GPT_SIZE_MAP[safeRatio]) body.image_size = GPT_SIZE_MAP[safeRatio];
-        if (isIdSheet) {
-          // Full master prompt is built here (bypasses the 2000-char user prompt cap) · forced 16:9 large sheet
-          body.prompt = buildIdSheetPrompt(char_height, rawUserPrompt).prompt;
-          body.image_size = { width: 2048, height: 1152 };
-        }
+        // Custom sizes (multiples of 16): ~1 MP for Media/Alta, ~2.4 MP for Alta 2K — price follows pixels
+        const GPT_1MP = { "1:1": [1024, 1024], "16:9": [1360, 768], "9:16": [768, 1360], "4:3": [1184, 880], "3:4": [880, 1184] };
+        const GPT_2K  = { "1:1": [1536, 1536], "16:9": [2048, 1152], "9:16": [1152, 2048], "4:3": [1776, 1328], "3:4": [1328, 1776] };
+        const sizes = safeGptQ === "high2k" ? GPT_2K : GPT_1MP;
+        const r = isIdSheet ? "16:9" : safeRatio;
+        body = { prompt, quality: safeGptQ === "medium" ? "medium" : "high", output_format: "png", num_images: 1 };
+        if (sizes[r]) body.image_size = { width: sizes[r][0], height: sizes[r][1] };
+        // ID Sheet: full master prompt is built here (bypasses the 2000-char user prompt cap) · always 16:9
+        if (isIdSheet) body.prompt = buildIdSheetPrompt(char_height, rawUserPrompt).prompt;
       } else if (iModel.kind === "nano") {
         body = { prompt, resolution: imageResolution, limit_generations: true };
         if (safeRatio !== "auto") body.aspect_ratio = safeRatio;
@@ -384,6 +386,16 @@ export default async function handler(req, res) {
           body = { prompt, ...base };
           if (hasStart) body.image_url = start_frame;
           if (hasEnd)   body.end_image_url = end_frame;
+        }
+      } else if (m.kind === "flux3") {
+        const base = { prompt, duration: dur, resolution: vRes, generate_audio: wantAudio };
+        if (hasStart) {
+          endpoint = ep.i2v;
+          body = { ...base, image_url: start_frame, aspect_ratio: "auto" };
+          if (hasEnd) body.end_image_url = end_frame;
+        } else {
+          endpoint = ep.t2v;
+          body = { ...base, aspect_ratio: safeRatio };
         }
       } else if (m.kind === "wan3") {
         const base = { prompt, duration: vDur, resolution: vRes, audio: wantAudio };

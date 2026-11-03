@@ -700,6 +700,7 @@ export default function App() {
   const [charHeight, setCharHeight] = useState(""); // ID Sheet height in cm (empty → 170) // v23: open settings popover in studio tabs
   const [ratio, setRatio] = useState("1:1");
   const [imgQuality, setImgQuality] = useState("1K");
+  const [gptQuality, setGptQuality] = useState("high"); // GPT Image 2: medium | high | high2k
   const [imgModelId, setImgModelId] = useState("nb2");
   const [vidModelId, setVidModelId] = useState("kling4");
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -1492,7 +1493,7 @@ export default function App() {
     const vEnd = vMulti ? (vidFrames.length > 1 ? vidFrames[vidFrames.length - 1] : null) : (vMd.endFrame ? endFrame : null);
     const vMiddle = vMulti ? vidFrames.slice(1, -1) : [];
     const vInSec = (vMd.source ? ((J ? jutsuVideo : vidRefVideo)?.duration || 0) : 0) + (vModeNow === "refs" ? vidRefVids.reduce((a, v) => a + (v.duration || 0), 0) : 0);
-    const creditCostNow = isVid ? videoCredits(vM, vidDur, (J ? jutsuRes : vidRes), vInSec, vModeNow, { nImages: (J ? jutsuImages : vidOmniImages).length, nAudios: vidRefAuds.length }) : imageCredits(iM, imgQuality, refImages.length > 0 && iM.maxRefs > 0, { nRefs: Math.min(refImages.length, iM.maxRefs || 0), style });
+    const creditCostNow = isVid ? videoCredits(vM, vidDur, (J ? jutsuRes : vidRes), vInSec, vModeNow, { nImages: (J ? jutsuImages : vidOmniImages).length, nAudios: vidRefAuds.length }) : imageCredits(iM, imgQuality, refImages.length > 0 && iM.maxRefs > 0, { nRefs: Math.min(refImages.length, iM.maxRefs || 0), style, gptQuality });
     if (isVid && vMd.source && !(J ? jutsuVideo : vidRefVideo)?.url) { setGenError(lang === "es" ? "Sube el video primero." : "Upload the video first."); return; }
     if (isVid && vModeNow === "refs" && (J ? jutsuImages : vidOmniImages).length + vidRefVids.length === 0) { setGenError(lang === "es" ? "Añade al menos una imagen o video de referencia." : "Add at least one image or video reference."); return; }
     if (isVid && vModeNow === "frames" && (vMd.needsImage || vM.res[pickRes(vM, (J ? jutsuRes : vidRes))]?.needsImage) && !vStart) { setGenError(lang === "es" ? `${vM.name} necesita un fotograma inicial.` : `${vM.name} needs a start frame.`); return; }
@@ -1579,6 +1580,7 @@ export default function App() {
           char_height: tab === T.IMG && style === "idsheet" ? (Number(charHeight) || 170) : undefined,
           aspect_ratio: isVid ? vidRatio : ratio,
           image_quality: !isVid ? imgQuality : undefined,
+          gpt_quality: !isVid ? gptQuality : undefined,
           max_realism: !isVid ? maxRealism : undefined,
           model_id: isVid ? (J ? "nanojutsu" : vidModelId) : imgModelId,
           video_url: isVid && vMd.source ? (J ? jutsuVideo : vidRefVideo)?.url : undefined,
@@ -2619,7 +2621,7 @@ export default function App() {
   // ── Model catalog (v16) ──
   const curVidModel = findVideoModel(vidModelId);
   const curImgModel = findImageModel(imgModelId);
-  const curImgCost = imageCredits(curImgModel, imgQuality, refImages.length > 0 && curImgModel.maxRefs > 0, { nRefs: Math.min(refImages.length, curImgModel.maxRefs || 0), style });
+  const curImgCost = imageCredits(curImgModel, imgQuality, refImages.length > 0 && curImgModel.maxRefs > 0, { nRefs: Math.min(refImages.length, curImgModel.maxRefs || 0), style, gptQuality });
   const curVidMd = pickMode(curVidModel, vidMode);
   const curVidMode = curVidMd.id;
   const curVidRes = pickRes(curVidModel, vidRes);
@@ -2684,7 +2686,7 @@ export default function App() {
   };
 
   // ── VIDEO PANEL v18 (Higgsfield-style) ──
-  const VID_FAMILY_COLOR = { Kling: "#3b82f6", Seedance: "#6366f1", Wan: "#a855f7", MiniMax: "#f43f5e" };
+  const VID_FAMILY_COLOR = { Kling: "#3b82f6", Seedance: "#6366f1", Wan: "#a855f7", FLUX: "#f59e0b", MiniMax: "#f43f5e" };
   const vidEditModes = ["edit", "extend"];
   const vidModelsForSub = VIDEO_MODELS.filter(m => vidSub === "edit" ? m.modes.some(md => vidEditModes.includes(md.id)) : m.category === "create");
   const vidModesForSub = curVidModel.modes.filter(md => vidSub === "edit" ? vidEditModes.includes(md.id) : true);
@@ -3499,6 +3501,22 @@ export default function App() {
                         </p>
                       </div>
                     )}
+                    {curImgModel.gptQualities && (() => {
+                      const gq = Object.entries(curImgModel.gptQualities).filter(([k]) => k !== "high2k" || ["pro", "creator"].includes(profile?.plan));
+                      const lbl = (q) => (lang === "es" ? q.label.es : q.label.en);
+                      const cur = curImgModel.gptQualities[gptQuality] || curImgModel.gptQualities.high;
+                      return (
+                        <>
+                          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                            {uiSetting(LL("Calidad", "Quality"), lbl(cur), "gptQ")}
+                          </div>
+                          {uiPopList("gptQ", gq.map(([k, q]) => ({ id: k, label: lbl(q),
+                            sub: k === "medium" ? LL("Más rápida y barata · ~1 MP", "Faster & cheaper · ~1 MP") : k === "high" ? LL("Máximo detalle · ~1 MP", "Max detail · ~1 MP") : LL("Máximo detalle · ~2.4 MP (2048 px)", "Max detail · ~2.4 MP (2048 px)"),
+                            right: `⚡ ${imageCredits(curImgModel, imgQuality, refImages.length > 0, { nRefs: Math.min(refImages.length, curImgModel.maxRefs || 0), style, gptQuality: k })}` })), gptQuality, setGptQuality)}
+                          {refImages.length > 0 && <p style={{ fontSize: 10, color: "#6a6a82", margin: "-2px 2px 8px" }}>{LL(`Incluye +${curImgModel.perRef} créditos por cada imagen de referencia (${Math.min(refImages.length, curImgModel.maxRefs)}).`, `Includes +${curImgModel.perRef} credits per reference image (${Math.min(refImages.length, curImgModel.maxRefs)}).`)}</p>}
+                        </>
+                      );
+                    })()}
                     {showQuality && (
                       <>
                         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>

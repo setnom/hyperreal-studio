@@ -111,7 +111,7 @@ export default async function handler(req, res) {
   const concurrentLimit = CONCURRENT_LIMITS[plan] || 1;
   try {
     const pendingRes = await fetch(
-      `${SB_URL}/rest/v1/generations?user_id=eq.${userId}&status=eq.processing&select=id`,
+      `${SB_URL}/rest/v1/generations?user_id=eq.${userId}&status=eq.processing&created_at=gte.${new Date(Date.now() - 25 * 60 * 1000).toISOString()}&select=id`,
       { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
     );
     const pending = await pendingRes.json();
