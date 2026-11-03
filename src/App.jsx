@@ -2334,169 +2334,220 @@ export default function App() {
     );
   }
 
+  // ── NB REDESIGN v13: Promptwise-style layout ──
+  // Tab config for sidebar icons
+  const sidebarTabs = [
+    { k: T.IMG,     icon: "🖼️", label: lang==="es"?"Imagen":"Image",    color: "#00f0ff" },
+    { k: T.VID,     icon: "🎬", label: lang==="es"?"Video":"Video",     color: "#b44aff" },
+    { k: T.GAL,     icon: "📁", label: lang==="es"?"Galería":"Gallery", color: "#8a8a9e" },
+    { k: T.MOT,     icon: "🎭", label: "Motion",                        color: "#ff6b2b" },
+    { k: T.DIR,     icon: "🎥", label: "Director",                      color: "#00f0ff" },
+    { k: T.WS_IMG,  icon: "✨", label: "Img Pro",                       color: "#ffb800" },
+    { k: T.WS_VID,  icon: "🌊", label: "Vid Pro",                       color: "#00c8ff" },
+    { k: T.VID_EDIT,icon: "🔄", label: lang==="es"?"Cambio Personaje":"Char Swap", color: "#b44aff" },
+  ];
+
   return wrap(
     <>
-      {/* Nav */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: isDesk ? 24 : 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {logo(isDesk ? 26 : 22)}
-          <button onClick={() => setPage(P.LAND)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", fontSize: 11, color: "#5a5a70", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>← {lang === "en" ? "Home" : "Inicio"}</button>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <LangSelector />
-          <UserPanel />
-        </div>
-      </div>
+      {/* ── FULL-SCREEN SHELL ── */}
+      <div style={{ display: "flex", minHeight: "100vh", margin: isDesk ? "-32px -40px -80px" : "-20px -16px -60px", background: "#07071a" }}>
 
-      {!hasPlan && (
-        <div style={{ padding: "16px", borderRadius: 12, background: "rgba(255,184,0,.06)", border: "1px solid rgba(255,184,0,.15)", textAlign: "center", marginBottom: 16 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: "#ffb800", margin: "0 0 8px" }}>{t("no_plan")}</p>
-          <button onClick={() => setPage(P.PLANS)} style={{ padding: "9px 22px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "#ffb800", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>Elegir plan →</button>
-        </div>
-      )}
-
-      {/* Plan + Credits */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 16, background: `${hasPlan ? planData.color : "#5a5a70"}12`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}30`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>{t("plan_label")} {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}</span>
-        {hasPlan && <span style={{ display: "inline-block", animation: "nudge 4s ease-in-out 3s infinite" }}><button onClick={() => setPage(P.PLANS)} style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.08)", border: "1px solid rgba(0,255,136,.35)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, boxShadow: "0 0 8px rgba(0,255,136,.2)" }}>{t("change_plan")}</button></span>}
-        {hasPlan && (
-          <span style={{ display: "inline-block", position: "relative" }}>
-            <button onClick={() => setShowTopUpMenu(v => !v)} style={{ fontSize: 10, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, boxShadow: "0 0 10px rgba(255,184,0,.45)" }}>{t("top_up")} ▾</button>
-            {showTopUpMenu && (
-              <div style={{ position: "absolute", top: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", zIndex: 999, background: "#16162a", border: "1px solid rgba(255,184,0,.3)", borderRadius: 12, padding: 12, width: 260, boxShadow: "0 8px 32px rgba(0,0,0,.6)" }} onClick={e => e.stopPropagation()}>
-                <div style={{ position: "absolute", top: -6, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderBottom: "6px solid rgba(255,184,0,.3)" }} />
-                <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 8px" }}>🖼️ {lang === "es" ? "Créditos de imagen" : "Image credits"}</p>
-                <div style={{ display: "flex", gap: 5, marginBottom: 10 }}>
-                  {[["img_s",20,"$5.99"],["img_m",50,"$12.99"],["img_l",120,"$27.99"]].map(([id,amt,price]) => (
-                    <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "7px 3px", fontSize: 10, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>
-                      {amt} img<br/><span style={{ fontSize: 9 }}>{price}</span>
-                    </button>
-                  ))}
-                </div>
-                <p style={{ fontSize: 11, fontWeight: 700, color: "#b44aff", margin: "0 0 8px" }}>🎬 {lang === "es" ? "Créditos de video" : "Video credits"}</p>
-                <div style={{ display: "flex", gap: 5 }}>
-                  {[["vid_s",5,"$12.99"],["vid_m",12,"$27.99"],["vid_l",30,"$59.99"]].map(([id,amt,price]) => (
-                    <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "7px 3px", fontSize: 10, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg,#b44aff,#7a00ff)", border: "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>
-                      {amt} vid<br/><span style={{ fontSize: 9 }}>{price}</span>
-                    </button>
-                  ))}
-                </div>
-                <button onClick={() => setShowTopUpMenu(false)} style={{ position: "absolute", top: 6, right: 8, background: "none", border: "none", color: "#5a5a70", fontSize: 14, cursor: "pointer", lineHeight: 1 }}>×</button>
-              </div>
-            )}
-          </span>
-        )}
-      </div>
-
-      {/* Dashboard layout */}
-      <div style={{ display: isDesk ? "grid" : "block", gridTemplateColumns: isDesk ? "280px 1fr" : "unset", gap: isDesk ? 24 : 0 }}>
-        {/* Sidebar on desktop */}
-        <div>
-          <div style={{ display: "grid", gridTemplateColumns: isDesk ? "1fr" : "1fr 1fr", gap: 8, marginBottom: 16 }}>
-            <div style={{ padding: isDesk ? "18px" : "12px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.1)" }}>
-              <p style={{ fontSize: 9, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>Imágenes</p>
-              <p style={{ fontSize: isDesk ? 32 : 26, fontWeight: 800, margin: "4px 0 0", fontFamily: "'JetBrains Mono',monospace", color: "#00f0ff" }}>{profile?.images_remaining ?? 0}</p>
-              <p style={{ fontSize: 9, color: "#3a3a50", margin: "2px 0 0" }}>Imagen Premium</p>
+        {/* ── LEFT SIDEBAR ── */}
+        <div style={{ width: isDesk ? 72 : 0, minWidth: isDesk ? 72 : 0, display: isDesk ? "flex" : "none", flexDirection: "column", alignItems: "center", background: "#0b0b1f", borderRight: "1px solid rgba(255,255,255,.05)", paddingTop: 16, paddingBottom: 16, gap: 4, position: "sticky", top: 0, height: "100vh", overflowY: "auto", zIndex: 50 }}>
+          {/* Logo */}
+          <div style={{ marginBottom: 20, cursor: "pointer" }} onClick={() => setPage(P.LAND)}>
+            {logo(28)}
+          </div>
+          {/* Nav items */}
+          {sidebarTabs.map(tb => {
+            const active = tab === tb.k;
+            return (
+              <button key={tb.k} onClick={() => setTab(tb.k)} title={tb.label}
+                style={{ width: 48, height: 48, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: active ? `${tb.color}18` : "transparent", border: active ? `1px solid ${tb.color}40` : "1px solid transparent", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", transition: "all .18s", position: "relative" }}>
+                <span style={{ fontSize: 18, lineHeight: 1 }}>{tb.icon}</span>
+                <span style={{ fontSize: 7, color: active ? tb.color : "#3a3a56", fontWeight: active ? 700 : 400, letterSpacing: .3, lineHeight: 1 }}>{tb.label.split(" ")[0]}</span>
+                {active && <div style={{ position: "absolute", left: -1, top: "50%", transform: "translateY(-50%)", width: 3, height: 24, background: tb.color, borderRadius: "0 3px 3px 0" }} />}
+              </button>
+            );
+          })}
+          {/* Divider */}
+          <div style={{ width: 32, height: 1, background: "rgba(255,255,255,.05)", margin: "8px 0" }} />
+          {/* Credits mini */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "8px 0" }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{profile?.images_remaining ?? 0}</div>
+              <div style={{ fontSize: 7, color: "#3a3a56", letterSpacing: .5 }}>IMG</div>
             </div>
-            <div style={{ padding: isDesk ? "18px" : "12px", borderRadius: 12, background: "rgba(180,74,255,.04)", border: "1px solid rgba(180,74,255,.1)" }}>
-              <p style={{ fontSize: 9, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>Videos</p>
-              <p style={{ fontSize: isDesk ? 32 : 26, fontWeight: 800, margin: "4px 0 0", fontFamily: "'JetBrains Mono',monospace", color: "#b44aff" }}>{profile?.videos_remaining ?? 0}</p>
-              <p style={{ fontSize: 9, color: "#3a3a50", margin: "2px 0 0" }}>Video Premium</p>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#b44aff", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{profile?.videos_remaining ?? 0}</div>
+              <div style={{ fontSize: 7, color: "#3a3a56", letterSpacing: .5 }}>VID</div>
+            </div>
+          </div>
+          {/* Spacer + bottom actions */}
+          <div style={{ flex: 1 }} />
+          <LangSelector />
+          <div style={{ marginTop: 8 }}><UserPanel /></div>
+        </div>
+
+        {/* ── MAIN CONTENT AREA ── */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+
+          {/* ── TOP BAR ── */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: isDesk ? "14px 24px" : "12px 16px", borderBottom: "1px solid rgba(255,255,255,.04)", background: "#0b0b1f", position: "sticky", top: 0, zIndex: 40 }}>
+            {/* Left: mobile logo + page title */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {!isDesk && <div style={{ cursor: "pointer" }} onClick={() => setPage(P.LAND)}>{logo(22)}</div>}
+              <div>
+                <span style={{ fontSize: isDesk ? 15 : 13, fontWeight: 700, color: "#e0e0f0" }}>
+                  {sidebarTabs.find(t2 => t2.k === tab)?.label || "Dashboard"}
+                </span>
+                <span style={{ fontSize: 10, color: "#3a3a56", marginLeft: 8 }}>NanoBanano Studio</span>
+              </div>
+            </div>
+
+            {/* Right: plan badge + buttons */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {/* Plan badge */}
+              <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 14, background: `${hasPlan ? planData.color : "#5a5a70"}12`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}30`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>
+                {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}
+              </span>
+              {/* Credits (mobile) */}
+              {!isDesk && (
+                <span style={{ fontSize: 10, color: "#8a8a9e" }}>
+                  <span style={{ color: "#00f0ff", fontWeight: 700 }}>{profile?.images_remaining ?? 0}</span> img · <span style={{ color: "#b44aff", fontWeight: 700 }}>{profile?.videos_remaining ?? 0}</span> vid
+                </span>
+              )}
+              {/* Change plan */}
+              {hasPlan && (
+                <button onClick={() => setPage(P.PLANS)} style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.07)", border: "1px solid rgba(0,255,136,.25)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                  {t("change_plan")}
+                </button>
+              )}
+              {/* Top-up dropdown */}
+              <span style={{ position: "relative" }}>
+                <button onClick={() => setShowTopUpMenu(v => !v)} style={{ fontSize: 10, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, boxShadow: "0 0 10px rgba(255,184,0,.35)" }}>
+                  {t("top_up")} ▾
+                </button>
+                {showTopUpMenu && (
+                  <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 999, background: "#13132b", border: "1px solid rgba(255,184,0,.25)", borderRadius: 14, padding: 14, width: 268, boxShadow: "0 12px 40px rgba(0,0,0,.7)" }} onClick={e => e.stopPropagation()}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 8px" }}>🖼️ {lang === "es" ? "Créditos de imagen" : "Image credits"}</p>
+                    <div style={{ display: "flex", gap: 5, marginBottom: 12 }}>
+                      {[["img_s",20,"$5.99"],["img_m",50,"$12.99"],["img_l",120,"$27.99"]].map(([id,amt,price]) => (
+                        <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "8px 3px", fontSize: 10, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
+                          {amt} img<br/><span style={{ fontSize: 9 }}>{price}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "#b44aff", margin: "0 0 8px" }}>🎬 {lang === "es" ? "Créditos de video" : "Video credits"}</p>
+                    <div style={{ display: "flex", gap: 5 }}>
+                      {[["vid_s",5,"$12.99"],["vid_m",12,"$27.99"],["vid_l",30,"$59.99"]].map(([id,amt,price]) => (
+                        <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "8px 3px", fontSize: 10, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg,#b44aff,#7a00ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
+                          {amt} vid<br/><span style={{ fontSize: 9 }}>{price}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => setShowTopUpMenu(false)} style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: "#5a5a70", fontSize: 16, cursor: "pointer", lineHeight: 1 }}>×</button>
+                  </div>
+                )}
+              </span>
             </div>
           </div>
 
-          {/* Gallery on desktop sidebar */}
-          {isDesk && (
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8, fontWeight: 600 }}>Biblioteca</p>
-              {gens.length === 0 ? <p style={{ fontSize: 11, color: "#3a3a50" }}>Sin generaciones aún</p> : (
-                <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, maxHeight: 350, overflow: "auto" }}>
-                    {gens.slice(0, visibleCount).map((g, i) => (
-                      <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "border-color .2s", position: "relative" }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = g.type === "image" ? "rgba(0,240,255,.3)" : "rgba(180,74,255,.3)"}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"}>
-                        {g.url && g.status !== "processing" ? (
-                          g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: 80, objectFit: "cover", display: "block" }} />
-                          : <video src={g.url} muted style={{ width: "100%", height: 80, objectFit: "cover", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
-                        ) : (
-                          <div style={{ width: "100%", height: 80, background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
-                            {g.status === "processing" ? <div style={{ width: 18, height: 18, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : (g.type === "image" ? "🖼️" : "🎬")}
-                          </div>
-                        )}
-                        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 4px 3px", background: "linear-gradient(transparent, rgba(0,0,0,.7))" }}>
-                          <span style={{ fontSize: 7, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
-                        </div>
-                        {favorites[g.id] && (
-                          <div style={{ position: "absolute", top: 4, right: 4, fontSize: 11, lineHeight: 1 }}>❤️</div>
-                        )}
-                      </div>
-                    ))}
+          {/* ── NO PLAN BANNER ── */}
+          {!hasPlan && (
+            <div style={{ margin: "16px 24px 0", padding: "14px 18px", borderRadius: 12, background: "rgba(255,184,0,.06)", border: "1px solid rgba(255,184,0,.15)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: "#ffb800", margin: 0 }}>{t("no_plan")}</p>
+              <button onClick={() => setPage(P.PLANS)} style={{ padding: "8px 20px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "#ffb800", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>Elegir plan →</button>
+            </div>
+          )}
+
+          {/* ── MOBILE TABS ── */}
+          {!isDesk && (
+            <div style={{ padding: "10px 12px 0" }}>
+              <div style={{ display: "flex", gap: 2, marginBottom: 4, background: "rgba(255,255,255,.02)", borderRadius: 9, padding: 3 }}>
+                {[
+                  { k: T.IMG,  l: lang==="es"?"🖼️ Img":"🖼️ Img" },
+                  { k: T.VID,  l: lang==="es"?"🎬 Vid":"🎬 Vid" },
+                  { k: T.GAL,  l: "📁" },
+                ].map(tb => (
+                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: tb.k===T.GAL?"0 0 38px":1, padding:"8px 2px", fontSize:10, fontWeight:tab===tb.k?700:400, color:tab===tb.k?"#fff":"#5a5a70", background:tab===tb.k?"rgba(255,255,255,.07)":"transparent", border:"none", borderRadius:7, cursor:"pointer", fontFamily:"inherit" }}>{tb.l}</button>
+                ))}
+              </div>
+              <div style={{ display:"flex", gap:2, marginBottom:4, background:"rgba(255,107,43,.03)", borderRadius:9, padding:3, border:"1px solid rgba(255,107,43,.08)" }}>
+                {[{ k:T.MOT, l:"🎭 Motion" },{ k:T.DIR, l:"🎥 Director" }].map(tb => (
+                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex:1, padding:"8px 2px", fontSize:10, fontWeight:tab===tb.k?700:400, color:tab===tb.k?"#fff":"#5a5a70", background:tab===tb.k?(tb.k===T.MOT?"rgba(255,107,43,.15)":"rgba(0,240,255,.1)"):"transparent", border:tab===tb.k?(tb.k===T.MOT?"1px solid rgba(255,107,43,.3)":"1px solid rgba(0,240,255,.2)"):"none", borderRadius:7, cursor:"pointer", fontFamily:"inherit" }}>{tb.l}</button>
+                ))}
+              </div>
+              <div style={{ display:"flex", gap:2, background:"rgba(255,184,0,.03)", borderRadius:9, padding:3, border:"1px solid rgba(255,184,0,.08)", marginBottom:4 }}>
+                {[{ k:T.WS_IMG, l:"✨ Img Pro" },{ k:T.WS_VID, l:"🌊 Vid Pro" },{ k:T.VID_EDIT, l:t("tab_vid_edit") }].map(tb => (
+                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex:1, padding:"8px 2px", fontSize:10, fontWeight:tab===tb.k?700:400, color:tab===tb.k?"#fff":"#5a5a70", background:tab===tb.k?(tb.k===T.WS_IMG?"rgba(255,184,0,.15)":tb.k===T.WS_VID?"rgba(0,200,255,.12)":"rgba(180,74,255,.12)"):"transparent", border:tab===tb.k?(tb.k===T.WS_IMG?"1px solid rgba(255,184,0,.3)":tb.k===T.WS_VID?"1px solid rgba(0,200,255,.3)":"1px solid rgba(180,74,255,.3)"):"none", borderRadius:7, cursor:"pointer", fontFamily:"inherit" }}>{tb.l}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── CONTENT WRAPPER ── */}
+          <div style={{ flex: 1, display: isDesk ? "grid" : "block", gridTemplateColumns: isDesk ? "340px 1fr" : "unset", gap: 0, minHeight: 0 }}>
+
+            {/* ── DESKTOP LEFT PANEL (credits + library) ── */}
+            {isDesk && (
+              <div style={{ borderRight: "1px solid rgba(255,255,255,.04)", padding: "24px 20px", overflowY: "auto", background: "#09091e" }}>
+                {/* Credits cards */}
+                <p style={{ fontSize: 9, color: "#3a3a56", letterSpacing: 1.5, textTransform: "uppercase", margin: "0 0 10px", fontWeight: 600 }}>Créditos</p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 20 }}>
+                  <div style={{ padding: "14px 12px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.1)" }}>
+                    <p style={{ fontSize: 8, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>Imágenes</p>
+                    <p style={{ fontSize: 28, fontWeight: 800, margin: "3px 0 0", fontFamily: "'JetBrains Mono',monospace", color: "#00f0ff", lineHeight: 1 }}>{profile?.images_remaining ?? 0}</p>
+                    <p style={{ fontSize: 8, color: "#3a3a50", margin: "3px 0 0" }}>Premium</p>
                   </div>
-                  {visibleCount < gens.length && (
-                    <div ref={gallerysentinel} style={{ height: 20 }} />
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                  <div style={{ padding: "14px 12px", borderRadius: 12, background: "rgba(180,74,255,.04)", border: "1px solid rgba(180,74,255,.1)" }}>
+                    <p style={{ fontSize: 8, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>Videos</p>
+                    <p style={{ fontSize: 28, fontWeight: 800, margin: "3px 0 0", fontFamily: "'JetBrains Mono',monospace", color: "#b44aff", lineHeight: 1 }}>{profile?.videos_remaining ?? 0}</p>
+                    <p style={{ fontSize: 8, color: "#3a3a50", margin: "3px 0 0" }}>Premium</p>
+                  </div>
+                </div>
 
-          {/* CTA desktop sidebar */}
-          {isDesk && (
-            <div style={{ padding: "14px", borderRadius: 10, background: "rgba(255,255,255,.015)", border: "1px solid rgba(255,255,255,.03)", textAlign: "center" }}>
-              <p style={{ fontSize: 10, color: "#4a4a60", margin: "0 0 5px" }}>¿Crear sin límites?</p>
-              <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>HyperReal AI Lab →</button>
-            </div>
-          )}
-        </div>
+                {/* Library */}
+                <p style={{ fontSize: 9, color: "#3a3a56", letterSpacing: 1.5, textTransform: "uppercase", margin: "0 0 10px", fontWeight: 600 }}>Biblioteca</p>
+                {gens.length === 0 ? (
+                  <p style={{ fontSize: 11, color: "#2a2a3a", textAlign: "center", marginTop: 24 }}>Sin generaciones aún</p>
+                ) : (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
+                      {gens.slice(0, visibleCount).map((g, i) => (
+                        <div key={g.id || i} onClick={() => openPreview(g, i)}
+                          style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "border-color .15s, transform .15s", position: "relative", aspectRatio: "1" }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = g.type === "image" ? "rgba(0,240,255,.4)" : "rgba(180,74,255,.4)"; e.currentTarget.style.transform = "scale(1.03)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"; e.currentTarget.style.transform = "scale(1)"; }}>
+                          {g.url && g.status !== "processing" ? (
+                            g.type === "image"
+                              ? <img src={g.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                              : <video src={g.url} muted style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
+                          ) : (
+                            <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+                              {g.status === "processing" ? <div style={{ width: 16, height: 16, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : (g.type === "image" ? "🖼️" : "🎬")}
+                            </div>
+                          )}
+                          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "10px 4px 3px", background: "linear-gradient(transparent,rgba(0,0,0,.75))" }}>
+                            <span style={{ fontSize: 7, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 700 }}>{g.type === "image" ? "IMG" : "VID"}</span>
+                          </div>
+                          {favorites[g.id] && <div style={{ position: "absolute", top: 3, right: 3, fontSize: 10 }}>❤️</div>}
+                        </div>
+                      ))}
+                    </div>
+                    {visibleCount < gens.length && <div ref={gallerysentinel} style={{ height: 20 }} />}
+                  </>
+                )}
+                {/* Community CTA */}
+                <div style={{ marginTop: 20, padding: "12px", borderRadius: 10, background: "linear-gradient(135deg,rgba(0,240,255,.04),rgba(180,74,255,.04))", border: "1px solid rgba(255,255,255,.04)", textAlign: "center" }}>
+                  <p style={{ fontSize: 10, color: "#4a4a60", margin: "0 0 5px" }}>¿Crear sin límites?</p>
+                  <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>HyperReal AI Lab →</button>
+                </div>
+              </div>
+            )}
 
-        {/* Main area */}
-        <div>
-          {/* Tabs */}
-          {isDesk ? (
-            <div style={{ display: "flex", gap: 3, marginBottom: 16, background: "rgba(255,255,255,.02)", borderRadius: 9, padding: 3 }}>
-              {[
-                { k: T.IMG, l: t("tab_image") },
-                { k: T.VID, l: t("tab_video") },
-                { k: T.MOT, l: t("tab_motion") },
-                { k: T.DIR, l: t("tab_director") },
-                { k: T.WS_IMG, l: lang === "es" ? "✨ Img Pro" : "✨ Img Pro" },
-                { k: T.WS_VID, l: lang === "es" ? "🌊 Vid Pro" : "🌊 Vid Pro" },
-                { k: T.VID_EDIT, l: t("tab_vid_edit") },
-              ].map(tb => (
-                <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "10px 0", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.12)" : tb.k === T.DIR ? "rgba(0,240,255,.1)" : tb.k === T.WS_IMG ? "rgba(255,184,0,.1)" : tb.k === T.WS_VID ? "rgba(0,200,255,.1)" : tb.k === T.VID_EDIT ? "rgba(180,74,255,.1)" : "rgba(255,255,255,.06)") : "transparent", border: tab === tb.k && tb.k === T.MOT ? "1px solid rgba(255,107,43,.25)" : tab === tb.k && tb.k === T.DIR ? "1px solid rgba(0,240,255,.2)" : tab === tb.k && tb.k === T.WS_IMG ? "1px solid rgba(255,184,0,.3)" : tab === tb.k && tb.k === T.WS_VID ? "1px solid rgba(0,200,255,.3)" : tab === tb.k && tb.k === T.VID_EDIT ? "1px solid rgba(180,74,255,.3)" : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
-              ))}
-            </div>
-          ) : (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", gap: 3, marginBottom: 3, background: "rgba(255,255,255,.02)", borderRadius: 9, padding: 3 }}>
-                {[
-                  { k: T.IMG, l: lang === "es" ? "🖼️ Imagen" : "🖼️ Image" },
-                  { k: T.VID, l: lang === "es" ? "🎬 Video" : "🎬 Video" },
-                  { k: T.GAL, l: "📁" },
-                ].map(tb => (
-                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: tb.k === T.GAL ? "0 0 44px" : 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? "rgba(255,255,255,.06)" : "transparent", border: "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 3, marginBottom: 3, background: "rgba(255,107,43,.03)", borderRadius: 9, padding: 3, border: "1px solid rgba(255,107,43,.08)" }}>
-                {[
-                  { k: T.MOT, l: "🎭 Motion" },
-                  { k: T.DIR, l: "🎬 Director" },
-                ].map(tb => (
-                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.MOT ? "rgba(255,107,43,.15)" : "rgba(0,240,255,.1)") : "transparent", border: tab === tb.k ? (tb.k === T.MOT ? "1px solid rgba(255,107,43,.3)" : "1px solid rgba(0,240,255,.2)") : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 3, background: "rgba(255,184,0,.03)", borderRadius: 9, padding: 3, border: "1px solid rgba(255,184,0,.08)" }}>
-                {[
-                  { k: T.WS_IMG, l: "✨ Img Pro" },
-                  { k: T.WS_VID, l: "🌊 Vid Pro" },
-                  { k: T.VID_EDIT, l: t("tab_vid_edit") },
-                ].map(tb => (
-                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: tab === tb.k ? 700 : 400, color: tab === tb.k ? "#fff" : "#5a5a70", background: tab === tb.k ? (tb.k === T.WS_IMG ? "rgba(255,184,0,.15)" : tb.k === T.WS_VID ? "rgba(0,200,255,.12)" : "rgba(180,74,255,.12)") : "transparent", border: tab === tb.k ? (tb.k === T.WS_IMG ? "1px solid rgba(255,184,0,.3)" : tb.k === T.WS_VID ? "1px solid rgba(0,200,255,.3)" : "1px solid rgba(180,74,255,.3)") : "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{tb.l}</button>
-                ))}
-              </div>
-            </div>
-          )}
+            {/* ── RIGHT / MAIN PANEL ── */}
+            <div style={{ padding: isDesk ? "24px 28px" : "12px 14px", overflowY: "auto" }}>
 
           {(tab === T.IMG || tab === T.VID) && (
             <div style={{ animation: "fadeUp .4s ease" }}>
@@ -4317,6 +4368,11 @@ export default function App() {
           </div>
         </div>
       )}
+
+            </div>{/* end right/main panel */}
+          </div>{/* end content grid */}
+        </div>{/* end main content area */}
+      </div>{/* end full-screen shell */}
 
       <Footer />
       <TxHistoryModal />
