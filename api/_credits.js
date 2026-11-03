@@ -79,3 +79,42 @@ export async function tagFailure(genId, reason, refunded, key) {
     });
   } catch {}
 }
+
+// ─── Credit packs (one-time Stripe payments) ───
+// id → accepted totals in cents + credits granted. Keep in sync with PACKS in App.jsx and Stripe prices.
+export const PACK_CATALOG = {
+  img_s: { cents: [599],        credits: 160 },
+  img_m: { cents: [1299],       credits: 400 },
+  img_l: { cents: [2799],       credits: 960 },
+  vid_s: { cents: [3999],       credits: 1200 }, // price_1UXjvfEkbBokZiaiRvPv0L9C
+  vid_m: { cents: [5799, 5999], credits: 1800 }, // price_1UXjt4EkbBokZiaiepZrcXJU (5999 = old price)
+  vid_l: { cents: [8999],       credits: 3000 }, // price_1UXjwyEkbBokZiaioOrTXpND
+};
+export function packFromSession(session) {
+  const ref = session?.client_reference_id;
+  if (ref && PACK_CATALOG[ref]) return PACK_CATALOG[ref].cents.includes(session.amount_total) ? ref : null;
+  if (session?.mode !== "payment") return null;
+  const hit = Object.entries(PACK_CATALOG).filter(([, p]) => p.cents.includes(session.amount_total));
+  return hit.length === 1 ? hit[0][0] : null; // only if the amount is unambiguous
+}
+
+// Idempotent: adds credits once per Stripe payment id (shared with /api/pack). Returns "applied" | "duplicate" | "error"
+export async function applyPackPayment(userId, credits, paymentId, key) {
+  const H = { apikey: key, Authorization: `Bearer ${key}` };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const r = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=credits,processed_pack_payments`, { headers: H });
+    const cur = (await r.json())?.[0];
+    if (!cur) return "error";
+    const done = Array.isArray(cur.processed_pack_payments) ? cur.processed_pack_payments : [];
+    if (done.includes(paymentId)) return "duplicate";
+    const upd = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&credits=eq.${cur.credits || 0}`, {
+      method: "PATCH",
+      headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({ credits: (cur.credits || 0) + credits, processed_pack_payments: [...done, paymentId] }),
+    });
+    const rows = upd.ok ? await upd.json() : [];
+    if (Array.isArray(rows) && rows.length) return "applied";
+    await new Promise(res => setTimeout(res, 150 + Math.random() * 200));
+  }
+  return "error";
+}

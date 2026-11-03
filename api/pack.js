@@ -1,11 +1,12 @@
 import Stripe from 'stripe';
-import { IMG_UNIT, VID_UNIT } from './_credits.js';
+import { IMG_UNIT, VID_UNIT, applyPackPayment } from './_credits.js';
 
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
 // amount (legacy units) → accepted Stripe totals in cents. images ×8 credits, videos ×60 credits.
-// Large packs (Nov 2026): 1200 cr $39.99 · 1800 cr $57.99 · 3000 cr $89.99 — old prices kept so in-flight purchases still apply.
+// Large packs (Nov 2026): 1200 cr $39.99 (price_1UXjvfEkbBokZiaiRvPv0L9C) · 1800 cr $57.99 (price_1UXjt4EkbBokZiaiepZrcXJU)
+// · 3000 cr $89.99 (price_1UXjwyEkbBokZiaioOrTXpND) — old prices kept so in-flight purchases still apply.
 const PACK_AMOUNTS_CENTS = {
   images: { 20: [599], 50: [1299], 120: [2799] },
   videos: { 5: [1299], 12: [2799], 20: [3999], 30: [5799, 5999], 50: [8999] },
@@ -88,7 +89,10 @@ export default async function handler(req, res) {
       const session = await stripe.checkout.sessions.retrieve(session_id);
       console.log(`Session: status=${session.payment_status} amount=${session.amount_total} expected=${expectedCents}`);
 
-      if (session.payment_status === "paid" && centsOk(session.amount_total)) {
+      const sessEmail = (session.customer_details?.email || session.customer_email || "").toLowerCase().trim();
+      const sameUser = !sessEmail || sessEmail === String(userEmail || "").toLowerCase().trim();
+      if (!sameUser) console.warn(`Session ${session_id} belongs to ${sessEmail}, not ${userEmail} — ignoring`);
+      if (sameUser && session.payment_status === "paid" && centsOk(session.amount_total)) {
         const paymentId = session.payment_intent || session_id;
 
         if (processedPayments.includes(paymentId)) {
@@ -166,29 +170,16 @@ export default async function handler(req, res) {
   const creditsAdded = amountNum * unit;
   const updatedPayments = [...processedPayments, confirmedPaymentId];
 
-  let updatedRows = [];
-  for (let attempt = 0; attempt < 4 && updatedRows.length === 0; attempt++) {
-    const cur = attempt === 0 ? profile : (await (await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=credits,processed_pack_payments`, { headers: sbReadHeaders(SERVICE_KEY) })).json())?.[0];
-    if (!cur) break;
-    if ((cur.processed_pack_payments || []).includes(confirmedPaymentId)) {
-      return res.status(200).json({ ok: true, already_applied: true, credits: cur.credits });
-    }
-    const current = cur.credits || 0;
-    console.log(`Applying: credits ${current} → ${current + creditsAdded} | payment: ${confirmedPaymentId}`);
-    const updateRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&credits=eq.${current}`, {
-      method: "PATCH",
-      headers: sbWriteHeaders(SERVICE_KEY),
-      body: JSON.stringify({ credits: current + creditsAdded, processed_pack_payments: [...(cur.processed_pack_payments || []), confirmedPaymentId] }),
-    });
-    if (!updateRes.ok) return res.status(500).json({ error: `DB update failed (${updateRes.status})` });
-    try { updatedRows = await updateRes.json(); } catch { updatedRows = []; }
-    if (!Array.isArray(updatedRows)) updatedRows = [];
+  const result = await applyPackPayment(userId, creditsAdded, confirmedPaymentId, SERVICE_KEY);
+  if (result === "duplicate") {
+    // The Stripe webhook (or another tab) already credited this payment
+    return res.status(409).json({ error: "This payment has already been applied to your account." });
   }
-  if (updatedRows.length === 0) {
+  if (result !== "applied") {
     return res.status(500).json({ error: "Could not apply credits — please contact support." });
   }
+  const updated = await (await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=credits`, { headers: sbReadHeaders(SERVICE_KEY) })).json().then(r => r?.[0] || {}).catch(() => ({}));
 
-  const updated = updatedRows[0];
   console.log(`✓ Pack applied: +${creditsAdded} credits for ${userEmail}`);
 
   // Log transaction for audit trail

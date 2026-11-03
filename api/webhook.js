@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { addCredits, IMG_UNIT, VID_UNIT, classifyFailure, tagFailure } from './_credits.js';
+import { addCredits, IMG_UNIT, VID_UNIT, classifyFailure, tagFailure, PACK_CATALOG, packFromSession, applyPackPayment } from './_credits.js';
 
 async function getRawBody(req) {
   const chunks = [];
@@ -32,6 +32,8 @@ const PRICE_TO_PLAN = {
   "price_1TJGvwEkbBokZiaisvzBQCeV": "pro",
   "price_1TJGwtEkbBokZiaiFpc24OZG": "creator",
 };
+
+function session_isPack(session) { return !VALID_PLANS.includes(session?.client_reference_id) && !session?.subscription && !!packFromSession(session); }
 
 const VALID_PLANS = ["test", "basic", "pro", "creator"];
 
@@ -279,7 +281,30 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true, skipped: true });
     }
 
-    if (event.type === "checkout.session.completed") {
+    if (event.type === "checkout.session.completed" && session_isPack(event.data.object)) {
+      // ── Credit pack: credit ONLY when Stripe says it's paid (works even if the buyer never returns to the app)
+      const session = event.data.object;
+      const email = session.customer_email || session.customer_details?.email;
+      const packId = packFromSession(session);
+      if (session.payment_status !== "paid") {
+        console.warn(`Pack session ${session.id} not paid (${session.payment_status}) — no credits`);
+      } else if (!email) {
+        console.error(`Pack ${packId}: no email on session ${session.id}`);
+      } else {
+        try {
+          const user = await findUserByEmail(email, SERVICE_KEY);
+          if (!user) console.error(`Pack ${packId}: user not found ${email}`);
+          else {
+            const paymentId = session.payment_intent || session.id;
+            const r = await applyPackPayment(user.id, PACK_CATALOG[packId].credits, paymentId, SERVICE_KEY);
+            console.log(`Pack ${packId} +${PACK_CATALOG[packId].credits} for ${email}: ${r}`);
+            if (r === "applied") {
+              await logTransaction(user.id, { type: "pack_purchase", description: `Pack de créditos: +${PACK_CATALOG[packId].credits} créditos`, images_delta: 0, videos_delta: 0, credits_delta: PACK_CATALOG[packId].credits, stripe_ref: session.id }, SERVICE_KEY);
+            }
+          }
+        } catch (err) { console.error("Pack webhook error:", err.message); }
+      }
+    } else if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       const email = session.customer_email || session.customer_details?.email;
       let plan = VALID_PLANS.includes(session.client_reference_id) ? session.client_reference_id : null;

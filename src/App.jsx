@@ -60,9 +60,9 @@ const PACKS = {
   img_s:  { link: "https://buy.stripe.com/bJeaEX9PkaCdbq77zVeME0L", type: "images", amount: 20,  price: 5.99,  label: "Pack S", emoji: "📦" },
   img_m:  { link: "https://buy.stripe.com/fZu9AT2mS4dP1Px3jFeME0M", type: "images", amount: 50,  price: 12.99, label: "Pack M", emoji: "📦" },
   img_l:  { link: "https://buy.stripe.com/bJe6oHbXsh0BgKrg6reME0N", type: "images", amount: 120, price: 27.99, label: "Pack L", emoji: "📦" },
-  vid_s:  { link: "https://buy.stripe.com/6oUaEXe5A11D3XFf2neME0O", type: "videos", amount: 20,  price: 39.99, label: "Pack S", emoji: "🎬" },
-  vid_m:  { link: "https://buy.stripe.com/cNi4gz8Lgh0B2TBdYjeME0P", type: "videos", amount: 30,  price: 57.99, label: "Pack M", emoji: "🎬" },
-  vid_l:  { link: "https://buy.stripe.com/3cI3cv9Pk9y9dyfbQbeME0Q",              type: "videos", amount: 50,  price: 89.99, label: "Pack L", emoji: "🎬" },
+  vid_s:  { link: "https://buy.stripe.com/eVq14n4v06lX0Lt4nJeME15", type: "videos", amount: 20,  price: 39.99, label: "Pack S", emoji: "🎬" },
+  vid_m:  { link: "https://buy.stripe.com/3cI4gz2mScKlam35rNeME14", type: "videos", amount: 30,  price: 57.99, label: "Pack M", emoji: "🎬" },
+  vid_l:  { link: "https://buy.stripe.com/6oU14nf9E25HfGn3jFeME16",              type: "videos", amount: 50,  price: 89.99, label: "Pack L", emoji: "🎬" },
 };
 
 // Plans that can purchase extra packs (basic and above)
