@@ -1215,6 +1215,8 @@ export default function App() {
   const [previewItem, setPreviewItem] = useState(null);
   const [previewIndex, setPreviewIndex] = useState(null);
   const [favorites, setFavorites] = useState({});
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // generation waiting for delete confirmation
+  const [deleting, setDeleting] = useState(false);
   const [paymentFailedModal, setPaymentFailedModal] = useState(false);
 
   // Load favorites from server after login
@@ -1669,9 +1671,22 @@ export default function App() {
       if (Array.isArray(g)) setGens(g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url })));
     } catch {}
   };
-  const dismissFailed = async (g) => {
-    setGens(prev => prev.filter(x => x.id !== g.id));
-    try { await fetch(`${SB_URL}/rest/v1/generations?id=eq.${g.id}`, { method: "PATCH", headers: { ...hdr(session.access_token), Prefer: "return=minimal" }, body: JSON.stringify({ status: "dismissed" }) }); } catch {}
+  // Permanently delete a generation (DB row + our stored file + favorite)
+  const deleteGenPermanent = async (g) => {
+    if (!g?.id || !session) return false;
+    setDeleting(true);
+    try {
+      const r = await fetch("/api/favorites", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_generation", gen_id: g.id, user_token: session.access_token }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) { setGenError(d.error || (lang === "es" ? "No se pudo eliminar." : "Could not delete.")); return false; }
+      setGens(prev => prev.filter(x => x.id !== g.id));
+      setFavorites(prev => { if (!prev[g.id]) return prev; const n = { ...prev }; delete n[g.id]; return n; });
+      return true;
+    } catch (e) { setGenError(e.message); return false; }
+    finally { setDeleting(false); }
   };
 
   // Seedance 2.5 Draft → render the same take in 1080p (charged server-side from the saved duration)
@@ -4671,8 +4686,7 @@ export default function App() {
                                 : <span style={{ ...chip, color: "#9a9ab0", fontWeight: 500 }}>ⓘ {lang === "es" ? "Sin reembolso" : "No refund"}</span>}
                               {g.prompt && <span style={{ fontSize: 10, color: "#5a5a72", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", marginTop: "auto" }}>{g.prompt}</span>}
                               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                                <button onClick={() => { setPrompt(g.prompt || ""); }} title={lang === "es" ? "Reusar prompt" : "Reuse prompt"} style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", color: "#e8e8f0", cursor: "pointer" }}>↺</button>
-                                <button onClick={() => dismissFailed(g)} title={lang === "es" ? "Quitar" : "Dismiss"} style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", color: "#e8e8f0", cursor: "pointer" }}>✕</button>
+                                <button onClick={() => deleteGenPermanent(g)} disabled={deleting} title={lang === "es" ? "Eliminar" : "Delete"} style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", color: "#e8e8f0", cursor: "pointer" }}>✕</button>
                               </div>
                             </div>
                           );
@@ -4828,8 +4842,31 @@ export default function App() {
                 {previewItem.url && (
                   <button data-download-btn onClick={() => downloadFile(previewItem.url, `nanobanano-${previewItem.type}-${Date.now()}.${previewItem.type === "image" ? "png" : "mp4"}`)} style={{ flex: 1, padding: "10px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>↓ {t("download")}</button>
                 )}
+                <button onClick={() => setDeleteConfirm(previewItem)} title={lang === "es" ? "Eliminar" : "Delete"}
+                  style={{ padding: "10px 13px", fontSize: 14, color: "#ff6b81", background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.25)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                </button>
                 <button onClick={() => setPreviewItem(null)} style={{ padding: "10px 16px", fontSize: 12, fontWeight: 600, color: "#5a5a70", background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>{t("close")}</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirm && (
+        <div onClick={() => !deleting && setDeleteConfirm(null)} style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 360, background: "#16161d", border: "1px solid rgba(255,255,255,.1)", borderRadius: 16, padding: 22, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,.7)" }}>
+            <div style={{ width: 46, height: 46, margin: "0 auto 12px", borderRadius: "50%", background: "rgba(255,77,106,.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "#ff6b81" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            </div>
+            <p style={{ fontSize: 16, fontWeight: 700, color: "#f0f0f6", margin: "0 0 6px" }}>{lang === "es" ? `¿Eliminar este ${deleteConfirm.type === "video" ? "video" : "imagen"}?` : `Delete this ${deleteConfirm.type}?`}</p>
+            <p style={{ fontSize: 12, color: "#8a8a9e", margin: "0 0 18px", lineHeight: 1.5 }}>{lang === "es" ? "Se borrará permanentemente de tu galería. Esta acción no se puede deshacer." : "It will be permanently removed from your gallery. This can't be undone."}</p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setDeleteConfirm(null)} disabled={deleting} style={{ flex: 1, padding: "11px", fontSize: 13, fontWeight: 600, color: "#c0c0d0", background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}>{lang === "es" ? "Cancelar" : "Cancel"}</button>
+              <button onClick={async () => { const ok = await deleteGenPermanent(deleteConfirm); if (ok) { setDeleteConfirm(null); setPreviewItem(null); setPreviewIndex(null); } }} disabled={deleting}
+                style={{ flex: 1, padding: "11px", fontSize: 13, fontWeight: 700, color: "#fff", background: "#e5484d", border: "none", borderRadius: 10, cursor: deleting ? "wait" : "pointer", fontFamily: "inherit", opacity: deleting ? .7 : 1 }}>
+                {deleting ? (lang === "es" ? "Eliminando..." : "Deleting...") : (lang === "es" ? "Eliminar" : "Delete")}
+              </button>
             </div>
           </div>
         </div>
