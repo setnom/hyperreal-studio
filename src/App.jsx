@@ -48,10 +48,10 @@ class ErrorBoundary extends Component {
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5Z2NzeXFhaGhkdG13bXFrbG5sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0OTIxNzcsImV4cCI6MjA5MTA2ODE3N30.YddNMUlpSQSkIqf2q8RAVqEH-vYUfPunjv21Lwy0d_Y";
 const PRICES = {
-  test: { link: "https://buy.stripe.com/3cI4gz3qW7q1dyf5rNeME0K", images: 20, videos: 2 },
-  basic: { link: "https://buy.stripe.com/14AcN57Hc39LgKraM7eME0H", images: 40, videos: 8 },
-  pro: { link: "https://buy.stripe.com/6oU14n7Hc25H8dVf2neME0I", images: 90, videos: 18 },
-  creator: { link: "https://buy.stripe.com/aFacN55z4bGh3XF2fBeME0J", images: 200, videos: 30 },
+  test: { annualLink: "", link: "https://buy.stripe.com/3cI4gz3qW7q1dyf5rNeME0K", images: 20, videos: 2 },
+  basic: { annualLink: "", link: "https://buy.stripe.com/14AcN57Hc39LgKraM7eME0H", images: 40, videos: 8 },
+  pro: { annualLink: "", link: "https://buy.stripe.com/6oU14n7Hc25H8dVf2neME0I", images: 90, videos: 18 },
+  creator: { annualLink: "", link: "https://buy.stripe.com/aFacN55z4bGh3XF2fBeME0J", images: 200, videos: 30 },
 };
 
 // Extra credit packs — one-time purchase, only for Basic+ subscribers
@@ -84,16 +84,17 @@ const sb = {
   },
 };
 
-function openCheckout(planId, userEmail) {
+function openCheckout(planId, userEmail, annual = false) {
   const plan = PRICES[planId];
-  if (!plan?.link) return;
+  const link = annual ? plan?.annualLink : plan?.link;
+  if (!link) return;
   const successUrl = encodeURIComponent(
     window.location.origin + "?payment=success&plan=" + planId
   );
   const cancelUrl = encodeURIComponent(window.location.origin);
-  window.location.href = plan.link
+  window.location.href = link
     + "?prefilled_email=" + encodeURIComponent(userEmail || "")
-    + "&client_reference_id=" + planId
+    + "&client_reference_id=" + planId + (annual ? "_annual" : "")
     + "&success_url=" + successUrl
     + "&cancel_url=" + cancelUrl;
 }
@@ -428,6 +429,14 @@ const PLANS = [
     features: { es: ["200 imágenes premium (calidad 4K)/mes", "30 videos premium (5-15s)/mes", "8 generaciones simultáneas", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 premium images (4K quality)/mo", "30 premium videos (5-15s)/mo", "8 simultaneous generations", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
     color: "#ff6b2b", popular: false },
 ];
+// Annual pricing (40% off monthly). annual = price per month when billed yearly
+const ANNUAL = { test: 5.99, basic: 11.99, pro: 28.99, creator: 59.99 };
+const PLAN_TAGLINE = {
+  test:    { es: "Para probar tus primeras ideas con IA", en: "For testing your first AI ideas" },
+  basic:   { es: "Para creadores explorando herramientas de IA", en: "For creators exploring AI tools" },
+  pro:     { es: "Para crear contenido con IA de forma constante", en: "For creators building AI content consistently" },
+  creator: { es: "Para creadores y equipos produciendo a escala", en: "For creators and teams producing at scale" },
+};
 const STYLES = [
   { id: "photorealistic", label: "Fotorrealista", icon: "📸" },
   { id: "cinematic", label: "Cinemático", icon: "🎬" },
@@ -759,6 +768,7 @@ export default function App() {
   const [langOpen, setLangOpen] = useState(false);
   const [userPanelOpen, setUserPanelOpen] = useState(false);
   const [openFaqIdx, setOpenFaqIdx] = useState(null); // FAQ accordion for landing page
+  const [billingAnnual, setBillingAnnual] = useState(true);
   const [planFaqIdx, setPlanFaqIdx] = useState(null); // FAQ accordion for plans page
   const [cancelModal, setCancelModal] = useState(false);
   const [showTyC, setShowTyC] = useState(false);
@@ -1644,7 +1654,7 @@ export default function App() {
   };
 
   const inp = { width: "100%", padding: "12px 14px", fontSize: 14, color: "#e0e0f0", background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)", borderRadius: 10, fontFamily: "inherit" };
-  const maxW = page === P.DASH ? (isDesk ? 900 : 520) : (isDesk ? 1000 : 520);
+  const maxW = page === P.DASH ? (isDesk ? 900 : 520) : page === P.PLANS ? (isDesk ? 1320 : 520) : (isDesk ? 1000 : 520);
 
   const wrap = (ch) => (
     <div style={{ minHeight: "100vh", background: "#06060e", color: "#e8e8ef", fontFamily: "'Syne', sans-serif" }}>
@@ -2257,16 +2267,97 @@ export default function App() {
         <h2 style={{ fontSize: isDesk ? 28 : 22, fontWeight: 800, marginBottom: 6 }}>{t("choose_plan")}</h2>
         <p style={{ fontSize: 13, color: "#5a5a70" }}>{t("choose_plan_sub")}</p>
       </div>
-      <div style={{ display: "flex", flexDirection: isDesk ? "row" : "column", gap: isDesk ? 16 : 10, alignItems: isDesk ? "stretch" : "unset" }}>
+      {/* ── Billing toggle (Promptwise-style) ── */}
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
+        <div style={{ display: "inline-flex", padding: 4, borderRadius: 999, background: "#15151c", border: "1px solid rgba(255,255,255,.08)" }}>
+          {[[false, lang === "es" ? "Mensual" : "Monthly"], [true, lang === "es" ? "Anual" : "Yearly"]].map(([v, l]) => (
+            <button key={l} onClick={() => setBillingAnnual(v)} style={{ padding: "9px 22px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: billingAnnual === v ? "#0a0a0f" : "#8a8a9e", background: billingAnnual === v ? "#f2f2f2" : "transparent", display: "flex", alignItems: "center", gap: 8, transition: "all .2s" }}>
+              {l}{v && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "#e8f542", color: "#0a0a0f" }}>-40%</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: isDesk ? "repeat(4, 1fr)" : "1fr", gap: isDesk ? 18 : 16, marginBottom: 56 }}>
         {PLANS.map(pl => {
-          const planCta = {
-            test:    { es: "Probar sin riesgo →",      en: "Try risk-free →" },
-            basic:   { es: "Empezar a crear →",        en: "Start creating →" },
-            pro:     { es: "Empezar a vender →",       en: "Start selling →" },
-            creator: { es: "Escalar mi contenido →",   en: "Scale my content →" },
-          };
-          const cta = lang === "en" ? planCta[pl.id].en : planCta[pl.id].es;
-          return <PlanCard key={pl.id} pl={pl} onAction={() => openCheckout(pl.id, profile?.email)} actionLabel={cta} isDesk={isDesk} lang={lang} features={planFeatures(pl)} />;
+          const theme = {
+            test:    { band: "#d9d9d9", bandText: "#1a1a1a", bg: "#ffffff", ring: "#e5e5e5", dot: "#ffffff" },
+            basic:   { band: "#d9d9d9", bandText: "#1a1a1a", bg: "#ffffff", ring: "#e5e5e5", dot: "#ffffff" },
+            pro:     { band: "#eef55a", bandText: "#1a1a1a", bg: "linear-gradient(180deg,#f4fa7a 0%,#fbfdd6 35%,#ffffff 70%)", ring: "#eef55a", dot: "#eef55a" },
+            creator: { band: "#ef7a45", bandText: "#1a1a1a", bg: "linear-gradient(180deg,#f59a6e 0%,#fde3d6 35%,#ffffff 70%)", ring: "#ef7a45", dot: "#ef7a45" },
+          }[pl.id];
+          const monthly = pl.price;
+          const annualMo = ANNUAL[pl.id];
+          const shown = billingAnnual ? annualMo : monthly;
+          const saveYear = Math.round(monthly * 12 - annualMo * 12);
+          const offPct = billingAnnual ? Math.round((1 - annualMo / pl.oldPrice) * 100) : Math.round((1 - monthly / pl.oldPrice) * 100);
+          const isCurrent = profile?.plan === pl.id;
+          const annualReady = !!PRICES[pl.id]?.annualLink;
+          const canBuy = !billingAnnual || annualReady;
+          const vidDur = pl.maxDuration.length > 1 ? `${pl.maxDuration[0]}-${pl.maxDuration[pl.maxDuration.length - 1]}s` : `${pl.maxDuration[0]}s`;
+          const cta = isCurrent && !billingAnnual ? (lang === "es" ? "Tu plan actual" : "Current plan")
+            : !canBuy ? (lang === "es" ? "Anual disponible pronto" : "Yearly coming soon")
+            : billingAnnual && isCurrent ? (lang === "es" ? "Cambiar a anual" : "Switch to yearly")
+            : pl.id === "test" ? (lang === "es" ? `Empezar ${pl.name}` : `Start ${pl.nameEn}`) : (lang === "es" ? "Mejorar ahora" : "Upgrade now");
+          const fmt = n => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
+          return (
+            <div key={pl.id} style={{ borderRadius: 28, overflow: "hidden", background: theme.band, display: "flex", flexDirection: "column", fontFamily: "'Inter', sans-serif" }}>
+              {/* Top band */}
+              <div style={{ padding: "11px 12px 10px", textAlign: "center", fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: theme.bandText }}>
+                {billingAnnual
+                  ? <>{lang === "es" ? "Ahorras " : "Save "}<b>${saveYear}</b>{lang === "es" ? " vs mensual" : " compared to monthly"}</>
+                  : <>{lang === "es" ? "Cambia a anual y ahorra " : "Switch to yearly to save "}<b>${saveYear}</b></>}
+              </div>
+              {/* Card body */}
+              <div style={{ flex: 1, background: theme.bg, borderRadius: "26px 26px 26px 26px", padding: isDesk ? "26px 22px 22px" : "24px 20px 20px", color: "#111", display: "flex", flexDirection: "column", border: pl.id === "pro" || pl.id === "creator" ? `2px solid ${theme.ring}` : "none", borderTop: "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 28, fontWeight: 600, letterSpacing: -.8 }}>{lang === "en" ? pl.nameEn : pl.name}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "4px 9px", borderRadius: 7, background: "#111", color: "#fff", letterSpacing: .8 }}>{offPct}% OFF</span>
+                  {pl.popular && <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 7, border: "1.5px solid #111", letterSpacing: .8 }}>💎 {lang === "es" ? "MÁS POPULAR" : "MOST POPULAR"}</span>}
+                  {pl.id === "creator" && <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 7, border: "1.5px solid #c2410c", color: "#c2410c", letterSpacing: .8 }}>✦ {lang === "es" ? "MEJOR VALOR" : "BEST VALUE"}</span>}
+                </div>
+                <p style={{ fontSize: 13, color: "#333", margin: "8px 0 18px" }}>{PLAN_TAGLINE[pl.id][lang === "en" ? "en" : "es"]}</p>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontSize: 22, color: "#999", textDecoration: "line-through", fontWeight: 500 }}>${Math.round(pl.oldPrice)}</span>
+                  <span style={{ fontSize: isDesk ? 40 : 44, fontWeight: 700, letterSpacing: -1.5, lineHeight: 1 }}>{fmt(shown)}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>/{lang === "es" ? "mes" : "month"}</span>
+                </div>
+                <p style={{ fontSize: 12, color: "#333", margin: "6px 0 0", minHeight: 16 }}>
+                  {billingAnnual && <><span style={{ textDecoration: "line-through", color: "#999" }}>${Math.round(monthly * 12)}</span> <b>{fmt(+(annualMo * 12).toFixed(2))}</b> {lang === "es" ? "facturado anualmente" : "billed annually"}</>}
+                </p>
+
+                {/* Credits box */}
+                <div style={{ marginTop: 18, borderRadius: 20, overflow: "hidden", background: pl.id === "test" ? "transparent" : theme.band, border: pl.id === "test" ? "1px solid #e5e5e5" : "none" }}>
+                  {pl.id !== "test" && (
+                    <div style={{ padding: "8px 10px", textAlign: "center", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#1a1a1a" }}>
+                      {lang === "es" ? `Calidad ${pl.resolution} · Videos ${vidDur}` : `${pl.resolution} quality · ${vidDur} videos`}
+                    </div>
+                  )}
+                  <div style={{ background: "#fff", borderRadius: 18, padding: "26px 14px", textAlign: "center", minHeight: 130, display: "flex", flexDirection: "column", justifyContent: "center", border: pl.id === "test" ? "none" : `1px solid ${theme.ring}` }}>
+                    <p style={{ fontSize: 19, fontWeight: 600, margin: "0 0 8px" }}>{pl.images} img + {pl.videos} {lang === "es" ? "videos/mes" : "videos/mo."}</p>
+                    <p style={{ fontSize: 12, color: "#555", margin: "0 0 4px" }}>= {pl.images} {lang === "es" ? "imágenes Nano Banana Pro" : "Nano Banana Pro images"}</p>
+                    <p style={{ fontSize: 12, color: "#555", margin: 0 }}>= {pl.videos} {lang === "es" ? `videos premium (${vidDur})` : `premium videos (${vidDur})`}</p>
+                  </div>
+                </div>
+
+                {/* Pill CTA */}
+                <button disabled={!canBuy || (isCurrent && !billingAnnual)} onClick={() => openCheckout(pl.id, profile?.email || session?.user?.email, billingAnnual)}
+                  style={{ marginTop: 20, width: "100%", height: 54, borderRadius: 999, background: "#111", border: "none", cursor: canBuy && !(isCurrent && !billingAnnual) ? "pointer" : "default", opacity: canBuy ? 1 : .55, display: "flex", alignItems: "center", padding: 4, fontFamily: "inherit" }}>
+                  <span style={{ width: 62, height: 46, borderRadius: 999, background: theme.dot, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: "#111", flexShrink: 0 }}>➜</span>
+                  <span style={{ flex: 1, color: "#fff", fontSize: 15, fontWeight: 500, paddingRight: 30 }}>{cta}</span>
+                </button>
+
+                {/* Features */}
+                <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 11 }}>
+                  {planFeatures(pl).map((f, i) => (
+                    <div key={i} style={{ display: "flex", gap: 10, fontSize: 13, color: "#222", lineHeight: 1.45 }}>
+                      <span style={{ fontWeight: 700 }}>✓</span><span>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
         })}
       </div>
 
@@ -2334,224 +2425,107 @@ export default function App() {
     );
   }
 
-  // ── NB REDESIGN v13: Promptwise-style layout ──
-  // Tab config for sidebar icons
-  const sidebarTabs = [
-    { k: T.IMG,     icon: "🖼️", label: lang==="es"?"Imagen":"Image",    color: "#00f0ff" },
-    { k: T.VID,     icon: "🎬", label: lang==="es"?"Video":"Video",     color: "#b44aff" },
-    { k: T.GAL,     icon: "📁", label: lang==="es"?"Galería":"Gallery", color: "#8a8a9e" },
-    { k: T.MOT,     icon: "🎭", label: "Motion",                        color: "#ff6b2b" },
-    { k: T.DIR,     icon: "🎥", label: "Director",                      color: "#00f0ff" },
-    { k: T.WS_IMG,  icon: "✨", label: "Img Pro",                       color: "#ffb800" },
-    { k: T.WS_VID,  icon: "🌊", label: "Vid Pro",                       color: "#00c8ff" },
-    { k: T.VID_EDIT,icon: "🔄", label: lang==="es"?"Cambio Personaje":"Char Swap", color: "#b44aff" },
+  // ── NB REDESIGN v14: Higgsfield-style layout ──
+  const navTabs = [
+    { k: T.IMG,     label: lang==="es"?"Imagen":"Image",    color: "#00f0ff" },
+    { k: T.VID,     label: lang==="es"?"Video":"Video",     color: "#b44aff" },
+    { k: T.GAL,     label: lang==="es"?"Galería":"Gallery", color: "#8a8a9e" },
+    { k: T.MOT,     label: "Motion",                        color: "#ff6b2b" },
+    { k: T.DIR,     label: "Director",                      color: "#00f0ff" },
+    { k: T.WS_IMG,  label: "Img Pro",                       color: "#ffb800" },
+    { k: T.WS_VID,  label: "Vid Pro",                       color: "#00c8ff" },
+    { k: T.VID_EDIT,label: lang==="es"?"Cambio":"Swap",     color: "#b44aff" },
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#06060e", color: "#e8e8ef", fontFamily: "'Syne', sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 20% 0%, rgba(0,240,255,.07) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(180,74,255,.06) 0%, transparent 50%)" }} />
-      {payMsg && <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 9999, padding: "10px 20px", borderRadius: 8, background: payMsg.includes("✓") ? "rgba(0,240,255,.12)" : "rgba(255,184,0,.12)", border: `1px solid ${payMsg.includes("✓") ? "rgba(0,240,255,.3)" : "rgba(255,184,0,.3)"}`, fontSize: 13, color: payMsg.includes("✓") ? "#00f0ff" : "#ffb800", animation: "fadeUp .4s ease", whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,.5)" }}>{payMsg}</div>}
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes nudge{0%,70%,100%{transform:translateY(0)}75%{transform:translateY(-3px)}82%{transform:translateY(1px)}88%{transform:translateY(-2px)}95%{transform:translateY(0)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a50}button:active{transform:scale(.97)!important}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.3)!important}::selection{background:rgba(0,240,255,.2)}`}</style>
-      {/* ── FULL-SCREEN SHELL ── */}
-      <div style={{ display: "flex", minHeight: "100vh", background: "#07071a", position: "relative", zIndex: 1 }}>
+    <div style={{ minHeight: "100vh", background: "#0a0a0f", color: "#e2e2ea", fontFamily: "'Inter', 'Syne', sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      {payMsg && <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 9999, padding: "10px 20px", borderRadius: 8, background: payMsg.includes("✓") ? "rgba(0,240,255,.12)" : "rgba(255,184,0,.12)", border: `1px solid ${payMsg.includes("✓") ? "rgba(0,240,255,.3)" : "rgba(255,184,0,.3)"}`, fontSize: 13, color: payMsg.includes("✓") ? "#00f0ff" : "#ffb800", whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,.5)" }}>{payMsg}</div>}
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes nudge{0%,70%,100%{transform:translateY(0)}75%{transform:translateY(-3px)}82%{transform:translateY(1px)}88%{transform:translateY(-2px)}95%{transform:translateY(0)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a4e}button:active{opacity:.85}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.4)!important}::selection{background:rgba(0,240,255,.15)}.nb-topnav-btn{background:none;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;padding:6px 14px;border-radius:8px;color:#5a5a78;transition:color .15s,background .15s;white-space:nowrap}.nb-topnav-btn:hover{color:#c0c0d8;background:rgba(255,255,255,.04)}.nb-topnav-btn.active{color:#e2e2ea;background:rgba(255,255,255,.07)}`}</style>
 
-        {/* ── LEFT SIDEBAR ── */}
-        <div style={{ width: isDesk ? 72 : 0, minWidth: isDesk ? 72 : 0, display: isDesk ? "flex" : "none", flexDirection: "column", alignItems: "center", background: "#0b0b1f", borderRight: "1px solid rgba(255,255,255,.05)", paddingTop: 16, paddingBottom: 16, gap: 4, position: "sticky", top: 0, height: "100vh", overflowY: "auto", zIndex: 50 }}>
-          {/* Logo */}
-          <div style={{ marginBottom: 20, cursor: "pointer" }} onClick={() => setPage(P.LAND)}>
-            {logo(28)}
-          </div>
-          {/* Nav items */}
-          {sidebarTabs.map(tb => {
-            const active = tab === tb.k;
-            return (
-              <button key={tb.k} onClick={() => setTab(tb.k)} title={tb.label}
-                style={{ width: 48, height: 48, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: active ? `${tb.color}18` : "transparent", border: active ? `1px solid ${tb.color}40` : "1px solid transparent", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", transition: "all .18s", position: "relative" }}>
-                <span style={{ fontSize: 18, lineHeight: 1 }}>{tb.icon}</span>
-                <span style={{ fontSize: 7, color: active ? tb.color : "#3a3a56", fontWeight: active ? 700 : 400, letterSpacing: .3, lineHeight: 1 }}>{tb.label.split(" ")[0]}</span>
-                {active && <div style={{ position: "absolute", left: -1, top: "50%", transform: "translateY(-50%)", width: 3, height: 24, background: tb.color, borderRadius: "0 3px 3px 0" }} />}
-              </button>
-            );
-          })}
-          {/* Divider */}
-          <div style={{ width: 32, height: 1, background: "rgba(255,255,255,.05)", margin: "8px 0" }} />
-          {/* Credits mini */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "8px 0" }}>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{profile?.images_remaining ?? 0}</div>
-              <div style={{ fontSize: 7, color: "#3a3a56", letterSpacing: .5 }}>IMG</div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#b44aff", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{profile?.videos_remaining ?? 0}</div>
-              <div style={{ fontSize: 7, color: "#3a3a56", letterSpacing: .5 }}>VID</div>
-            </div>
-          </div>
-          {/* Spacer + bottom actions */}
-          <div style={{ flex: 1 }} />
-          <LangSelector />
-          <div style={{ marginTop: 8 }}><UserPanel /></div>
+      {/* ── TOP NAV (Higgsfield-style) ── */}
+      <div style={{ position: "sticky", top: 0, zIndex: 50, background: "#0d0d14", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "center", height: 48, paddingLeft: 16, paddingRight: 16, gap: 0 }}>
+        {/* Logo */}
+        <div style={{ cursor: "pointer", marginRight: 20, flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }} onClick={() => setPage(P.LAND)}>
+          {logo(26)}
+          {isDesk && <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e2ea", letterSpacing: -.3 }}>NanoBanano</span>}
         </div>
 
-        {/* ── MAIN CONTENT AREA ── */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        {/* Nav tabs */}
+        <div style={{ display: "flex", alignItems: "center", gap: 2, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}>
+          {navTabs.map(tb => (
+            <button key={tb.k} onClick={() => setTab(tb.k)} className={`nb-topnav-btn${tab===tb.k?" active":""}`}
+              style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: isDesk?13:11, fontWeight: tab===tb.k?600:400, padding: isDesk?"6px 14px":"5px 10px", borderRadius: 8, color: tab===tb.k?"#e2e2ea":"#5a5a78", transition: "color .15s,background .15s", whiteSpace: "nowrap", position: "relative" }}>
+              {tb.label}
+              {tab===tb.k && <div style={{ position: "absolute", bottom: -1, left: "50%", transform: "translateX(-50%)", width: 20, height: 2, background: tb.color, borderRadius: 2 }} />}
+            </button>
+          ))}
+        </div>
 
-          {/* ── TOP BAR ── */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: isDesk ? "14px 24px" : "12px 16px", borderBottom: "1px solid rgba(255,255,255,.04)", background: "#0b0b1f", position: "sticky", top: 0, zIndex: 40 }}>
-            {/* Left: mobile logo + page title */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {!isDesk && <div style={{ cursor: "pointer" }} onClick={() => setPage(P.LAND)}>{logo(22)}</div>}
-              <div>
-                <span style={{ fontSize: isDesk ? 15 : 13, fontWeight: 700, color: "#e0e0f0" }}>
-                  {sidebarTabs.find(t2 => t2.k === tab)?.label || "Dashboard"}
-                </span>
-                <span style={{ fontSize: 10, color: "#3a3a56", marginLeft: 8 }}>NanoBanano Studio</span>
-              </div>
-            </div>
-
-            {/* Right: plan badge + buttons */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              {/* Plan badge */}
-              <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 14, background: `${hasPlan ? planData.color : "#5a5a70"}12`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}30`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>
-                {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}
-              </span>
-              {/* Credits (mobile) */}
-              {!isDesk && (
-                <span style={{ fontSize: 10, color: "#8a8a9e" }}>
-                  <span style={{ color: "#00f0ff", fontWeight: 700 }}>{profile?.images_remaining ?? 0}</span> img · <span style={{ color: "#b44aff", fontWeight: 700 }}>{profile?.videos_remaining ?? 0}</span> vid
-                </span>
-              )}
-              {/* Change plan */}
-              {hasPlan && (
-                <button onClick={() => setPage(P.PLANS)} style={{ fontSize: 10, color: "#00ff88", background: "rgba(0,255,136,.07)", border: "1px solid rgba(0,255,136,.25)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
-                  {t("change_plan")}
-                </button>
-              )}
-              {/* Top-up dropdown */}
-              <span style={{ position: "relative" }}>
-                <button onClick={() => setShowTopUpMenu(v => !v)} style={{ fontSize: 10, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, boxShadow: "0 0 10px rgba(255,184,0,.35)" }}>
-                  {t("top_up")} ▾
-                </button>
-                {showTopUpMenu && (
-                  <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 999, background: "#13132b", border: "1px solid rgba(255,184,0,.25)", borderRadius: 14, padding: 14, width: 268, boxShadow: "0 12px 40px rgba(0,0,0,.7)" }} onClick={e => e.stopPropagation()}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 8px" }}>🖼️ {lang === "es" ? "Créditos de imagen" : "Image credits"}</p>
-                    <div style={{ display: "flex", gap: 5, marginBottom: 12 }}>
-                      {[["img_s",20,"$5.99"],["img_m",50,"$12.99"],["img_l",120,"$27.99"]].map(([id,amt,price]) => (
-                        <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "8px 3px", fontSize: 10, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                          {amt} img<br/><span style={{ fontSize: 9 }}>{price}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: "#b44aff", margin: "0 0 8px" }}>🎬 {lang === "es" ? "Créditos de video" : "Video credits"}</p>
-                    <div style={{ display: "flex", gap: 5 }}>
-                      {[["vid_s",5,"$12.99"],["vid_m",12,"$27.99"],["vid_l",30,"$59.99"]].map(([id,amt,price]) => (
-                        <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "8px 3px", fontSize: 10, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg,#b44aff,#7a00ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                          {amt} vid<br/><span style={{ fontSize: 9 }}>{price}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <button onClick={() => setShowTopUpMenu(false)} style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: "#5a5a70", fontSize: 16, cursor: "pointer", lineHeight: 1 }}>×</button>
-                  </div>
-                )}
-              </span>
-            </div>
-          </div>
-
-          {/* ── NO PLAN BANNER ── */}
-          {!hasPlan && (
-            <div style={{ margin: "16px 24px 0", padding: "14px 18px", borderRadius: 12, background: "rgba(255,184,0,.06)", border: "1px solid rgba(255,184,0,.15)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: "#ffb800", margin: 0 }}>{t("no_plan")}</p>
-              <button onClick={() => setPage(P.PLANS)} style={{ padding: "8px 20px", fontSize: 12, fontWeight: 700, color: "#06060e", background: "#ffb800", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>Elegir plan →</button>
+        {/* Right: credits + plan + actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: isDesk?12:6, flexShrink: 0, marginLeft: 12 }}>
+          {isDesk && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "#4a4a62" }}>
+              <span><span style={{ color: "#00f0ff", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>{profile?.images_remaining ?? 0}</span> img</span>
+              <span><span style={{ color: "#b44aff", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>{profile?.videos_remaining ?? 0}</span> vid</span>
             </div>
           )}
-
-          {/* ── MOBILE TABS ── */}
-          {!isDesk && (
-            <div style={{ padding: "10px 12px 0" }}>
-              <div style={{ display: "flex", gap: 2, marginBottom: 4, background: "rgba(255,255,255,.02)", borderRadius: 9, padding: 3 }}>
-                {[
-                  { k: T.IMG,  l: lang==="es"?"🖼️ Img":"🖼️ Img" },
-                  { k: T.VID,  l: lang==="es"?"🎬 Vid":"🎬 Vid" },
-                  { k: T.GAL,  l: "📁" },
-                ].map(tb => (
-                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex: tb.k===T.GAL?"0 0 38px":1, padding:"8px 2px", fontSize:10, fontWeight:tab===tb.k?700:400, color:tab===tb.k?"#fff":"#5a5a70", background:tab===tb.k?"rgba(255,255,255,.07)":"transparent", border:"none", borderRadius:7, cursor:"pointer", fontFamily:"inherit" }}>{tb.l}</button>
-                ))}
-              </div>
-              <div style={{ display:"flex", gap:2, marginBottom:4, background:"rgba(255,107,43,.03)", borderRadius:9, padding:3, border:"1px solid rgba(255,107,43,.08)" }}>
-                {[{ k:T.MOT, l:"🎭 Motion" },{ k:T.DIR, l:"🎥 Director" }].map(tb => (
-                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex:1, padding:"8px 2px", fontSize:10, fontWeight:tab===tb.k?700:400, color:tab===tb.k?"#fff":"#5a5a70", background:tab===tb.k?(tb.k===T.MOT?"rgba(255,107,43,.15)":"rgba(0,240,255,.1)"):"transparent", border:tab===tb.k?(tb.k===T.MOT?"1px solid rgba(255,107,43,.3)":"1px solid rgba(0,240,255,.2)"):"none", borderRadius:7, cursor:"pointer", fontFamily:"inherit" }}>{tb.l}</button>
-                ))}
-              </div>
-              <div style={{ display:"flex", gap:2, background:"rgba(255,184,0,.03)", borderRadius:9, padding:3, border:"1px solid rgba(255,184,0,.08)", marginBottom:4 }}>
-                {[{ k:T.WS_IMG, l:"✨ Img Pro" },{ k:T.WS_VID, l:"🌊 Vid Pro" },{ k:T.VID_EDIT, l:t("tab_vid_edit") }].map(tb => (
-                  <button key={tb.k} onClick={() => setTab(tb.k)} style={{ flex:1, padding:"8px 2px", fontSize:10, fontWeight:tab===tb.k?700:400, color:tab===tb.k?"#fff":"#5a5a70", background:tab===tb.k?(tb.k===T.WS_IMG?"rgba(255,184,0,.15)":tb.k===T.WS_VID?"rgba(0,200,255,.12)":"rgba(180,74,255,.12)"):"transparent", border:tab===tb.k?(tb.k===T.WS_IMG?"1px solid rgba(255,184,0,.3)":tb.k===T.WS_VID?"1px solid rgba(0,200,255,.3)":"1px solid rgba(180,74,255,.3)"):"none", borderRadius:7, cursor:"pointer", fontFamily:"inherit" }}>{tb.l}</button>
-                ))}
-              </div>
-            </div>
+          <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 12, background: `${hasPlan ? planData.color : "#5a5a70"}15`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}35`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: .8, textTransform: "uppercase" }}>
+            {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}
+          </span>
+          {hasPlan && (
+            <button onClick={() => setPage(P.PLANS)} style={{ fontSize: 11, color: "#00ff88", background: "rgba(0,255,136,.06)", border: "1px solid rgba(0,255,136,.2)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+              {isDesk ? t("change_plan") : "↑"}
+            </button>
           )}
-
-          {/* ── CONTENT WRAPPER ── */}
-          <div style={{ flex: 1, display: isDesk ? "grid" : "block", gridTemplateColumns: isDesk ? "340px 1fr" : "unset", gap: 0, minHeight: 0 }}>
-
-            {/* ── DESKTOP LEFT PANEL (credits + library) ── */}
-            {isDesk && (
-              <div style={{ borderRight: "1px solid rgba(255,255,255,.04)", padding: "24px 20px", overflowY: "auto", background: "#09091e" }}>
-                {/* Credits cards */}
-                <p style={{ fontSize: 9, color: "#3a3a56", letterSpacing: 1.5, textTransform: "uppercase", margin: "0 0 10px", fontWeight: 600 }}>Créditos</p>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 20 }}>
-                  <div style={{ padding: "14px 12px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.1)" }}>
-                    <p style={{ fontSize: 8, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>Imágenes</p>
-                    <p style={{ fontSize: 28, fontWeight: 800, margin: "3px 0 0", fontFamily: "'JetBrains Mono',monospace", color: "#00f0ff", lineHeight: 1 }}>{profile?.images_remaining ?? 0}</p>
-                    <p style={{ fontSize: 8, color: "#3a3a50", margin: "3px 0 0" }}>Premium</p>
-                  </div>
-                  <div style={{ padding: "14px 12px", borderRadius: 12, background: "rgba(180,74,255,.04)", border: "1px solid rgba(180,74,255,.1)" }}>
-                    <p style={{ fontSize: 8, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>Videos</p>
-                    <p style={{ fontSize: 28, fontWeight: 800, margin: "3px 0 0", fontFamily: "'JetBrains Mono',monospace", color: "#b44aff", lineHeight: 1 }}>{profile?.videos_remaining ?? 0}</p>
-                    <p style={{ fontSize: 8, color: "#3a3a50", margin: "3px 0 0" }}>Premium</p>
-                  </div>
+          <span style={{ position: "relative" }}>
+            <button onClick={() => setShowTopUpMenu(v => !v)} style={{ fontSize: 11, color: "#0a0a0f", background: "linear-gradient(135deg,#e8d44d,#d4a017)", border: "none", borderRadius: 7, padding: isDesk?"5px 14px":"4px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, letterSpacing: -.2 }}>
+              {isDesk ? `${t("top_up")} ▾` : "＋"}
+            </button>
+            {showTopUpMenu && (
+              <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 999, background: "#13131e", border: "1px solid rgba(255,255,255,.08)", borderRadius: 14, padding: 16, width: 272, boxShadow: "0 16px 48px rgba(0,0,0,.8)" }} onClick={e => e.stopPropagation()}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", margin: "0 0 10px", letterSpacing: .5 }}>🖼️ {lang === "es" ? "Créditos imagen" : "Image credits"}</p>
+                <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                  {[["img_s",20,"$5.99"],["img_m",50,"$12.99"],["img_l",120,"$27.99"]].map(([id,amt,price]) => (
+                    <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "9px 4px", fontSize: 10, fontWeight: 700, color: "#0a0a0f", background: "linear-gradient(135deg,#00f0ff,#00b8cc)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", lineHeight: 1.4 }}>
+                      {amt} img<br/><span style={{ fontSize: 9, opacity: .8 }}>{price}</span>
+                    </button>
+                  ))}
                 </div>
-
-                {/* Library */}
-                <p style={{ fontSize: 9, color: "#3a3a56", letterSpacing: 1.5, textTransform: "uppercase", margin: "0 0 10px", fontWeight: 600 }}>Biblioteca</p>
-                {gens.length === 0 ? (
-                  <p style={{ fontSize: 11, color: "#2a2a3a", textAlign: "center", marginTop: 24 }}>Sin generaciones aún</p>
-                ) : (
-                  <>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
-                      {gens.slice(0, visibleCount).map((g, i) => (
-                        <div key={g.id || i} onClick={() => openPreview(g, i)}
-                          style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "border-color .15s, transform .15s", position: "relative", aspectRatio: "1" }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = g.type === "image" ? "rgba(0,240,255,.4)" : "rgba(180,74,255,.4)"; e.currentTarget.style.transform = "scale(1.03)"; }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"; e.currentTarget.style.transform = "scale(1)"; }}>
-                          {g.url && g.status !== "processing" ? (
-                            g.type === "image"
-                              ? <img src={g.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                              : <video src={g.url} muted style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
-                          ) : (
-                            <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
-                              {g.status === "processing" ? <div style={{ width: 16, height: 16, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : (g.type === "image" ? "🖼️" : "🎬")}
-                            </div>
-                          )}
-                          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "10px 4px 3px", background: "linear-gradient(transparent,rgba(0,0,0,.75))" }}>
-                            <span style={{ fontSize: 7, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 700 }}>{g.type === "image" ? "IMG" : "VID"}</span>
-                          </div>
-                          {favorites[g.id] && <div style={{ position: "absolute", top: 3, right: 3, fontSize: 10 }}>❤️</div>}
-                        </div>
-                      ))}
-                    </div>
-                    {visibleCount < gens.length && <div ref={gallerysentinel} style={{ height: 20 }} />}
-                  </>
-                )}
-                {/* Community CTA */}
-                <div style={{ marginTop: 20, padding: "12px", borderRadius: 10, background: "linear-gradient(135deg,rgba(0,240,255,.04),rgba(180,74,255,.04))", border: "1px solid rgba(255,255,255,.04)", textAlign: "center" }}>
-                  <p style={{ fontSize: 10, color: "#4a4a60", margin: "0 0 5px" }}>¿Crear sin límites?</p>
-                  <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>HyperReal AI Lab →</button>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#b44aff", margin: "0 0 10px", letterSpacing: .5 }}>🎬 {lang === "es" ? "Créditos video" : "Video credits"}</p>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[["vid_s",5,"$12.99"],["vid_m",12,"$27.99"],["vid_l",30,"$59.99"]].map(([id,amt,price]) => (
+                    <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "9px 4px", fontSize: 10, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg,#b44aff,#7a00ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", lineHeight: 1.4 }}>
+                      {amt} vid<br/><span style={{ fontSize: 9, opacity: .8 }}>{price}</span>
+                    </button>
+                  ))}
                 </div>
+                <button onClick={() => setShowTopUpMenu(false)} style={{ position: "absolute", top: 10, right: 12, background: "none", border: "none", color: "#5a5a70", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
               </div>
             )}
+          </span>
+          <LangSelector />
+          <UserPanel />
+        </div>
+      </div>
 
-            {/* ── RIGHT / MAIN PANEL ── */}
-            <div style={{ padding: isDesk ? "24px 28px" : "12px 14px", overflowY: "auto" }}>
+      {/* ── NO PLAN BANNER ── */}
+      {!hasPlan && (
+        <div style={{ padding: "10px 20px", background: "rgba(255,184,0,.05)", borderBottom: "1px solid rgba(255,184,0,.12)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <p style={{ fontSize: 12, fontWeight: 500, color: "#c89a00", margin: 0 }}>{t("no_plan")}</p>
+          <button onClick={() => setPage(P.PLANS)} style={{ padding: "5px 16px", fontSize: 11, fontWeight: 700, color: "#0a0a0f", background: "#e8c23a", border: "none", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>Elegir plan →</button>
+        </div>
+      )}
+
+      {/* ── BODY: left form panel + right output panel ── */}
+      <div style={{ display: "flex", flexDirection: isDesk ? "row" : "column", minHeight: "calc(100vh - 48px)" }}>
+
+        {/* ── LEFT PANEL: form controls (Higgsfield left column) ── */}
+        {tab !== T.GAL && (
+          <div style={{ ...((tab === T.IMG || tab === T.VID) ? { width: isDesk ? 300 : "100%", minWidth: isDesk ? 300 : "unset", maxWidth: isDesk ? 300 : "unset" } : { flex: 1, width: "100%" }), borderRight: isDesk && (tab === T.IMG || tab === T.VID) ? "1px solid rgba(255,255,255,.05)" : "none", overflowY: "auto", background: "#0d0d14", display: "flex", flexDirection: "column" }}>
+
+            {/* ── TAB CONTENT (form) ── */}
+            <div style={{ flex: 1, padding: (tab === T.IMG || tab === T.VID) ? "16px 14px 0" : (isDesk ? "28px 32px" : "14px"), overflowY: "auto", width: "100%", maxWidth: (tab === T.IMG || tab === T.VID) ? "none" : 920, margin: "0 auto" }}>
 
           {(tab === T.IMG || tab === T.VID) && (
             <div style={{ animation: "fadeUp .4s ease" }}>
@@ -2800,42 +2774,6 @@ export default function App() {
                 );
               })()}
 
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))} style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: !hasPlan || (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "#06060e" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#3a3a50" : "#06060e", background: !hasPlan ? "#ffb800" : (hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))) ? "rgba(255,255,255,.06)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.03)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg, #00f0ff, #00c8ff)") : "linear-gradient(135deg, #b44aff, #8a2be2)", border: "none", borderRadius: 11, cursor: genBtnLocked && hasPlan ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(255,184,0,.2)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? (maxRealism ? "0 0 22px rgba(255,184,0,.25)" : "0 0 22px rgba(0,240,255,.2)") : "0 0 22px rgba(180,74,255,.2)" }}>
-                {!hasPlan ? t("plan_for_gen") : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube una imagen de referencia" : "Upload a reference image") : tab === T.IMG ? (maxRealism ? `✨ ${t("gen_image")} · 3 ${lang === "es" ? "créditos" : "credits"} (${profile?.images_remaining ?? 0} ${lang === "es" ? "disp." : "avail."})` : `${t("gen_image")} (${profile?.images_remaining ?? 0})`) : `${t("gen_video")} (${profile?.videos_remaining ?? 0})`}
-              </button>
-              {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={tab} duration={vidDur} lang={lang} genStatus={genStatus} /></div>}
-
-              {/* Error */}
-              {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>
-                {genError}
-                {showConcurrentUpgrade && (
-                  <div style={{ marginTop: 6 }}>
-                    <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
-                      style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
-                      {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
-                    </button>
-                  </div>
-                )}
-              </div>}
-
-              {/* Result preview */}
-              {genResult && !genning && (
-                <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)", animation: "fadeUp .5s ease" }}>
-                  {genResult.type === "image" ? (
-                    <img src={genResult.url} alt="Generated" style={{ width: "100%", display: "block", borderRadius: 14 }} />
-                  ) : (
-                    <video src={genResult.url} controls autoPlay style={{ width: "100%", display: "block", borderRadius: 14 }} />
-                  )}
-                  <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {genResult.type === "image" ? "Imagen Premium" : "Video Premium"}</span>
-                      {genResult.resolution && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: "rgba(0,240,255,.1)", color: "#00f0ff", fontWeight: 600 }}>{genResult.resolution}</span>}
-                      {genResult.audio && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 4, background: "rgba(180,74,255,.1)", color: "#b44aff", fontWeight: 600 }}>🔊 Audio</span>}
-                    </div>
-                    <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-${genResult.type === "image" ? "img" : "vid"}-${Date.now()}.${genResult.type === "image" ? "png" : "mp4"}`)} style={{ fontSize: 11, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.15)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {t("download")}</button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -4238,52 +4176,113 @@ export default function App() {
             );
           })()}
 
-                    {/* Mobile gallery */}
-          {!isDesk && tab === T.GAL && (
-            <div style={{ animation: "fadeUp .4s ease" }}>
-              {gens.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "36px 18px" }}><p style={{ fontSize: 28, marginBottom: 6 }}>📁</p><p style={{ color: "#5a5a70", fontSize: 12 }}>Sin generaciones aún</p></div>
-              ) : (
-                <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                    {gens.slice(0, visibleCount).map((g, i) => (
-                      <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", position: "relative", aspectRatio: "1" }}>
-                        {g.url && g.status !== "processing" ? (
-                          g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                          : <video src={g.url} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                        ) : (
-                          <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>
-                            {g.status === "processing" ? <div style={{ width: 22, height: 22, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : (g.type === "image" ? "🖼️" : "🎬")}
-                          </div>
-                        )}
-                        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "14px 6px 4px", background: "linear-gradient(transparent, rgba(0,0,0,.8))" }}>
-                          <span style={{ fontSize: 8, color: g.type === "image" ? "#00f0ff" : "#b44aff", fontWeight: 600 }}>{g.type === "image" ? "IMG" : "VID"}</span>
-                        </div>
-                        {favorites[g.id] && (
-                          <div style={{ position: "absolute", top: 4, right: 4, fontSize: 12, lineHeight: 1 }}>❤️</div>
-                        )}
-                      </div>
-                    ))}
+            </div>
+
+          {/* ── PINNED GENERATE BUTTON (bottom of left panel) ── */}
+          {(tab === T.IMG || tab === T.VID) && (
+            <div style={{ padding: "12px 14px 16px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0d0d14", flexShrink: 0 }}>
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))}
+                style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: genning || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
+                {!hasPlan ? t("plan_for_gen") : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : tab === T.IMG ? (maxRealism ? `✨ Generar · 3 créditos (${profile?.images_remaining ?? 0} disp.)` : `Generar imagen (${profile?.images_remaining ?? 0})`) : `Generar video (${profile?.videos_remaining ?? 0})`}
+              </button>
+              {genning && <div style={{ marginTop: 10, fontSize: 11, color: "#5a5a78", textAlign: "center" }}>{genStatus || (lang === "es" ? "Generando…" : "Generating…")}</div>}
+              {genError && <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 7, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", textAlign: "center" }}>
+                {genError}
+                {showConcurrentUpgrade && (
+                  <div style={{ marginTop: 6 }}>
+                    <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }} style={{ fontSize: 11, fontWeight: 700, color: "#e8c23a", background: "rgba(232,196,58,.08)", border: "1px solid rgba(232,196,58,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+                      {lang === "es" ? "⚡ Mejorar plan →" : "⚡ Upgrade plan →"}
+                    </button>
                   </div>
-                  {visibleCount < gens.length && (
-                    <div ref={gallerysentinel} style={{ height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <div style={{ width: 20, height: 20, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
-                    </div>
-                  )}
-                </>
-              )}
+                )}
+              </div>}
             </div>
           )}
         </div>
-      </div>
+        )}
 
-      {/* Mobile CTA */}
-      {!isDesk && (
-        <div style={{ marginTop: 24, padding: "12px", borderRadius: 9, background: "rgba(255,255,255,.015)", border: "1px solid rgba(255,255,255,.03)", textAlign: "center" }}>
-          <p style={{ fontSize: 10, color: "#4a4a60", margin: "0 0 5px" }}>¿Crear sin límites?</p>
-          <button onClick={() => window.open("https://www.skool.com/premium", "_blank")} style={{ fontSize: 10, color: "#00f0ff", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Aprende en HyperReal AI Lab →</button>
-        </div>
-      )}
+        {/* ── RIGHT OUTPUT PANEL ── */}
+        {(tab === T.IMG || tab === T.VID) && (isDesk || genResult || genning) && (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: genResult || genning ? "flex-start" : "center", padding: "32px 28px", overflowY: "auto", background: "#0a0a0f", minHeight: 0 }}>
+            {genning && (
+              <div style={{ width: "100%", maxWidth: 560, borderRadius: 18, overflow: "hidden", animation: "fadeUp .4s ease" }}>
+                <Generating type={tab} duration={vidDur} lang={lang} genStatus={genStatus} />
+              </div>
+            )}
+            {genResult && !genning && (tab === T.IMG || tab === T.VID) && (
+              <div style={{ width: "100%", maxWidth: 640, animation: "fadeUp .5s ease" }}>
+                <div style={{ borderRadius: 16, overflow: "hidden", border: "1px solid rgba(255,255,255,.07)", background: "#0d0d14" }}>
+                  {genResult.type === "image" ? (
+                    <img src={genResult.url} alt="Generated" style={{ width: "100%", display: "block" }} />
+                  ) : (
+                    <video src={genResult.url} controls autoPlay style={{ width: "100%", display: "block" }} />
+                  )}
+                  <div style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: "#5a5a70" }}>✓ {genResult.type === "image" ? "Imagen generada" : "Video generado"}</span>
+                      {genResult.resolution && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, background: "rgba(0,240,255,.1)", color: "#00f0ff", fontWeight: 600 }}>{genResult.resolution}</span>}
+                    </div>
+                    <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-${genResult.type === "image" ? "img" : "vid"}-${Date.now()}.${genResult.type === "image" ? "png" : "mp4"}`)} style={{ fontSize: 11, color: "#e8c23a", background: "rgba(232,196,58,.08)", border: "1px solid rgba(232,196,58,.2)", padding: "6px 14px", borderRadius: 7, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {t("download")}</button>
+                  </div>
+                </div>
+                {/* Recent in right panel */}
+                {gens.length > 1 && (
+                  <div style={{ marginTop: 20 }}>
+                    <p style={{ fontSize: 10, color: "#3a3a52", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>Recientes</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 6 }}>
+                      {gens.slice(0, 12).map((g, i) => (
+                        <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ aspectRatio: "1", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "opacity .15s" }} onMouseEnter={e => e.currentTarget.style.opacity = ".75"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
+                          {g.url && g.status !== "processing" ? (
+                            g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <video src={g.url} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,.03)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{g.status === "processing" ? <div style={{ width: 12, height: 12, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : "🖼️"}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {!genResult && !genning && (tab === T.IMG || tab === T.VID) && (
+              <div style={{ textAlign: "center", opacity: .35 }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>{tab === T.IMG ? "🖼️" : "🎬"}</div>
+                <p style={{ fontSize: 13, color: "#5a5a78", fontWeight: 500 }}>{lang === "es" ? "Tu creación aparecerá aquí" : "Your creation will appear here"}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── GALLERY FULLSCREEN ── */}
+        {tab === T.GAL && (
+          <div style={{ flex: 1, padding: isDesk ? "24px 28px" : "14px", overflowY: "auto", background: "#0a0a0f" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: "#e2e2ea" }}>{lang === "es" ? "Tu galería" : "Your gallery"} <span style={{ fontSize: 11, color: "#4a4a62", fontWeight: 400, marginLeft: 6 }}>{gens.length} {lang === "es" ? "creaciones" : "creations"}</span></p>
+            </div>
+            {gens.length === 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 12, opacity: .4 }}>
+                <div style={{ fontSize: 48 }}>📁</div>
+                <p style={{ fontSize: 13, color: "#5a5a78" }}>{lang === "es" ? "Sin creaciones aún" : "No creations yet"}</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ columns: isDesk ? "4 220px" : "2 140px", gap: 8 }}>
+                  {gens.slice(0, visibleCount).map((g, i) => (
+                    <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ breakInside: "avoid", marginBottom: 8, borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "opacity .15s" }} onMouseEnter={e => e.currentTarget.style.opacity = ".8"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
+                      {g.url && g.status !== "processing" ? (
+                        g.type === "image" ? <img src={g.url} alt="" style={{ width: "100%", display: "block" }} /> : <video src={g.url} muted style={{ width: "100%", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
+                      ) : (
+                        <div style={{ height: 140, background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>
+                          {g.status === "processing" ? <div style={{ width: 22, height: 22, border: "2px solid rgba(0,240,255,.2)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : (g.type === "image" ? "🖼️" : "🎬")}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {visibleCount < gens.length && <div ref={gallerysentinel} style={{ height: 40 }} />}
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Preview Modal */}
       {previewItem && (
@@ -4372,9 +4371,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-        </div>
-      </div>
 
       <Footer />
       <TxHistoryModal />
