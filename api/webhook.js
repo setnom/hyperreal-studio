@@ -229,6 +229,7 @@ export default async function handler(req, res) {
         if (status === "OK") {
           const url = extractUrl(payload);
           if (url) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}`, { method: "PATCH", headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" }, body: JSON.stringify({ result_url: url, status: "completed" }) }).catch(() => {});
+          if (url && payload?.draft_id) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}`, { method: "PATCH", headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" }, body: JSON.stringify({ draft_id: payload.draft_id }) }).catch(() => {});
         } else if (status === "ERROR") {
           // Idempotent: only the request that flips processing→failed refunds (status.js may race)
           try {

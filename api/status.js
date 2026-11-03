@@ -221,11 +221,19 @@ export default async function handler(req, res) {
               headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
               body: JSON.stringify({ result_url: url, status: "completed" }),
             });
+            // Seedance 2.5 Draft: keep the draft_id so the user can render it in 1080p (separate PATCH — column may not exist yet)
+            if (result?.draft_id) {
+              await fetch(`${SB_URL}/rest/v1/generations?id=eq.${found[0].id}`, {
+                method: "PATCH",
+                headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+                body: JSON.stringify({ draft_id: result.draft_id }),
+              }).catch(() => {});
+            }
           }
         } catch (e) { console.error("DB update error:", e.message); }
       }
 
-      return res.status(200).json({ status: "COMPLETED", url, type });
+      return res.status(200).json({ status: "COMPLETED", url, type, draft_id: result?.draft_id || undefined });
     }
 
     if (falStatus === "FAILED") {

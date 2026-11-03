@@ -1,5 +1,5 @@
 import { deductCredits, addCredits, insufficientMsg } from "./_credits.js";
-import { VIDEO_MODELS, IMAGE_MODELS, findImageModel, videoCredits, imageCredits, clampDuration, pickRes } from "./_models.js";
+import { VIDEO_MODELS, IMAGE_MODELS, findImageModel, videoCredits, imageCredits, clampDuration, pickRes, pickMode, draftCompleteCredits } from "./_models.js";
 import { probeVideoSeconds } from "./_media.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
@@ -109,7 +109,7 @@ export default async function handler(req, res) {
   if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
   const { type, prompt: rawPrompt, user_prompt: rawUserPrompt, aspect_ratio, style_id, image_quality, duration, audio,
-          image_urls, start_frame, end_frame, multishot, max_realism, model_id, video_url, resolution, mode, user_token } = req.body || {};
+          image_urls, start_frame, end_frame, multishot, max_realism, model_id, video_url, resolution, mode, video_urls, audio_urls, middle_frames, gen_id, user_token } = req.body || {};
 
   // Validate style_id against allowed values only
   const VALID_STYLE_IDS = ["photorealistic", "cinematic", "product", "portrait", "pixar", "ads", "neutral", "restore", "colorize"];
@@ -118,7 +118,8 @@ export default async function handler(req, res) {
   if (!user_token || typeof user_token !== "string")
     return res.status(401).json({ error: "Authentication required" });
 
-  const prompt = sanitizePrompt(rawPrompt);
+  const isDraftComplete = type === "video" && mode === "complete";
+  const prompt = sanitizePrompt(rawPrompt) || (isDraftComplete ? "draft" : "");
   if (!prompt) return res.status(400).json({ error: "Prompt required" });
 
   if (!VALID_TYPES.includes(type))
@@ -191,31 +192,59 @@ export default async function handler(req, res) {
   const hasEnd   = typeof end_frame   === "string" && isSafeImageUrl(end_frame);
   const hasVideo = typeof video_url === "string" && isSafeImageUrl(video_url);
 
-  // Video settings: per-model duration range, resolution and mode (credits pay per second — no plan cap)
-  const vDur  = isVid ? clampDuration(vModel, duration) : 0;
+  // ── Video settings (v18): per-model modes, resolution, duration — credits pay per second ──
+  const safeList = (arr, n) => (Array.isArray(arr) ? arr.filter(u => typeof u === "string" && isSafeImageUrl(u)).slice(0, n) : []);
   const vRes  = isVid ? pickRes(vModel, resolution) : null;
   const vR    = isVid ? vModel.res[vRes] : null;
-  const vMode = isVid && vModel.modes?.includes(mode) ? mode : "frames";
-  const usesVideo = isVid && (vModel.needsVideo || vMode === "extend" || (vMode === "omni" && hasVideo));
+  const vMd   = isVid && !isDraftComplete ? pickMode(vModel, mode === "omni" ? "refs" : mode) : null;
+  const vMode = isDraftComplete ? "complete" : (vMd?.id || null);
+  let vDur    = isVid ? clampDuration(vModel, duration) : 0;
+  const vImgs   = isVid && vMd ? safeList(image_urls, vMd.images || 0) : [];
+  const vVids   = isVid && vMd ? safeList(video_urls, vMd.videos || 0) : [];
+  const vAuds   = isVid && vMd ? safeList(audio_urls, vMd.audios || 0) : [];
+  const vMiddle = isVid && vMd ? safeList(middle_frames, Math.max(0, (vMd.frames || 0) - 2)) : [];
+  const vSource = isVid && vMd?.source && hasVideo ? video_url : null;
 
-  if (isVid && (vModel.needsImage || vR.needsImage) && !hasStart)
-    return res.status(400).json({ error: `${vModel.name} ${vRes} necesita una imagen inicial. / requires a start image.` });
-  if (isVid && (vModel.needsVideo || vMode === "extend") && !hasVideo)
-    return res.status(400).json({ error: `${vModel.name} necesita un video. / requires a video.` });
-  if (isVid && vMode === "omni" && !hasVideo && refList.length === 0 && !hasStart)
-    return res.status(400).json({ error: "Omni necesita al menos una imagen o un video de referencia. / needs at least one reference." });
-
-  // Measure attached video on the server — bill input seconds (fal charges them). Unreadable → bill the maximum.
-  let inputSec = 0;
-  if (usesVideo) {
-    const measured = await probeVideoSeconds(video_url);
-    const maxIn = vModel.maxInputSec || 15;
-    if (measured && measured > maxIn + 0.5)
-      return res.status(400).json({ error: `El video dura ${measured.toFixed(1)}s. Máximo ${maxIn}s. / Video too long.` });
-    inputSec = measured ? Math.ceil(measured) : maxIn;
+  if (isVid && vMd) {
+    if (vMd.id === "frames" && (vMd.needsImage || vR.needsImage) && !hasStart)
+      return res.status(400).json({ error: `${vModel.name} ${vRes} necesita un fotograma inicial. / requires a start frame.` });
+    if (vMd.source && !vSource)
+      return res.status(400).json({ error: `${vModel.name} necesita un video. / requires a video.` });
+    if (vMd.id === "refs" && vImgs.length + vVids.length === 0)
+      return res.status(400).json({ error: "Añade al menos una imagen o video de referencia. / Add at least one reference." });
+    if (vAuds.length && vImgs.length + vVids.length === 0)
+      return res.status(400).json({ error: "El audio necesita al menos una imagen o video. / Audio needs an image or video." });
   }
 
-  const creditCost = isVid ? videoCredits(vModel, vDur, vRes, inputSec, vMode) : imageCredits(iModel, imageResolution, hasRefs);
+  // Draft → 1080p: load the draft generation (must belong to this user)
+  let draftRow = null;
+  if (isDraftComplete) {
+    if (!vModel.complete) return res.status(400).json({ error: "Este modelo no tiene borradores. / No draft support." });
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/generations?id=eq.${encodeURIComponent(gen_id)}&user_id=eq.${userId}&select=id,draft_id,duration_sec,status&limit=1`, { headers: sbServiceHeaders() });
+      draftRow = (await r.json())?.[0];
+    } catch {}
+    if (!draftRow?.draft_id) return res.status(404).json({ error: "Borrador no encontrado o vencido (7 días). / Draft not found or expired." });
+    vDur = clampDuration(vModel, draftRow.duration_sec || duration);
+  }
+
+  // Measure attached videos on the server — fal bills input seconds. Unreadable → bill the mode maximum.
+  let inputSec = 0;
+  const toMeasure = vSource ? [vSource, ...vVids] : vVids;
+  if (toMeasure.length) {
+    const maxIn = vMd.source ? vMd.sourceSec : (vMd.videoSec || 15);
+    for (const u of toMeasure) {
+      const measured = await probeVideoSeconds(u);
+      inputSec += measured ? measured : maxIn;
+    }
+    if (inputSec > maxIn + 0.5)
+      return res.status(400).json({ error: `Los videos suman ${inputSec.toFixed(1)}s. Máximo ${maxIn}s. / Videos too long.` });
+    inputSec = Math.ceil(inputSec);
+  }
+
+  const creditCost = !isVid ? imageCredits(iModel, imageResolution, hasRefs)
+    : isDraftComplete ? draftCompleteCredits(vModel, vDur)
+    : videoCredits(vModel, vDur, vRes, inputSec, vMode, { nImages: vImgs.length, nAudios: vAuds.length });
   if (creditsBalance < creditCost)
     return res.status(403).json({ error: insufficientMsg(creditCost, creditsBalance) });
 
@@ -273,45 +302,103 @@ export default async function handler(req, res) {
       if (refs.length) body.image_urls = refs;
     } else {
       const m = vModel;
-      const t2v = vR.t2v || m.t2v, i2v = vR.i2v || m.i2v;
+      const ep = { ...m.ep, ...(vR.ep || {}) };
       const dur = String(vDur);
-      if (m.kind === "klingEdit") {
-        endpoint = m.v2v;
-        body = { prompt, video_url };
-        const vrefs = refList.slice(0, 4);
-        if (hasStart) vrefs.unshift(start_frame);
-        if (vrefs.length) body.image_urls = vrefs;
+      const wantAudio = m.audioToggle ? audio === true : true;
+      if (isDraftComplete) {
+        endpoint = m.complete.ep;
+        body = { draft_id: draftRow.draft_id, resolution: "1080p" };
+      } else if (m.kind === "klingO3Edit") {
+        endpoint = ep.edit;
+        body = { prompt, video_url: vSource };
+        if (vImgs.length) body.image_urls = vImgs;
+      } else if (m.kind === "kling4") {
+        const base = { prompt, duration: dur, resolution: vRes, generate_audio: wantAudio };
+        if (vMode === "edit") {
+          endpoint = ep.edit;
+          body = { prompt, video_url: vSource, resolution: vRes };
+          if (vImgs.length) body.image_urls = vImgs;
+        } else if (vMode === "refs") {
+          endpoint = ep.ref;
+          body = { ...base, aspect_ratio: safeRatio };
+          if (vImgs.length) body.image_urls = vImgs;
+          if (vVids.length) body.video_urls = vVids;
+        } else if (vMiddle.length) {
+          endpoint = ep.ref; // multi-keyframe: start + middle + end
+          body = { ...base, aspect_ratio: safeRatio, start_image_url: start_frame, middle_image_urls: vMiddle };
+          if (hasEnd) body.end_image_url = end_frame;
+        } else if (hasStart) {
+          endpoint = ep.i2v;
+          body = { ...base, start_image_url: start_frame };
+          if (hasEnd) body.end_image_url = end_frame;
+        } else {
+          endpoint = ep.t2v;
+          body = { ...base, aspect_ratio: safeRatio };
+        }
       } else if (m.kind === "seedance") {
         const base = { duration: dur, resolution: vRes, aspect_ratio: safeRatio, generate_audio: true, enable_safety_checker: true, end_user_id: userId };
-        if (vMode === "omni") {
-          endpoint = m.ref;
-          const imgs = [...(hasStart ? [start_frame] : []), ...refList].slice(0, 9);
+        if (m.draft) base.draft = true;
+        if (vMode === "refs") {
+          endpoint = ep.ref;
           body = { prompt, ...base };
+          const imgs = [...(hasStart ? [start_frame] : []), ...vImgs].slice(0, 9);
           if (imgs.length) body.image_urls = imgs;
-          if (hasVideo) body.video_urls = [video_url];
+          if (vVids.length) body.video_urls = vVids;
+          if (vAuds.length) body.audio_urls = vAuds;
         } else if (vMode === "extend") {
-          endpoint = m.ref;
-          body = { prompt: `Extend @Video1 forward, continuing seamlessly from its last frame. ${prompt}`, ...base, video_urls: [video_url] };
-          delete body.aspect_ratio; // locked to the input video
+          endpoint = ep.ref;
+          body = { prompt: `Extend @Video1 forward, continuing seamlessly from its last frame. ${prompt}`, ...base, video_urls: [vSource] };
+          delete body.aspect_ratio;
         } else {
-          endpoint = hasStart && i2v ? i2v : t2v;
+          endpoint = hasStart && ep.i2v ? ep.i2v : ep.t2v;
           body = { prompt, ...base };
           if (hasStart) body.image_url = start_frame;
           if (hasEnd)   body.end_image_url = end_frame;
         }
+      } else if (m.kind === "wan3") {
+        const base = { prompt, duration: vDur, resolution: vRes, audio: wantAudio };
+        if (vMode === "refs") {
+          endpoint = ep.ref;
+          body = { ...base, aspect_ratio: safeRatio };
+          if (vImgs.length) body.image_urls = vImgs;
+          if (vVids.length) body.video_urls = vVids;
+          if (vAuds.length) body.audio_urls = vAuds;
+        } else if (hasStart) {
+          endpoint = ep.i2v;
+          body = { ...base, start_image_url: start_frame };
+          if (hasEnd) body.end_image_url = end_frame;
+        } else {
+          endpoint = ep.t2v;
+          body = { ...base, aspect_ratio: safeRatio };
+        }
+      } else if (m.kind === "minimax") {
+        const base = { prompt, duration: vDur, resolution: vRes.toUpperCase(), prompt_expansion_mode: "balanced" };
+        if (vMode === "refs") {
+          endpoint = ep.ref;
+          body = { ...base, aspect_ratio: safeRatio };
+          if (vImgs.length) body.reference_image_urls = vImgs;
+          if (vVids.length) body.reference_video_urls = vVids;
+          if (vAuds.length) body.reference_audio_urls = vAuds;
+        } else if (hasStart) {
+          endpoint = ep.i2v;
+          body = { ...base, start_image_url: start_frame, image_url: start_frame };
+          if (hasEnd) body.end_image_url = end_frame;
+        } else {
+          endpoint = ep.t2v;
+          body = { ...base, aspect_ratio: safeRatio };
+        }
       } else {
-        // kling3 / kling4 family
-        const useI2V = (hasStart || m.needsImage || vR.needsImage) && i2v;
-        endpoint = useI2V ? i2v : t2v;
-        body = { prompt, duration: dur, generate_audio: audio === true };
+        // kling3 family (3.0 std/pro/turbo/omni)
+        const useI2V = (hasStart || vMd.needsImage || vR.needsImage) && ep.i2v;
+        endpoint = useI2V ? ep.i2v : ep.t2v;
+        body = { prompt, duration: dur, generate_audio: wantAudio };
         if (!useI2V) body.aspect_ratio = safeRatio;
-        if (m.kind === "kling4" && vRes === "1080p") body.resolution = "1080p";
         if (hasStart) { body.start_image_url = start_frame; body.image_url = start_frame; }
-        if (hasEnd && m.endFrame) body.end_image_url = end_frame;
+        if (hasEnd && vMd.endFrame) body.end_image_url = end_frame;
       }
       if (!endpoint) throw new Error(`Model ${m.id} has no endpoint for this input`);
     }
-    console.log(`generate: model=${isVid ? `${vModel.id} ${vRes} ${vMode} ${vDur}s in=${inputSec}s` : iModel.id} endpoint=${endpoint} credits=${creditCost} user=${userId}`);
+    console.log(`generate: model=${isVid ? `${vModel.id} ${vRes} ${vMode} ${vDur}s in=${inputSec}s img=${vImgs.length} vid=${vVids.length} aud=${vAuds.length}` : iModel.id} endpoint=${endpoint} credits=${creditCost} user=${userId}`);
 
     const WEBHOOK_URL = "https://nanobanano.studio/api/webhook?source=fal";
     const falRes = await fetch(`https://queue.fal.run/${endpoint}?fal_webhook=${encodeURIComponent(WEBHOOK_URL)}`, {
@@ -327,16 +414,20 @@ export default async function handler(req, res) {
 
     if (data.request_id) {
       try {
-        await fetch(`${SB_URL}/rest/v1/generations`, {
+        const genRow = {
+          user_id: userId, type,
+          prompt: (isDraftComplete ? "1080p · " : "") + sanitizePrompt(rawUserPrompt || rawPrompt).slice(0, 3500), // user's raw input
+          style: safeStyleId,
+          status: "processing", result_url: data.request_id + "|" + endpoint, credits_cost: creditCost,
+        };
+        const insertGen = (row) => fetch(`${SB_URL}/rest/v1/generations`, {
           method: "POST",
           headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
-          body: JSON.stringify({
-            user_id: userId, type,
-            prompt: sanitizePrompt(rawUserPrompt || rawPrompt).slice(0, 3500), // save user's raw input, not the styled version
-            style: safeStyleId,
-            status: "processing", result_url: data.request_id + "|" + endpoint, credits_cost: creditCost,
-          }),
+          body: JSON.stringify(row),
         });
+        // v18 columns (model_id, duration_sec) — fall back if the SQL migration hasn't run yet
+        const ins = await insertGen({ ...genRow, model_id: isVid ? vModel.id : iModel.id, duration_sec: isVid ? vDur : null });
+        if (!ins.ok) await insertGen(genRow);
       } catch {}
 
       // Log usage transaction
