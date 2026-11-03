@@ -4373,10 +4373,8 @@ export default function App() {
         </div>
       )}
 
-            </div>{/* end right/main panel */}
-          </div>{/* end content grid */}
-        </div>{/* end main content area */}
-      </div>{/* end full-screen shell */}
+        </div>
+      </div>
 
       <Footer />
       <TxHistoryModal />
