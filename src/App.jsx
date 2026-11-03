@@ -774,6 +774,7 @@ export default function App() {
   const [vidEditImgUploading, setVidEditImgUploading] = useState(false);
   const [vidEditError, setVidEditError] = useState(null);
   const [showTopUpMenu, setShowTopUpMenu] = useState(false);
+  const [navOpen, setNavOpen] = useState(false); // mobile hamburger drawer
   const [genning, setGenning] = useState(false);
   const [activeJobs, setActiveJobs] = useState([]); // concurrent IMG/VID jobs: {id, type}
   const [genBtnLocked, setGenBtnLocked] = useState(false); // prevents double-click for 5s after submit
@@ -1697,7 +1698,7 @@ export default function App() {
       if (Array.isArray(g)) setGens(g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url })));
     } catch {}
   };
-  useEffect(() => { setUiPop(null); }, [tab]);
+  useEffect(() => { setUiPop(null); setNavOpen(false); }, [tab]);
   useEffect(() => { const st = STYLES.find(x => x.id === style); if (st?.onlyModel && st.onlyModel !== imgModelId) setStyle("neutral"); }, [imgModelId]); // eslint-disable-line
   // v23: the right-hand feed also serves Motion/Director/Img Pro/Vid Pro → refresh it when those start/finish
   useEffect(() => { if (!session || ![T.MOT, T.DIR, T.WS_IMG, T.WS_VID].includes(tab)) return; const id = setTimeout(reloadGens, genning ? 2500 : 900); return () => clearTimeout(id); }, [genning, genResult]); // eslint-disable-line
@@ -1825,7 +1826,7 @@ export default function App() {
         {payMsg && <div style={{ padding: "10px 14px", marginBottom: 14, borderRadius: 8, background: payMsg.includes("✓") ? "rgba(0,240,255,.08)" : "rgba(255,184,0,.08)", border: `1px solid ${payMsg.includes("✓") ? "rgba(0,240,255,.2)" : "rgba(255,184,0,.2)"}`, fontSize: 13, textAlign: "center", color: payMsg.includes("✓") ? "#00f0ff" : "#ffb800", animation: "fadeUp .4s ease" }}>{payMsg}</div>}
         {ch}
       </div>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes nudge{0%,70%,100%{transform:translateY(0)}75%{transform:translateY(-3px)}82%{transform:translateY(1px)}88%{transform:translateY(-2px)}95%{transform:translateY(0)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a50}button:active{transform:scale(.97)!important}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.3)!important}::selection{background:rgba(0,240,255,.2)}`}</style>
+      <style>{`@keyframes nbSlideIn{from{transform:translateX(-100%)}to{transform:translateX(0)}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes nudge{0%,70%,100%{transform:translateY(0)}75%{transform:translateY(-3px)}82%{transform:translateY(1px)}88%{transform:translateY(-2px)}95%{transform:translateY(0)}}*{box-sizing:border-box;margin:0}textarea::placeholder,input::placeholder{color:#3a3a50}button:active{transform:scale(.97)!important}input:focus,textarea:focus{outline:none;border-color:rgba(0,240,255,.3)!important}::selection{background:rgba(0,240,255,.2)}`}</style>
     </div>
   );
 
@@ -3316,6 +3317,16 @@ export default function App() {
     { k: T.WS_VID,  label: "Vid Pro",                       color: "#00c8ff" },
     { k: T.VID_EDIT,label: "Jutsu",                         color: "#b44aff" },
   ];
+  const NAV_META = {
+    [T.IMG]: ["🖼️", lang === "es" ? "Crear imágenes con IA" : "Create AI images"],
+    [T.VID]: ["🎬", lang === "es" ? "Crear y editar video" : "Create & edit video"],
+    [T.GAL]: ["🗂️", lang === "es" ? "Todas tus creaciones" : "All your creations"],
+    [T.MOT]: ["🎭", lang === "es" ? "Copia movimiento a tu personaje" : "Copy motion to your character"],
+    [T.DIR]: ["🎥", lang === "es" ? "Escenas de cine con audio" : "Cinematic scenes with audio"],
+    [T.WS_IMG]: ["✨", lang === "es" ? "Edición avanzada de imagen" : "Advanced image editing"],
+    [T.WS_VID]: ["🌊", lang === "es" ? "Realismo Explícito hasta 4K" : "Explicit Realism up to 4K"],
+    [T.VID_EDIT]: ["🌀", "NanoJutsu"],
+  };
 
   return (
     <div style={{ minHeight: "100vh", background: "#0a0a0f", color: "#e2e2ea", fontFamily: "'Inter', 'Syne', sans-serif" }}>
@@ -3325,13 +3336,20 @@ export default function App() {
 
       {/* ── TOP NAV (Higgsfield-style) ── */}
       <div style={{ position: "sticky", top: 0, zIndex: 50, background: "#0d0d14", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "center", height: 48, paddingLeft: 16, paddingRight: 16, gap: 0 }}>
+        {/* Mobile: hamburger */}
+        {!isDesk && (
+          <button onClick={() => setNavOpen(true)} aria-label="Menu" style={{ width: 34, height: 34, marginRight: 8, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 9, cursor: "pointer", padding: 0 }}>
+            {[0, 1, 2].map(i => <span key={i} style={{ display: "block", width: 15, height: 2, borderRadius: 2, background: "#e2e2ea" }} />)}
+          </button>
+        )}
         {/* Logo */}
-        <div style={{ cursor: "pointer", marginRight: 20, flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }} onClick={() => setPage(P.LAND)}>
-          {logo(26)}
+        <div style={{ cursor: "pointer", marginRight: isDesk ? 20 : 8, flexShrink: isDesk ? 0 : 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 8 }} onClick={() => setPage(P.LAND)}>
+          {logo(isDesk ? 26 : 24)}
         </div>
 
-        {/* Nav tabs */}
-        <div style={{ display: "flex", alignItems: "center", gap: 2, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}>
+        {/* Nav tabs (desktop) — on mobile they live in the hamburger drawer */}
+        {!isDesk && <div style={{ flex: 1 }} />}
+        {isDesk && <div style={{ display: "flex", alignItems: "center", gap: 2, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}>
           {navTabs.map(tb => (
             <button key={tb.k} onClick={() => setTab(tb.k)} className={`nb-topnav-btn${tab===tb.k?" active":""}`}
               style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: isDesk?13:11, fontWeight: tab===tb.k?600:400, padding: isDesk?"6px 14px":"5px 10px", borderRadius: 8, color: tab===tb.k?"#e2e2ea":"#5a5a78", transition: "color .15s,background .15s", whiteSpace: "nowrap", position: "relative" }}>
@@ -3339,7 +3357,7 @@ export default function App() {
               {tab===tb.k && <div style={{ position: "absolute", bottom: -1, left: "50%", transform: "translateX(-50%)", width: 20, height: 2, background: tb.color, borderRadius: 2 }} />}
             </button>
           ))}
-        </div>
+        </div>}
 
         {/* Right: credits + plan + actions */}
         <div style={{ display: "flex", alignItems: "center", gap: isDesk?12:6, flexShrink: 0, marginLeft: 12 }}>
@@ -3348,10 +3366,11 @@ export default function App() {
               <span title={lang === "es" ? "Créditos disponibles" : "Available credits"}><span style={{ color: "#e8c23a", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>⚡ {profile?.credits ?? 0}</span> {lang === "es" ? "créditos" : "credits"}</span>
             </div>
           )}
-          <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 12, background: `${hasPlan ? planData.color : "#5a5a70"}15`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}35`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: .8, textTransform: "uppercase" }}>
+          {!isDesk && <span onClick={() => setNavOpen(true)} style={{ fontSize: 12, color: "#e8c23a", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>⚡ {profile?.credits ?? 0}</span>}
+          {isDesk && <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 12, background: `${hasPlan ? planData.color : "#5a5a70"}15`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}35`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: .8, textTransform: "uppercase" }}>
             {hasPlan ? (lang==="en"?planData.nameEn:planData.name) : t("no_plan_label")}
-          </span>
-          {hasPlan && (
+          </span>}
+          {hasPlan && isDesk && (
             <button onClick={() => setPage(P.PLANS)} style={{ fontSize: 11, color: "#00ff88", background: "rgba(0,255,136,.06)", border: "1px solid rgba(0,255,136,.2)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
               {isDesk ? t("change_plan") : "↑"}
             </button>
@@ -3382,10 +3401,60 @@ export default function App() {
               </div>
             )}
           </span>
-          <LangSelector />
+          {isDesk && <LangSelector />}
           <UserPanel />
         </div>
       </div>
+
+      {/* ── MOBILE DRAWER (hamburger) ── */}
+      {!isDesk && navOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
+          <div onClick={() => setNavOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.6)", backdropFilter: "blur(3px)", animation: "fadeIn .2s ease" }} />
+          <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "84%", maxWidth: 330, background: "#0d0d14", borderRight: "1px solid rgba(255,255,255,.08)", display: "flex", flexDirection: "column", animation: "nbSlideIn .22s ease", boxShadow: "12px 0 40px rgba(0,0,0,.6)" }}>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
+              <div style={{ cursor: "pointer" }} onClick={() => { setNavOpen(false); setPage(P.LAND); }}>{logo(28)}</div>
+              <button onClick={() => setNavOpen(false)} aria-label="Close" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.08)", color: "#e2e2ea", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
+            </div>
+            {/* Credits + plan */}
+            <div style={{ margin: "14px 16px 6px", padding: "12px 14px", borderRadius: 14, background: "#16161d", border: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 10, color: "#6a6a82" }}>{lang === "es" ? "Créditos" : "Credits"}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 800, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>⚡ {profile?.credits ?? 0}</p>
+              </div>
+              <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 12, background: `${hasPlan ? planData.color : "#5a5a70"}15`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}35`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>{hasPlan ? (lang === "en" ? planData.nameEn : planData.name) : t("no_plan_label")}</span>
+            </div>
+            <div style={{ display: "flex", gap: 8, margin: "0 16px 10px" }}>
+              <button onClick={() => { setNavOpen(false); setShowTopUpMenu(true); window.scrollTo({ top: 0 }); }} style={{ flex: 1, padding: "10px", fontSize: 12, fontWeight: 700, color: "#0a0a0f", background: "linear-gradient(135deg,#e8f542,#e8c23a)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}>⚡ {lang === "es" ? "Recargar" : "Top up"}</button>
+              <button onClick={() => { setNavOpen(false); setPage(P.PLANS); }} style={{ flex: 1, padding: "10px", fontSize: 12, fontWeight: 600, color: "#00ff88", background: "rgba(0,255,136,.06)", border: "1px solid rgba(0,255,136,.2)", borderRadius: 10, cursor: "pointer", fontFamily: "inherit" }}>↑ {t("change_plan")}</button>
+            </div>
+            {/* Tabs */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "4px 10px 10px" }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "#5a5a78", letterSpacing: 1.4, textTransform: "uppercase", margin: "8px 8px 6px" }}>{lang === "es" ? "Herramientas" : "Tools"}</p>
+              {navTabs.map(tb => {
+                const sel = tab === tb.k;
+                const [ic, desc] = NAV_META[tb.k] || ["•", ""];
+                return (
+                  <button key={tb.k} onClick={() => { setTab(tb.k); setNavOpen(false); window.scrollTo({ top: 0 }); }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "11px 10px", marginBottom: 2, borderRadius: 12, border: sel ? "1px solid rgba(255,255,255,.1)" : "1px solid transparent", background: sel ? "#1c1c26" : "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                    <span style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, background: `${tb.color}18`, border: `1px solid ${tb.color}33` }}>{ic}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 14, fontWeight: sel ? 700 : 500, color: sel ? "#fff" : "#d0d0e0" }}>{tb.label}</span>
+                      <span style={{ display: "block", fontSize: 11, color: "#6a6a82", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{desc}</span>
+                    </span>
+                    {sel && <span style={{ width: 6, height: 6, borderRadius: 3, background: tb.color, flexShrink: 0 }} />}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Language */}
+            <div style={{ padding: "12px 16px 18px", borderTop: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, color: "#6a6a82" }}>{lang === "es" ? "Idioma" : "Language"}</span>
+              <LangSelector />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── NO PLAN BANNER ── */}
       {!hasPlan && (
