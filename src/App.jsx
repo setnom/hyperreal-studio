@@ -691,7 +691,8 @@ export default function App() {
   const [loadingProfile, setLoadingProfile] = useState(false); // prevents race during OAuth
   const [tab, setTab] = useState(T.IMG);
   const [prompt, setPrompt] = useState("");
-  const [style, setStyle] = useState("photorealistic");
+  const [style, setStyle] = useState("neutral");
+  const [uiPop, setUiPop] = useState(null); // v23: open settings popover in studio tabs
   const [ratio, setRatio] = useState("1:1");
   const [imgQuality, setImgQuality] = useState("1K");
   const [imgModelId, setImgModelId] = useState("nb2");
@@ -1677,6 +1678,9 @@ export default function App() {
       if (Array.isArray(g)) setGens(g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url })));
     } catch {}
   };
+  useEffect(() => { setUiPop(null); }, [tab]);
+  // v23: the right-hand feed also serves Motion/Director/Img Pro/Vid Pro → refresh it when those start/finish
+  useEffect(() => { if (!session || ![T.MOT, T.DIR, T.WS_IMG, T.WS_VID].includes(tab)) return; const id = setTimeout(reloadGens, genning ? 2500 : 900); return () => clearTimeout(id); }, [genning, genResult]); // eslint-disable-line
   // Permanently delete a generation (DB row + our stored file + favorite)
   const deleteGenPermanent = async (g) => {
     if (!g?.id || !session) return false;
@@ -2693,6 +2697,173 @@ export default function App() {
     finally { setVidRefUploadingN(n => n - 1); }
   };
 
+  // ── STUDIO UI KIT v23 — shared look for every generator tab (same as the Video panel) ──
+  const LL = (es, en) => (lang === "es" ? es : en);
+  const isStudioTab = [T.IMG, T.VID, T.VID_EDIT, T.MOT, T.DIR, T.WS_IMG, T.WS_VID].includes(tab);
+  const uiCard = { background: "#16161d", border: "1px solid rgba(255,255,255,.06)", borderRadius: 14 };
+  const uiTextarea = { width: "100%", background: "transparent", border: "none", outline: "none", color: "#e8e8f0", fontSize: 14, lineHeight: 1.5, resize: "none", fontFamily: "inherit", padding: 0 };
+  const uiPill = (sel) => ({ padding: "8px 10px", fontSize: 12, fontWeight: sel ? 700 : 400, color: sel ? "#e8c23a" : "#b0b0c4", background: sel ? "rgba(232,196,58,.1)" : "rgba(255,255,255,.03)", border: `1px solid ${sel ? "rgba(232,196,58,.35)" : "rgba(255,255,255,.08)"}`, borderRadius: 9, cursor: "pointer", fontFamily: "inherit" });
+  const uiModeTab = (sel) => ({ flex: 1, padding: "9px 4px", borderRadius: 9, border: sel ? "1px solid rgba(255,255,255,.1)" : "1px solid transparent", background: sel ? "#24242e" : "transparent", color: sel ? "#f0f0f6" : "#6a6a82", fontSize: 12, fontWeight: sel ? 600 : 400, cursor: "pointer", fontFamily: "inherit" });
+  const uiLabel = (txt, right) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 0 6px" }}>
+      <span style={{ fontSize: 14, fontWeight: 600, color: "#f0f0f6" }}>{txt}</span>
+      {right != null && <span style={{ fontSize: 11, color: "#6a6a82", fontFamily: "'JetBrains Mono',monospace" }}>{right}</span>}
+    </div>
+  );
+  const uiSubTabs = (items, cur) => (
+    <div style={{ display: "flex", gap: 16, marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,.06)", overflowX: "auto" }}>
+      {items.map(([k, l, fn]) => (
+        <button key={k} onClick={fn} style={{ background: "none", border: "none", padding: "6px 0 10px", fontSize: 13, fontWeight: cur === k ? 600 : 400, color: cur === k ? "#f0f0f6" : "#6a6a82", borderBottom: cur === k ? "2px solid #f0f0f6" : "2px solid transparent", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{l}</button>
+      ))}
+    </div>
+  );
+  // Hero card: optional looping video from /public/models/<video>. If the file is missing it just shows the gradient.
+  const uiHero = ({ video, title, name, color = "#e8c23a", chip, onChange }) => (
+    <div style={{ position: "relative", height: 132, borderRadius: 16, overflow: "hidden", marginBottom: 10, background: `radial-gradient(120% 140% at 80% 10%, ${color}55 0%, #111118 60%)`, border: "1px solid rgba(255,255,255,.08)" }}>
+      {video && <video key={video} src={`/models/${video}`} autoPlay muted loop playsInline onError={e => { e.currentTarget.style.display = "none"; }} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.75) 100%)" }} />
+      {onChange ? (
+        <button onClick={onChange} style={{ position: "absolute", top: 10, right: 10, display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 9, background: "rgba(20,20,26,.65)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,.15)", color: "#f0f0f6", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>✎ {LL("Cambiar", "Change")}</button>
+      ) : chip ? (
+        <span style={{ position: "absolute", top: 10, right: 10, padding: "5px 9px", borderRadius: 9, background: "rgba(20,20,26,.65)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,.15)", color: "#e8c23a", fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>{chip}</span>
+      ) : null}
+      <div style={{ position: "absolute", left: 14, bottom: 12, right: 14 }}>
+        <p style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "#e8f542", letterSpacing: -.5, fontFamily: "'Inter',sans-serif", textTransform: "uppercase" }}>{title}</p>
+        <p style={{ margin: "2px 0 0", fontSize: 12, color: "#d8d8e4", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</p>
+      </div>
+    </div>
+  );
+  const uiSetting = (label, value, key, opts = {}) => (
+    <button onClick={opts.static ? undefined : (opts.onClick || (() => setUiPop(uiPop === key ? null : key)))} style={{ ...uiCard, flex: 1, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", cursor: opts.static ? "default" : "pointer", fontFamily: "inherit", textAlign: "left", borderColor: uiPop === key ? "rgba(232,196,58,.35)" : "rgba(255,255,255,.06)", width: opts.full ? "100%" : undefined, marginBottom: opts.full ? 8 : 0 }}>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 10, color: "#6a6a82", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#e8e8f0", fontWeight: 500, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</span>
+      </span>
+      {!opts.static && <span style={{ color: "#5a5a78", fontSize: 12, transform: uiPop === key ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>}
+    </button>
+  );
+  const uiPopList = (key, items, cur, onPick) => uiPop === key ? (
+    <div style={{ ...uiCard, padding: 6, marginBottom: 8, animation: "fadeUp .2s ease", maxHeight: 340, overflowY: "auto" }}>
+      {items.map(it => {
+        const sel = it.id === cur;
+        return (
+          <button key={it.id} onClick={() => { onPick(it.id); setUiPop(null); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8, border: "none", background: sel ? "rgba(232,196,58,.1)" : "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            {it.icon != null && <span style={{ fontSize: 16, width: 22, display: "flex", justifyContent: "center", color: sel ? "#e8c23a" : "#b0b0c4" }}>{it.icon}</span>}
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 13, color: sel ? "#e8c23a" : "#e0e0ec", fontWeight: sel ? 600 : 400 }}>{it.label}</span>
+              {it.sub && <span style={{ display: "block", fontSize: 10, color: "#6a6a82", marginTop: 1 }}>{it.sub}</span>}
+            </span>
+            {it.right && <span style={{ fontSize: 10, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>{it.right}</span>}
+            {sel && <span style={{ color: "#e8c23a", fontSize: 12 }}>✓</span>}
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+  const uiDropIcons = (icons) => (
+    <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+      {icons.map((ic, i) => <span key={i} style={{ width: 38, height: 38, borderRadius: "50%", background: "linear-gradient(180deg,#2a2a34,#1a1a22)", border: "1px solid rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, marginLeft: i ? -8 : 0, boxShadow: "0 4px 10px rgba(0,0,0,.4)" }}>{ic}</span>)}
+    </div>
+  );
+  const uiDrop = ({ title, sub, icons = [], accept, multiple = false, onFiles, children, canAdd = true, counter }) => (
+    <div style={{ border: "1px dashed rgba(255,255,255,.12)", borderRadius: 14, padding: children ? "12px" : "22px 12px", marginBottom: 10, background: "rgba(255,255,255,.015)", position: "relative" }}>
+      {counter && <span style={{ position: "absolute", top: 8, right: 10, fontSize: 10, color: "#6a6a82", fontFamily: "'JetBrains Mono',monospace" }}>{counter}</span>}
+      {children}
+      {canAdd && (
+        <label style={{ display: "block", textAlign: "center", cursor: "pointer", paddingTop: children ? 10 : 0 }}>
+          {!children && uiDropIcons(icons)}
+          <span style={{ display: "block", fontSize: children ? 12 : 14, fontWeight: 600, color: "#e8e8f0" }}>{children ? `+ ${title}` : title}</span>
+          {!children && sub && <span style={{ display: "block", fontSize: 11, color: "#6a6a82", marginTop: 4, padding: "0 6px" }}>{sub}</span>}
+          <input type="file" accept={accept} multiple={multiple} hidden onChange={e => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (fs.length) onFiles(fs); }} />
+        </label>
+      )}
+    </div>
+  );
+  const uiThumb = (src, onRemove, label, opts = {}) => (
+    <div style={{ position: "relative", width: opts.size || 56, height: opts.size || 56, borderRadius: 8, overflow: "hidden", border: `1px solid ${opts.warn ? "rgba(255,77,106,.5)" : "rgba(255,255,255,.1)"}`, flexShrink: 0, background: "#0d0d14" }}>
+      {src ? (opts.video ? <video src={src} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />)
+           : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{opts.icon || "🔊"}</div>}
+      {opts.warn && <span style={{ position: "absolute", inset: 0, background: "rgba(255,77,106,.45)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, color: "#fff", fontWeight: 700 }}>{opts.warn}</span>}
+      {label && <span style={{ position: "absolute", bottom: 0, left: 0, right: 0, fontSize: 8, textAlign: "center", background: "rgba(0,0,0,.65)", color: "#fff", padding: "1px 0", whiteSpace: "nowrap", overflow: "hidden" }}>{label}</span>}
+      {onRemove && <button onClick={(e) => { e.preventDefault(); onRemove(); }} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,.7)", border: "none", color: "#fff", fontSize: 10, cursor: "pointer", lineHeight: 1, padding: 0 }}>×</button>}
+    </div>
+  );
+  const uiSpinTile = (size = 56) => (
+    <div style={{ width: size, height: size, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,.1)", flexShrink: 0 }}>
+      <div style={{ width: 16, height: 16, border: "2px solid rgba(232,196,58,.25)", borderTop: "2px solid #e8c23a", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
+    </div>
+  );
+  const uiErr = (msg, onClose) => (
+    <div style={{ marginBottom: 10, padding: "9px 12px", borderRadius: 10, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.18)", fontSize: 11, color: "#ff4d6a", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+      <span>{msg}</span>
+      {onClose && <button onClick={onClose} style={{ background: "none", border: "none", color: "#ff4d6a", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>}
+    </div>
+  );
+  const uiNote = (txt, tone = "muted") => (
+    <div style={{ marginBottom: 10, padding: "9px 12px", borderRadius: 10, fontSize: 10.5, lineHeight: 1.5, ...(tone === "warn" ? { background: "rgba(232,196,58,.06)", border: "1px solid rgba(232,196,58,.2)", color: "#c8a830" } : { background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.05)", color: "#6a6a82" }) }}>{txt}</div>
+  );
+  // Plan lock overlay (keeps the same eligibility rules each tab already had)
+  const uiLock = (icon, text, sub) => (
+    <div style={{ position: "absolute", inset: 0, zIndex: 10, borderRadius: 14, background: "rgba(10,10,15,.82)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: 60, padding: "60px 20px 24px", textAlign: "center" }}>
+      <div style={{ fontSize: 34, marginBottom: 10 }}>{icon}</div>
+      <p style={{ fontSize: 15, fontWeight: 800, color: "#fff", margin: "0 0 8px" }}>{LL("Función exclusiva", "Exclusive feature")}</p>
+      <p style={{ fontSize: 12, color: "#a0a0b8", margin: "0 0 6px", lineHeight: 1.5 }}>{text}</p>
+      {sub && <p style={{ fontSize: 11, color: "#6a6a82", margin: "0 0 18px" }}>{sub}</p>}
+      <button onClick={() => setPage(P.PLANS)} style={{ padding: "12px 28px", fontSize: 13, fontWeight: 700, color: "#0a0a0f", background: "linear-gradient(135deg,#e8f542,#e8c23a)", border: "none", borderRadius: 11, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 6px 24px rgba(232,196,58,.3)" }}>🚀 {LL("Cambiar de plan", "Upgrade plan")}</button>
+    </div>
+  );
+  // Sticky generate bar (bottom of the left panel). needTopUp → opens the "Recargar" packs menu.
+  const uiGenBar = ({ onClick, disabled, label, cost, needTopUp }) => {
+    const live = needTopUp || !disabled;
+    return (
+      <div style={{ position: "sticky", bottom: 0, zIndex: 5, margin: "6px -14px 0", padding: "14px 14px 16px", background: "linear-gradient(180deg, rgba(13,13,20,0) 0%, #0d0d14 26%)" }}>
+        <button onClick={needTopUp ? () => (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? setShowTopUpMenu(true) : setPage(P.PLANS)) : onClick} disabled={!live}
+          style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: live ? "#0a0a0f" : "#5a5a70", background: live ? "linear-gradient(135deg,#e8f542,#e8c23a)" : "rgba(255,255,255,.05)", border: "none", borderRadius: 12, cursor: live ? "pointer" : "not-allowed", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: live ? "0 6px 24px rgba(232,196,58,.22)" : "none", transition: "all .2s" }}>
+          <span>{needTopUp ? LL("⚡ Recargar créditos", "⚡ Top up credits") : label}</span>
+          {cost != null && <span style={{ fontSize: 12, opacity: .8, fontFamily: "'JetBrains Mono',monospace" }}>{needTopUp ? `· ${LL("necesitas", "need")} ${cost}` : `⚡ ${cost}`}</span>}
+        </button>
+        {genError && (
+          <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", textAlign: "center" }}>
+            {genError}
+            {showConcurrentUpgrade && (
+              <div style={{ marginTop: 6 }}>
+                <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }} style={{ fontSize: 11, fontWeight: 700, color: "#e8c23a", background: "rgba(232,196,58,.08)", border: "1px solid rgba(232,196,58,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>{LL("⚡ Mejorar plan →", "⚡ Upgrade plan →")}</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+  // Inline result card (mobile only — on desktop the result appears in the right-hand feed)
+  const uiResult = (isVideo, name, file) => (!isDesk && genResult && !genning) ? (
+    <div style={{ ...uiCard, marginBottom: 10, overflow: "hidden", animation: "fadeUp .5s ease" }}>
+      {isVideo ? <video src={genResult.url} controls autoPlay playsInline style={{ width: "100%", display: "block", maxHeight: 360, background: "#000" }} /> : <img src={genResult.url} alt="" style={{ width: "100%", display: "block" }} />}
+      <div style={{ padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 11, color: "#6a6a82" }}>✓ {name}</span>
+        <button data-download-btn onClick={() => downloadFile(genResult.url, `${file}-${Date.now()}.${isVideo ? "mp4" : "png"}`)} style={{ ...uiPill(true), padding: "5px 10px", fontSize: 11 }}>↓ {LL("Descargar", "Download")}</button>
+      </div>
+    </div>
+  ) : null;
+  const uiGenerating = (type, dur) => genning ? (
+    <div style={{ marginBottom: 10, position: "relative", height: 150, borderRadius: 14, overflow: "hidden" }}><Generating type={type} duration={dur} lang={lang} genStatus={genStatus} /></div>
+  ) : null;
+  const goVidSub = (k) => {
+    const list = VIDEO_MODELS.filter(x => k === "edit" ? x.modes.some(y => vidEditModes.includes(y.id)) : x.category === "create");
+    selectVidModel(list.find(x => x.id === vidModelId) || list[0], k);
+    setVidSub(k);
+    setTab(T.VID);
+  };
+  const videoSubTabs = (cur) => uiSubTabs([
+    ["create", LL("Crear video", "Create video"), () => goVidSub("create")],
+    ["edit", LL("Editar video", "Edit video"), () => goVidSub("edit")],
+    ["motion", "Motion Control", () => setTab(T.MOT)],
+  ], cur);
+  const imageSubTabs = (cur) => uiSubTabs([
+    ["img", LL("Crear imagen", "Create image"), () => setTab(T.IMG)],
+    ["pro", LL("Imagen Pro", "Image Pro"), () => setTab(T.WS_IMG)],
+  ], cur);
+  const styleLabel = (s) => (lang === "en" ? (t("styles")?.[s.id] || s.label) : s.label);
   const renderVideoPanel = () => {
     const m = curVidModel, md = curVidMd;
     const L = (o) => (o ? (lang === "es" ? o.es : o.en) : "");
@@ -3207,105 +3378,102 @@ export default function App() {
 
         {/* ── LEFT PANEL: form controls (Higgsfield left column) ── */}
         {tab !== T.GAL && (
-          <div style={{ ...((tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) ? { width: isDesk ? (tab !== T.IMG ? 360 : 300) : "100%", minWidth: isDesk ? (tab !== T.IMG ? 360 : 300) : "unset", maxWidth: isDesk ? (tab !== T.IMG ? 360 : 300) : "unset" } : { flex: 1, width: "100%" }), borderRight: isDesk && (tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) ? "1px solid rgba(255,255,255,.05)" : "none", ...(isDesk ? { height: "100%", minHeight: 0 } : {}), overflowY: "auto", background: "#0d0d14", display: "flex", flexDirection: "column" }}>
+          <div style={{ ...(isStudioTab ? { width: isDesk ? 360 : "100%", minWidth: isDesk ? 360 : "unset", maxWidth: isDesk ? 360 : "unset" } : { flex: 1, width: "100%" }), borderRight: isDesk && isStudioTab ? "1px solid rgba(255,255,255,.05)" : "none", ...(isDesk ? { height: "100%", minHeight: 0 } : {}), overflowY: "auto", background: "#0d0d14", display: "flex", flexDirection: "column" }}>
 
             {/* ── TAB CONTENT (form) ── */}
-            <div style={{ flex: 1, padding: (tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) ? "16px 14px 0" : (isDesk ? "28px 32px" : "14px"), overflowY: "auto", width: "100%", maxWidth: (tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) ? "none" : 920, margin: "0 auto" }}>
+            <div style={{ flex: 1, padding: isStudioTab ? "16px 14px 0" : (isDesk ? "28px 32px" : "14px"), overflowY: "auto", width: "100%", maxWidth: isStudioTab ? "none" : 920, margin: "0 auto" }}>
 
           {(tab === T.IMG || tab === T.VID) && (
             <div style={{ animation: "fadeUp .4s ease" }}>
               {tab === T.VID && renderVideoPanel()}
-              {tab === T.IMG && renderModelPicker("img")}
-              {tab === T.IMG && <div style={{ position: "relative", marginBottom: 10 }}>
-                <textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder={tab === T.IMG ? t("prompt_img") : t("prompt_vid")} rows={isDesk ? 4 : 3} style={{ ...inp, paddingRight: 40, resize: "none", lineHeight: 1.5, borderRadius: 12, fontSize: isDesk ? 14 : 13 }} />
-                <button onClick={() => setPrompt(SAMPLE[Math.floor(Math.random() * SAMPLE.length)])} style={{ position: "absolute", right: 10, top: 10, width: 28, height: 28, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 6, color: "#8a8a9e", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>🎲</button>
-              </div>}
+              {tab === T.IMG && (() => {
+                const curStyle = STYLES.find(s => s.id === style) || STYLES.find(s => s.id === "neutral");
+                const planQualities = { test: ["1K"], basic: ["1K"], pro: ["1K", "2K"], creator: ["1K", "2K", "4K"] };
+                const qualities = planQualities[profile?.plan] || ["1K"];
+                const showQuality = qualities.length > 1 && curImgModel.kind === "nano";
+                const imgFamilies = [...new Set(IMAGE_MODELS.map(m => m.family))];
+                const stylesSorted = [...STYLES.filter(s => s.id === "neutral"), ...STYLES.filter(s => s.id !== "neutral")];
+                return (
+                  <>
+                    {imageSubTabs("img")}
+                    {uiHero({ video: `${curImgModel.id}.mp4`, title: LL("Imagen", "Image"), name: curImgModel.name, color: "#e8c23a", onChange: () => setModelMenuOpen(modelMenuOpen === "imghero" ? false : "imghero") })}
 
-              {tab === T.IMG && (
-                <>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{t("style_label")}</p>
-                  <div style={{ display: "grid", gridTemplateColumns: isDesk ? "repeat(6,1fr)" : "repeat(3,1fr)", gap: 5, marginBottom: 8 }}>
-                    {STYLES.map(s => (
-                      <button key={s.id} onClick={() => setStyle(s.id)} style={{ padding: "9px 4px", fontSize: 10, fontWeight: style === s.id ? 600 : 400, color: style === s.id ? "#fff" : "#6a6a80", background: style === s.id ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: style === s.id ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.04)", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                        <span style={{ display: "block", fontSize: 15, marginBottom: 2 }}>{s.icon}</span>{lang === "en" ? t("styles")?.[s.id] : s.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{t("ratio_label")}</p>
-                  <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
-                    {RATIOS.map(r => (
-                      <button key={r} onClick={() => setRatio(r)} style={{ flex: r === "auto" ? "2" : "1", padding: "8px 4px", fontSize: 10, fontWeight: ratio === r ? 700 : 400, color: ratio === r ? (r === "auto" ? "#ffb800" : "#00f0ff") : "#5a5a70", background: ratio === r ? (r === "auto" ? "rgba(255,184,0,.08)" : "rgba(0,240,255,.08)") : "rgba(255,255,255,.02)", border: ratio === r ? (r === "auto" ? "1px solid rgba(255,184,0,.25)" : "1px solid rgba(0,240,255,.2)") : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                        <span style={{ display:"flex", alignItems:"center", gap:4 }}>
-                          {r === "auto" ? <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/><line x1="4" y1="7" x2="10" y2="7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="7" y1="4" x2="7" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> : r === "1:1" ? <svg width="13" height="13" viewBox="0 0 13 13"><rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : r === "16:9" ? <svg width="18" height="11" viewBox="0 0 18 11"><rect x="1" y="1" width="16" height="9" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : r === "9:16" ? <svg width="11" height="18" viewBox="0 0 11 18"><rect x="1" y="1" width="9" height="16" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : r === "4:3" ? <svg width="16" height="13" viewBox="0 0 16 13"><rect x="1" y="1" width="14" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : r === "3:4" ? <svg width="13" height="16" viewBox="0 0 13 16"><rect x="1" y="1" width="11" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : null}
-                          {r === "auto" ? "Auto" : r}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Quality selector — options depend on plan */}
-                  {(() => {
-                    const planQualities = { test: ["1K"], basic: ["1K"], pro: ["1K", "2K"], creator: ["1K", "2K", "4K"] };
-                    const available = planQualities[profile?.plan] || ["1K"];
-                    if (available.length <= 1 || curImgModel.kind !== "nano") return null; // Only for Nano Banana models with plan options
-                    return (
-                      <div style={{ marginBottom: 12 }}>
-                        <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "en" ? "Quality" : "Calidad"}</p>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          {available.map(q => (
-                            <button key={q} onClick={() => setImgQuality(q)}
-                              style={{ flex: 1, padding: "8px 0", fontSize: 10, fontWeight: imgQuality === q ? 700 : 400, color: imgQuality === q ? "#00f0ff" : "#5a5a70", background: imgQuality === q ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: imgQuality === q ? "1px solid rgba(0,240,255,.2)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>
-                              {q}
-                            </button>
+                    {/* Model list (Cambiar) */}
+                    {modelMenuOpen === "imghero" && (
+                      <>
+                        <div onClick={() => setModelMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
+                        <div style={{ position: "relative", zIndex: 61, ...uiCard, padding: 6, marginBottom: 10, maxHeight: 360, overflowY: "auto", boxShadow: "0 16px 40px rgba(0,0,0,.6)" }}>
+                          {imgFamilies.map(fam => (
+                            <div key={fam}>
+                              <p style={{ fontSize: 10, fontWeight: 700, color: "#6a6a82", letterSpacing: 1.2, textTransform: "uppercase", padding: "8px 10px 4px", margin: 0 }}>{fam}</p>
+                              {IMAGE_MODELS.filter(x => x.family === fam).map(x => {
+                                const sel = x.id === curImgModel.id;
+                                return (
+                                  <button key={x.id} onClick={() => { setImgModelId(x.id); setModelMenuOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", borderRadius: 8, border: "none", background: sel ? "rgba(232,196,58,.1)" : "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                                    <span style={{ flex: 1, fontSize: 13, color: sel ? "#e8c23a" : "#e0e0ec", fontWeight: sel ? 600 : 400 }}>{x.name}</span>
+                                    {x.badge && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "rgba(255,255,255,.06)", color: "#8a8a9e" }}>{x.badge}</span>}
+                                    <span style={{ fontSize: 10, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>⚡ {imageCredits(x, imgQuality, false)}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           ))}
                         </div>
-                      </div>
-                    );
-                  })()}
+                      </>
+                    )}
 
-                  {/* Reference images upload */}
-                  {curImgModel.maxRefs > 0 ? (
-                  <div style={{ marginBottom: 14, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.04)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <div>
-                        <p style={{ fontSize: 11, color: "#e0e0f0", margin: 0, fontWeight: 500 }}>📎 {t("ref_images")}</p>
-                        <p style={{ fontSize: 9, color: "#5a5a70", margin: "2px 0 0" }}>
-                          {lang === "en"
-                            ? `Optional · Up to ${curImgModel.maxRefs} images · Max ${MAX_FILE_MB}MB each · jpg, png, webp`
-                            : `Opcional · Hasta ${curImgModel.maxRefs} imágenes · Máx ${MAX_FILE_MB}MB cada una · jpg, png, webp`}
-                        </p>
-                      </div>
-                      <span style={{ fontSize: 9, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace" }}>{Math.min(refImages.length, curImgModel.maxRefs)}/{curImgModel.maxRefs}</span>
-                    </div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                      {refImages.map((file, i) => (
-                        <div key={i} style={{ position: "relative", width: 48, height: 48, borderRadius: 6, overflow: "hidden", border: `1px solid ${file.size > MAX_FILE_MB * 1024 * 1024 ? "rgba(255,77,106,.4)" : "rgba(0,240,255,.15)"}` }}>
-                          <img src={URL.createObjectURL(file)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          {file.size > MAX_FILE_MB * 1024 * 1024 && (
-                            <div style={{ position: "absolute", inset: 0, background: "rgba(255,77,106,.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              <span style={{ fontSize: 8, color: "#fff", fontWeight: 700 }}>+{MAX_FILE_MB}MB</span>
-                            </div>
-                          )}
-                          <button onClick={() => setRefImages(prev => prev.filter((_, idx) => idx !== i))} style={{ position: "absolute", top: -2, right: -2, width: 16, height: 16, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 9, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>×</button>
+                    {/* Reference images */}
+                    {curImgModel.maxRefs > 0 ? uiDrop({
+                      title: LL("Imágenes de referencia", "Reference images"),
+                      sub: LL(`Opcional · hasta ${curImgModel.maxRefs} · máx ${MAX_FILE_MB}MB · jpg, png, webp`, `Optional · up to ${curImgModel.maxRefs} · max ${MAX_FILE_MB}MB · jpg, png, webp`),
+                      icons: ["🧍", "👕", "📦"],
+                      accept: "image/jpeg,image/jpg,image/png,image/webp",
+                      multiple: true,
+                      onFiles: (fs) => setRefImages(prev => [...prev, ...fs].slice(0, curImgModel.maxRefs)),
+                      canAdd: refImages.length < curImgModel.maxRefs,
+                      counter: `${Math.min(refImages.length, curImgModel.maxRefs)}/${curImgModel.maxRefs}`,
+                      children: refImages.length ? (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {refImages.map((file, i) => <span key={i}>{uiThumb(URL.createObjectURL(file), () => setRefImages(prev => prev.filter((_, idx) => idx !== i)), `@Image${i + 1}`, { warn: file.size > MAX_FILE_MB * 1024 * 1024 ? `+${MAX_FILE_MB}MB` : null })}</span>)}
                         </div>
-                      ))}
-                      {refImages.length < curImgModel.maxRefs && (
-                        <label style={{ width: 48, height: 48, borderRadius: 6, border: "1px dashed rgba(0,240,255,.2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, color: "#5a5a70", background: "rgba(0,240,255,.03)" }}>
-                          +
-                          <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" multiple hidden onChange={(e) => {
-                            const files = Array.from(e.target.files || []);
-                            setRefImages(prev => [...prev, ...files].slice(0, curImgModel.maxRefs));
-                            e.target.value = "";
-                          }} />
-                        </label>
-                      )}
+                      ) : null,
+                    }) : uiNote(LL(`${curImgModel.name} no usa imágenes de referencia.`, `${curImgModel.name} doesn't use reference images.`))}
+
+                    {/* Prompt card */}
+                    <div style={{ ...uiCard, padding: "12px 14px", marginBottom: 10 }}>
+                      {uiLabel("Prompt")}
+                      <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} placeholder={t("prompt_img")} style={uiTextarea} />
+                      <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                        <button onClick={() => setPrompt(SAMPLE[Math.floor(Math.random() * SAMPLE.length)])} style={{ ...uiPill(false), padding: "5px 10px", fontSize: 12 }}>🎲</button>
+                        {style !== "neutral" && (
+                          <button onClick={() => setStyle("neutral")} title={LL("Quitar estilo", "Remove style")} style={{ ...uiPill(true), padding: "5px 10px", fontSize: 12 }}>{curStyle.icon} {styleLabel(curStyle)} ×</button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  ) : (
-                    <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 14px" }}>{lang === "es" ? `${curImgModel.name} no usa imágenes de referencia.` : `${curImgModel.name} doesn't use reference images.`}</p>
-                  )}
-                </>
-              )}
+
+                    {/* Settings */}
+                    {uiSetting(LL("Modelo", "Model"), <>{curImgModel.name}{curImgModel.badge && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "rgba(255,255,255,.06)", color: "#8a8a9e" }}>{curImgModel.badge}</span>}</>, "imgModelCard", { full: true, onClick: () => setModelMenuOpen(modelMenuOpen === "imghero" ? false : "imghero") })}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                      {uiSetting(LL("Estilo", "Style"), <>{curStyle.icon} {styleLabel(curStyle)}</>, "imgStyle")}
+                      {uiSetting(LL("Relación de aspecto", "Aspect ratio"), ratio === "auto" ? "Auto" : ratio, "imgRatio")}
+                    </div>
+                    {uiPopList("imgStyle", stylesSorted.map(s => ({
+                      id: s.id, icon: s.icon, label: styleLabel(s),
+                      sub: s.id === "neutral" ? LL("Por defecto · tu prompt tal cual", "Default · your prompt as-is")
+                        : (s.id === "restore" || s.id === "colorize") ? LL("Requiere 1 imagen de referencia", "Needs 1 reference image") : null,
+                    })), style, setStyle)}
+                    {uiPopList("imgRatio", RATIOS.map(r => ({ id: r, label: r === "auto" ? "Auto" : r, icon: <RatioShape r={r} active={ratio === r} color="#e8c23a" /> })), ratio, setRatio)}
+                    {showQuality && (
+                      <>
+                        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                          {uiSetting(LL("Calidad", "Quality"), imgQuality, "imgQ")}
+                        </div>
+                        {uiPopList("imgQ", qualities.map(q => ({ id: q, label: q, right: `⚡ ${imageCredits(curImgModel, q, refImages.length > 0 && curImgModel.maxRefs > 0)}` })), imgQuality, setImgQuality)}
+                      </>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* No credits — show packs for eligible plans, upgrade for others */}
               {hasPlan && ((tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost)) && (() => {
@@ -3558,199 +3726,83 @@ export default function App() {
               } catch (e) { setGenError(e.message); setGenning(false); }
             };
 
+            const motTopUp = hasPlan && isMotionEligible && (profile?.credits ?? 0) < motionCredits;
+            const motSlot = (isImg) => {
+              const prev = isImg ? motionImagePreview : motionVideoPreview;
+              const up = isImg ? motionUploadProgress.img : motionUploadProgress.vid;
+              const ready = isImg ? motionImageUrl : motionVideoUrl;
+              return (
+                <label style={{ flex: 1, position: "relative", minHeight: 170, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", borderLeft: isImg ? "none" : "1px solid rgba(255,255,255,.06)", overflow: "hidden" }}>
+                  {prev ? (
+                    <>
+                      {isImg
+                        ? <img src={prev} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                        : <video src={prev} muted autoPlay loop playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
+                      {up && (
+                        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ width: 22, height: 22, border: "2px solid rgba(232,196,58,.3)", borderTop: "2px solid #e8c23a", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 4 }} />
+                          <span style={{ fontSize: 10, color: "#e8c23a" }}>{LL("Subiendo...", "Uploading...")}</span>
+                        </div>
+                      )}
+                      {!up && ready && <span style={{ position: "absolute", top: 8, left: 8, background: "rgba(232,245,66,.9)", borderRadius: 5, padding: "2px 7px", fontSize: 10, color: "#0a0a0f", fontWeight: 700 }}>✓ {LL("Listo", "Ready")}</span>}
+                      {!up && (
+                        <button onClick={e => { e.preventDefault(); if (isImg) { setMotionImage(null); setMotionImageUrl(null); setMotionImagePreview(null); } else { setMotionVideo(null); setMotionVideoUrl(null); setMotionVideoPreview(null); } }} style={{ position: "absolute", top: 8, right: 8, width: 22, height: 22, borderRadius: "50%", background: "rgba(0,0,0,.7)", border: "none", color: "#fff", cursor: "pointer", fontSize: 12 }}>×</button>
+                      )}
+                      <span style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "4px 0", fontSize: 10, textAlign: "center", background: "rgba(0,0,0,.6)", color: "#e8e8f0" }}>{isImg ? LL("Personaje", "Character") : LL("Movimiento", "Motion")}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ position: "absolute", top: 8, right: 8, fontSize: 10, padding: "2px 7px", borderRadius: 5, background: "rgba(255,255,255,.06)", color: "#e8c23a" }}>{LL("Requerido", "Required")}</span>
+                      {uiDropIcons([isImg ? "🧍" : "🎞️"])}
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#e8e8f0", textAlign: "center", padding: "0 8px" }}>{isImg ? LL("Tu personaje", "Your character") : LL("Video de movimiento", "Motion video")}</span>
+                      <span style={{ fontSize: 10, color: "#6a6a82", marginTop: 4, textAlign: "center", padding: "0 8px" }}>{isImg ? "jpg · png · webp" : `mp4 · mov · webm · ${LL("máx", "max")} ${motionMaxDur}s`}</span>
+                    </>
+                  )}
+                  <input type="file" accept={isImg ? "image/jpeg,image/png,image/webp" : "video/mp4,video/mov,video/webm,video/m4v"} hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) uploadMotionFile(f, isImg); }} />
+                </label>
+              );
+            };
+            const motLabel = genning ? LL("Generando...", "Generating...")
+              : (motionUploadProgress.img || motionUploadProgress.vid) ? LL("⏳ Subiendo archivos...", "⏳ Uploading files...")
+              : !motionImage ? LL("Sube una imagen primero", "Upload an image first")
+              : !motionVideo ? LL("Sube un video de movimiento", "Upload a motion video")
+              : (!motionImageUrl || !motionVideoUrl) ? LL("Esperando upload...", "Waiting for upload...")
+              : LL("🎭 Generar Motion", "🎭 Generate Motion");
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
-                {/* Upgrade overlay for Test plan users */}
+                {videoSubTabs("motion")}
+                {uiHero({ video: "motion.mp4", title: "Motion Control", name: LL("Copia el movimiento de un video a tu personaje", "Copy motion from a video onto your character"), color: "#ff6b2b", chip: `⚡ ${motionCredits}` })}
                 <div style={{ position: "relative" }}>
-                  {isTestPlan && (
-                    <div style={{ position: "absolute", inset: 0, zIndex: 10, borderRadius: 14, background: "rgba(6,6,14,.82)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 20px", textAlign: "center" }}>
-                      <div style={{ fontSize: 36, marginBottom: 10 }}>🎭</div>
-                      <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: "0 0 8px" }}>{lang === "es" ? "Función exclusiva" : "Exclusive feature"}</p>
-                      <p style={{ fontSize: 11, color: "#a0a0b8", margin: "0 0 6px", lineHeight: 1.5 }}>
-                        {lang === "es" ? "Motion Control está disponible para planes Basic, Pro y Creator." : "Motion Control is available on Basic, Pro & Creator plans."}
-                      </p>
-                      <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 18px" }}>
-                        {lang === "es" ? "Transferí movimientos reales a tus imágenes con IA." : "Transfer real movements to your images with AI."}
-                      </p>
-                      <button onClick={() => setPage(P.PLANS)} style={{ padding: "12px 28px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ff6b2b,#ffb800)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 20px rgba(255,107,43,.4)" }}>
-                        {lang === "es" ? "🚀 Cambiar de plan" : "🚀 Upgrade plan"}
-                      </button>
-                    </div>
-                  )}
+                  {isTestPlan && uiLock("🎭", LL("Motion Control está disponible para planes Basic, Pro y Creator.", "Motion Control is available on Basic, Pro & Creator plans."), LL("Transferí movimientos reales a tus imágenes con IA.", "Transfer real movements to your images with AI."))}
                   <div style={{ opacity: isTestPlan ? 0.25 : 1, pointerEvents: isTestPlan ? "none" : "auto" }}>
-                    {/* Header */}
-                    <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 10, background: "rgba(255,107,43,.05)", border: "1px solid rgba(255,107,43,.12)" }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: "#ff6b2b", margin: "0 0 2px" }}>🎭 Motion Control Premium</p>
-                      <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? `Transfiere el movimiento de un video a tu imagen — cuesta ${motionCredits} créditos` : `Transfer motion from a video to your image — costs ${motionCredits} video credits`}</p>
+                    <div style={{ ...uiCard, display: "flex", overflow: "hidden", marginBottom: 6 }}>
+                      {motSlot(true)}
+                      {motSlot(false)}
+                    </div>
+                    <p style={{ fontSize: 10, color: "#5a5a78", margin: "0 2px 10px", textAlign: "center" }}>{LL("📎 Máx 10MB por archivo · jpg, png, webp · mp4, mov, webm", "📎 Max 10MB per file · jpg, png, webp · mp4, mov, webm")}</p>
+                    {motionUploadError && uiErr(motionUploadError, () => setMotionUploadError(null))}
+
+                    {/* Prompt card */}
+                    <div style={{ ...uiCard, padding: "12px 14px", marginBottom: 10 }}>
+                      {uiLabel(LL("Escena (opcional)", "Scene (optional)"), `${motionPrompt.length}/500`)}
+                      <textarea value={motionPrompt} onChange={e => setMotionPrompt(e.target.value)} rows={3} maxLength={500} style={uiTextarea}
+                        placeholder={LL("Ej: fondo de ciudad de noche, iluminación cálida... (no describas el movimiento, el video ya lo define)", "E.g. city background at night, warm lighting... (don't describe the motion, the video defines it)")} />
                     </div>
 
-                    {/* Two upload boxes side by side */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-                      {/* Character Image */}
-                      <div>
-                        <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "📸 Tu imagen / personaje" : "📸 Your image / character"}</p>
-                        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, borderRadius: 12, border: motionImagePreview ? "1px solid rgba(0,240,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: motionImagePreview ? "rgba(0,240,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
-                          {motionImagePreview
-                            ? <>
-                                <img src={motionImagePreview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                {motionUploadProgress.img && (
-                                  <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                                    <div style={{ width: 22, height: 22, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 4 }} />
-                                    <span style={{ fontSize: 9, color: "#00f0ff" }}>{lang === "es" ? "Subiendo..." : "Uploading..."}</span>
-                                  </div>
-                                )}
-                                {!motionUploadProgress.img && motionImageUrl && (
-                                  <div style={{ position: "absolute", top: 4, left: 4, background: "rgba(0,240,255,.85)", borderRadius: 4, padding: "2px 6px", fontSize: 9, color: "#06060e", fontWeight: 700 }}>✓ Listo</div>
-                                )}
-                              </>
-                            : <><span style={{ fontSize: 24, marginBottom: 6 }}>🖼️</span><span style={{ fontSize: 10, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Toca para subir imagen" : "Tap to upload image"}</span></>}
-                          {motionImagePreview && !motionUploadProgress.img && <button onClick={e => { e.preventDefault(); setMotionImage(null); setMotionImageUrl(null); setMotionImagePreview(null); }} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>}
-                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadMotionFile(e.target.files[0], true)} />
-                        </label>
-                      </div>
-                      {/* Motion Video */}
-                      <div>
-                        <p style={{ fontSize: 10, color: "#8a8a9e", marginBottom: 6, fontWeight: 600 }}>{lang === "es" ? "🎬 Video de movimiento" : "🎬 Motion reference video"}</p>
-                        <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, borderRadius: 12, border: motionVideoPreview ? "1px solid rgba(180,74,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: motionVideoPreview ? "rgba(180,74,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
-                          {motionVideoPreview
-                            ? <>
-                                <video src={motionVideoPreview} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                {motionUploadProgress.vid && (
-                                  <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                                    <div style={{ width: 22, height: 22, border: "2px solid rgba(180,74,255,.3)", borderTop: "2px solid #b44aff", borderRadius: "50%", animation: "spin .8s linear infinite", marginBottom: 4 }} />
-                                    <span style={{ fontSize: 9, color: "#b44aff" }}>{lang === "es" ? "Subiendo..." : "Uploading..."}</span>
-                                  </div>
-                                )}
-                                {!motionUploadProgress.vid && motionVideoUrl && (
-                                  <div style={{ position: "absolute", top: 4, left: 4, background: "rgba(180,74,255,.85)", borderRadius: 4, padding: "2px 6px", fontSize: 9, color: "#fff", fontWeight: 700 }}>✓ Listo</div>
-                                )}
-                              </>
-                            : <><span style={{ fontSize: 24, marginBottom: 6 }}>🎬</span><span style={{ fontSize: 10, color: "#5a5a70", textAlign: "center", padding: "0 8px" }}>{lang === "es" ? "Toca para subir video" : "Tap to upload video"}</span></>}
-                          {motionVideoPreview && !motionUploadProgress.vid && <button onClick={e => { e.preventDefault(); setMotionVideo(null); setMotionVideoUrl(null); setMotionVideoPreview(null); }} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>}
-                          <input type="file" accept="video/mp4,video/mov,video/webm,video/m4v" style={{ display: "none" }} onChange={e => uploadMotionFile(e.target.files[0], false)} />
-                        </label>
-                      </div>
+                    {/* Settings */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                      {uiSetting(LL("Orientación", "Orientation"), motionOrientation === "video" ? LL("🎬 Seguir video", "🎬 Follow video") : LL("🖼️ Seguir imagen", "🖼️ Follow image"), "motOri")}
+                      {uiSetting(LL("Duración", "Duration"), motionVideoDuration > 0 ? `${motionVideoDuration.toFixed(1)}s` : LL("= tu video", "= your video"), "motDur", { static: true })}
                     </div>
-                    <p style={{ fontSize: 9, color: "#3a3a50", margin: "-8px 0 14px", textAlign: "center" }}>
-                      {lang === "es" ? "📎 Máx 10MB por archivo · jpg, png, webp · mp4, mov, webm" : "📎 Max 10MB per file · jpg, png, webp · mp4, mov, webm"}
-                    </p>
-                    {/* Orientation — the only real parameter that affects background */}
-                    <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.05)" }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>{lang === "es" ? "Modo de orientación:" : "Orientation mode:"}</p>
-                      <p style={{ fontSize: 9, color: "#5a5a70", margin: "0 0 10px" }}>
-                        {motionOrientation === "video"
-                          ? (lang === "es" ? "🎬 Sigue el video — mejor para baile, acciones complejas (máx. 15s)" : "🎬 Follows video — better for dance, complex actions (max 15s)")
-                          : (lang === "es" ? "🖼️ Sigue la imagen — mejor para movimientos de cámara (máx. 10s)" : "🖼️ Follows image — better for camera movements (max 10s)")}
-                      </p>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        {[["video", lang === "es" ? "🎬 Seguir video" : "🎬 Follow video"], ["image", lang === "es" ? "🖼️ Seguir imagen" : "🖼️ Follow image"]].map(([v, l]) => (
-                          <button key={v} onClick={() => { setMotionOrientation(v); if (v === "image" && motionDur > 10) setMotionDur(10); }} style={{ flex: 1, padding: "9px", fontSize: 11, fontWeight: motionOrientation === v ? 700 : 400, color: motionOrientation === v ? "#fff" : "#5a5a70", background: motionOrientation === v ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: motionOrientation === v ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.05)", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
-                        ))}
-                      </div>
-                    </div>
+                    {uiPopList("motOri", [
+                      { id: "video", icon: "🎬", label: LL("Seguir video", "Follow video"), sub: LL("Mejor para baile y acciones complejas · máx 15s", "Best for dance & complex actions · max 15s") },
+                      { id: "image", icon: "🖼️", label: LL("Seguir imagen", "Follow image"), sub: LL("Mejor para movimientos de cámara · máx 10s", "Best for camera moves · max 10s") },
+                    ], motionOrientation, (v) => { setMotionOrientation(v); if (v === "image" && motionDur > 10) setMotionDur(10); })}
+                    {uiNote(LL(`⏱ La duración es la de tu video · límite de tu plan: ${motionMaxDur}s · 5-10s = ${2 * VID_UNIT} créditos · 11-15s = ${3 * VID_UNIT}`, `⏱ Duration = your video length · plan limit: ${motionMaxDur}s · 5-10s = ${2 * VID_UNIT} credits · 11-15s = ${3 * VID_UNIT}`))}
 
-                    {/* Duration info — real duration comes from uploaded video */}
-                    <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,107,43,.05)", border: "1px solid rgba(255,107,43,.1)" }}>
-                      <p style={{ fontSize: 10, color: "#ff6b2b", fontWeight: 700, margin: "0 0 3px" }}>
-                        ⏱ {lang === "es" ? "Duración = duración del video que subiste" : "Duration = length of your uploaded video"}
-                      </p>
-                      <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>
-                        {lang === "es"
-                          ? `Límite de tu plan: máx ${motionMaxDur}s · ${motionCredits} créditos · (5-10s = ${2 * VID_UNIT} · 11-15s = ${3 * VID_UNIT})`
-                          : `Your plan limit: max ${motionMaxDur}s · ${motionCredits} video credit${motionCredits > 1 ? "s" : ""} · (5-10s = 2 · 11-15s = 3)`}
-                        {motionVideoDuration > 0 && <span style={{ color: "#00f0ff", marginLeft: 8 }}>· {lang === "es" ? "Video detectado:" : "Detected:"} {motionVideoDuration.toFixed(1)}s ✓</span>}
-                      </p>
-                    </div>
-
-                    {/* Additional prompt */}
-                    <div style={{ marginBottom: 14 }}>
-                      <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena (opcional)" : "Scene description (optional)"}</p>
-                      <textarea value={motionPrompt} onChange={e => setMotionPrompt(e.target.value)} placeholder={lang === "es" ? "Ej: fondo de ciudad de noche, iluminación cálida... (no describas el movimiento, el video ya lo define)" : "E.g. city background at night, warm lighting... (don't describe the motion, the video defines it)"} rows={2} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={500} />
-                      <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{motionPrompt.length}/500</p>
-                    </div>
-
-                    {/* Upload error */}
-                    {motionUploadError && (
-                      <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span>{motionUploadError}</span>
-                        <button onClick={() => setMotionUploadError(null)} style={{ background: "none", border: "none", color: "#ff4d6a", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
-                      </div>
-                    )}
-
-                    {/* Credits warning */}
-                {/* Video pack section when credits = 0 */}
-                {hasPlan && (profile?.credits ?? 0) < motionCredits && (() => {
-                  const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
-                  const vidPacks = [
-                    { id: "vid_s", label: "Pack S", amount: 20, price: 39.99 },
-                    { id: "vid_m", label: "Pack M", amount: 30, price: 57.99 },
-                    { id: "vid_l", label: "Pack L", amount: 50, price: 89.99 },
-                  ];
-                  return (
-                    <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>
-                        {lang === "es" ? "⚡ Sin créditos suficientes" : "⚡ Not enough credits"}
-                      </p>
-                      {isPackEligible ? (
-                        <>
-                          <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 10px" }}>
-                            {lang === "es" ? "Agrega créditos extra" : "Add extra credits"}
-                          </p>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            {vidPacks.map(pk => (
-                              <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)}
-                                style={{ flex: 1, padding: "10px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
-                                <p style={{ fontSize: 10, fontWeight: 600, color: "#8a8aaa", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: 1 }}>{pk.label}</p>
-                                <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount * VID_UNIT}</p>
-                                <p style={{ fontSize: 9, color: "#8a8aaa", margin: "0 0 4px" }}>{lang === "es" ? "créditos" : "credits"}</p>
-                                <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
-                              </button>
-                            ))}
-                          </div>
-                          <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", marginTop: 7, padding: "7px", fontSize: 10, color: "#5a5a70", background: "transparent", border: "1px solid rgba(255,255,255,.06)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
-                            {lang === "es" ? "O actualiza tu plan →" : "Or upgrade plan →"}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 10px" }}>
-                            {lang === "es" ? "Actualiza a Básico o superior para comprar packs extra" : "Upgrade to Basic or higher to buy extra packs"}
-                          </p>
-                          <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", padding: "10px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                            {lang === "es" ? "Actualizar plan →" : "Upgrade plan →"}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                    {/* Generate button */}
-                    <button onClick={handleMotionGen} disabled={!canGenMotion}
-                      style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGenMotion ? "#06060e" : "#3a3a50", background: canGenMotion ? "linear-gradient(135deg, #ff6b2b, #ffb800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGenMotion ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGenMotion ? "0 0 22px rgba(255,107,43,.3)" : "none", transition: "all .2s" }}>
-                      {genning ? (lang === "es" ? "Generando..." : "Generating...") : (motionUploadProgress.img || motionUploadProgress.vid) ? (lang === "es" ? "⏳ Subiendo archivos..." : "⏳ Uploading files...") : !motionImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !motionVideo ? (lang === "es" ? "Sube un video de movimiento" : "Upload a motion video") : !motionImageUrl || !motionVideoUrl ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : (profile?.credits ?? 0) < motionCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Generar Motion (${motionCredits} créditos)` : `🎭 Generate Motion (${motionCredits} credits)`)}
-                    </button>
-                    {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={motionDur} lang={lang} genStatus={genStatus} /></div>}
-                    {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>
-                {genError}
-                {showConcurrentUpgrade && (
-                  <div style={{ marginTop: 6 }}>
-                    <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
-                      style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
-                      {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
-                    </button>
-                  </div>
-                )}
-              </div>}
-                    {genResult && !genning && tab === T.MOT && (
-                      <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,107,43,.2)", animation: "fadeUp .5s ease" }}>
-                        <video src={genResult.url} controls autoPlay style={{ width: "100%", display: "block", borderRadius: 14 }} />
-                        <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
-                          <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ Motion Control Premium</span>
-                          <button onClick={() => downloadFile(genResult.url, `motion-${Date.now()}.mp4`)} style={{ fontSize: 10, color: "#ff6b2b", background: "rgba(255,107,43,.08)", border: "1px solid rgba(255,107,43,.15)", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
-                        </div>
-                      </div>
-                    )}
+                    {uiGenerating(T.VID, motionDur)}
+                    {tab === T.MOT && uiResult(true, "Motion Control", "motion")}
+                    {uiGenBar({ onClick: handleMotionGen, disabled: !canGenMotion, needTopUp: motTopUp && !genning, label: motLabel, cost: motionCredits })}
                   </div>
                 </div>
               </div>
@@ -3889,309 +3941,133 @@ export default function App() {
               } catch(e) { setGenError(e.message); setGenning(false); }
             };
 
+            const dirTopUp = hasPlan && isDirEligible && (profile?.credits ?? 0) < dirCredits;
+            const dirLabel = genning ? LL("Generando...", "Generating...")
+              : (dirUploading.img || dirUploading.aud) ? LL("⏳ Subiendo...", "⏳ Uploading...")
+              : !primaryImage ? LL("Sube una imagen primero", "Upload an image first")
+              : !primaryImage.url ? LL("Esperando upload...", "Waiting for upload...")
+              : !dirPrompt.trim() ? LL("Escribí una descripción", "Write a description")
+              : LL("🎬 Generar Director", "🎬 Generate Director");
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
-                {/* Upgrade overlay for non-eligible users */}
+                {uiHero({ video: "director.mp4", title: "Director", name: LL("Escenas de cine con audio nativo", "Cinematic scenes with native audio"), color: "#00c8ff", chip: `⚡ ${dirCredits}` })}
                 <div style={{ position: "relative" }}>
-                  {isDirLocked && (
-                    <div style={{ position: "absolute", inset: 0, zIndex: 10, borderRadius: 14, background: "rgba(6,6,14,.82)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 20px", textAlign: "center" }}>
-                      <div style={{ fontSize: 36, marginBottom: 10 }}>🎬</div>
-                      <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: "0 0 8px" }}>{lang === "es" ? "Función exclusiva" : "Exclusive feature"}</p>
-                      <p style={{ fontSize: 11, color: "#a0a0b8", margin: "0 0 6px", lineHeight: 1.5 }}>
-                        {lang === "es" ? "Director está disponible para planes Pro y Creator." : "Director is available on Pro & Creator plans."}
-                      </p>
-                      <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 18px" }}>
-                        {lang === "es" ? "Generación cinematográfica con IA de última generación y audio nativo." : "Cinematic generation with cutting-edge AI and native audio."}
-                      </p>
-                      <button onClick={() => setPage(P.PLANS)} style={{ padding: "12px 28px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#00f0ff,#b44aff)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 20px rgba(0,240,255,.3)" }}>
-                        {lang === "es" ? "🚀 Cambiar de plan" : "🚀 Upgrade plan"}
-                      </button>
-                    </div>
-                  )}
+                  {isDirLocked && uiLock("🎬", LL("Director está disponible para planes Pro y Creator.", "Director is available on Pro & Creator plans."), LL("Generación cinematográfica con IA de última generación y audio nativo.", "Cinematic generation with cutting-edge AI and native audio."))}
                   <div style={{ opacity: isDirLocked ? 0.25 : 1, pointerEvents: isDirLocked ? "none" : "auto" }}>
-                {/* Header */}
-                <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 10, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.1)" }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", margin: "0 0 2px" }}>🎬 Director Premium</p>
-                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "IA cinematográfica con audio nativo · Solo imagen de referencia" : "Cinematic AI with native audio · Reference image only"}</p>
-                </div>
-
-                {/* Warning about real people restriction */}
-                <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 9, background: "rgba(255,184,0,.06)", border: "1px solid rgba(255,184,0,.2)", display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <span style={{ fontSize: 14, flexShrink: 0 }}>⚠️</span>
-                  <p style={{ fontSize: 10, color: "#c8a020", margin: 0, lineHeight: 1.5 }}>
-                    {lang === "es"
-                      ? "El modelo no procesa imágenes que contengan rostros de personas reales reconocibles. Usá ilustraciones, personajes animados, productos o paisajes para mejores resultados."
-                      : "The model cannot process images containing recognizable real people's faces. Use illustrations, animated characters, products, or landscapes for best results."}
-                  </p>
-                </div>
-
-                {/* Upload area — multi-image + multi-audio */}
-                <div style={{ marginBottom: 10 }}>
-                  {/* Images section */}
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, margin: 0 }}>
-                        {dirKeepFrame
-                          ? (lang === "es" ? "🖼️ Frame inicial *" : "🖼️ Initial frame *")
-                          : (lang === "es" ? `🖼️ Imágenes de referencia * (${dirImages.length}/9)` : `🖼️ Reference images * (${dirImages.length}/9)`)}
-                      </p>
-                      {dirImages.length > 0 && !dirKeepFrame && (
-                        <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>
-                          {lang === "es" ? "Usá @image1, @image2... en el prompt" : "Use @image1, @image2... in prompt"}
-                        </p>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                      {dirImages.map((img, i) => (
-                        <div key={i} style={{ position: "relative", width: 72, height: 72, borderRadius: 9, overflow: "hidden", border: "1px solid rgba(0,240,255,.25)", flexShrink: 0 }}>
-                          <img src={img.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          {/* Number badge */}
-                          <div style={{ position: "absolute", bottom: 3, left: 3, background: "rgba(0,0,0,.75)", borderRadius: 4, padding: "1px 5px", fontSize: 9, color: "#00f0ff", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", backdropFilter: "blur(4px)" }}>{i+1}</div>
-                          <button onClick={() => setDirImages(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,.75)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-                        </div>
+                    {/* Mode tabs */}
+                    <div style={{ display: "flex", gap: 3, padding: 3, borderRadius: 12, background: "#16161d", border: "1px solid rgba(255,255,255,.06)", marginBottom: 10 }}>
+                      {[[false, LL("▥ Referencias", "▥ References")], [true, LL("▢ Frame inicial", "▢ Start frame")]].map(([v, l]) => (
+                        <button key={String(v)} onClick={() => { if (v !== dirKeepFrame) { setDirKeepFrame(v); if (v) { setDirImages(prev => prev.slice(0, 1)); setDirAudios([]); } } }} style={uiModeTab(dirKeepFrame === v)}>{l}</button>
                       ))}
-                      {/* Add image button */}
-                      {((!dirKeepFrame && dirImages.length < 9) || (dirKeepFrame && dirImages.length === 0)) && (
-                        <label style={{ width: 72, height: 72, borderRadius: 9, border: "1px dashed rgba(255,255,255,.12)", background: "rgba(255,255,255,.02)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {dirUploading.img
-                            ? <div style={{ width: 18, height: 18, border: "2px solid rgba(0,240,255,.3)", borderTop: "2px solid #00f0ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
-                            : <><span style={{ fontSize: 22, color: "#5a5a70" }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>img</span></>}
-                          <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadDirFile(f, true); }} />
-                        </label>
-                      )}
                     </div>
-                  </div>
 
-                  {/* Audio section — hidden in keepFrame mode */}
-                  {!dirKeepFrame && (
-                    <div>
-                      <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, marginBottom: 6 }}>
-                        {lang === "es" ? `🎵 Audio (opcional · ${dirAudios.length}/2)` : `🎵 Audio (optional · ${dirAudios.length}/2)`}
-                      </p>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {dirAudios.map((aud, i) => (
-                          <div key={i} style={{ position: "relative", height: 50, minWidth: 120, maxWidth: 160, borderRadius: 9, border: "1px solid rgba(180,74,255,.3)", background: "rgba(180,74,255,.04)", display: "flex", alignItems: "center", gap: 6, padding: "0 8px", flexShrink: 0 }}>
-                            <span style={{ fontSize: 16 }}>🎵</span>
-                            <span style={{ fontSize: 9, color: "#b44aff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{aud.name.slice(0, 16)}</span>
-                            <button onClick={() => setDirAudios(prev => prev.filter((_, j) => j !== i))} style={{ width: 14, height: 14, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>×</button>
-                          </div>
-                        ))}
-                        {dirAudios.length < 2 && (
-                          <label style={{ height: 50, minWidth: 80, borderRadius: 9, border: "1px dashed rgba(255,255,255,.12)", background: "rgba(255,255,255,.01)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 12px" }}>
-                            {dirUploading.aud
-                              ? <div style={{ width: 16, height: 16, border: "2px solid rgba(180,74,255,.3)", borderTop: "2px solid #b44aff", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
-                              : <><span style={{ fontSize: 16 }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>audio</span></>}
-                            <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac" style={{ display: "none" }} onChange={e => uploadDirFile(e.target.files[0], false)} />
-                          </label>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                    {uiNote(LL("⚠️ El modelo no procesa rostros de personas reales reconocibles. Usá ilustraciones, personajes animados, productos o paisajes.", "⚠️ The model can't process recognizable real people's faces. Use illustrations, animated characters, products or landscapes."), "warn")}
 
-                <p style={{ fontSize: 9, color: "#3a3a50", margin: "0 0 14px", textAlign: "center" }}>
-                  {dirKeepFrame
-                    ? (lang === "es" ? "📎 1 imagen · jpg, png, webp · El video comenzará exactamente con tu frame" : "📎 1 image · jpg, png, webp · Video starts exactly with your frame")
-                    : (lang === "es" ? "📎 Hasta 5 imgs · jpg, png, webp · Hasta 2 audios: mp3, wav, m4a" : "📎 Up to 5 imgs · jpg, png, webp · Up to 2 audios: mp3, wav, m4a")}
-                </p>
-
-                {dirUploadError && (
-                  <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", display: "flex", justifyContent: "space-between" }}>
-                    <span>{dirUploadError}</span>
-                    <button onClick={() => setDirUploadError(null)} style={{ background: "none", border: "none", color: "#ff4d6a", cursor: "pointer" }}>×</button>
-                  </div>
-                )}
-
-                {/* Prompt with @image autocomplete */}
-                <div style={{ marginBottom: 12, position: "relative" }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena *" : "Scene description *"}</p>
-                  <textarea value={dirPrompt}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setDirPrompt(val);
-                      // Detect @image trigger — look for @image followed by optional digits at cursor
-                      const pos = e.target.selectionStart;
-                      const before = val.slice(0, pos);
-                      const match = before.match(/@image(\d*)$/);
-                      if (match && dirImages.length > 0 && !dirKeepFrame) {
-                        setDirMention({ query: match[1], start: pos - match[0].length });
-                      } else {
-                        setDirMention(null);
-                      }
-                    }}
-                    onKeyDown={e => {
-                      // Close mention dropdown on Escape
-                      if (e.key === "Escape" && dirMention) { setDirMention(null); e.preventDefault(); }
-                    }}
-                    onBlur={() => setTimeout(() => setDirMention(null), 150)}
-                    placeholder={lang === "es"
-                      ? (dirImages.length > 1 ? "Describe la escena. Escribí @image1, @image2... para referenciar tus imágenes..." : "Describe la escena. Escribí @image1 para referenciar tu imagen. Ej: @image1 camina por una calle de noche...")
-                      : (dirImages.length > 1 ? "Describe the scene. Type @image1, @image2... to reference your images..." : "Describe the scene. Type @image1 to reference your image. E.g. @image1 walks down a neon-lit street...")}
-                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
-
-                  {/* Autocomplete dropdown */}
-                  {dirMention && dirImages.length > 0 && (() => {
-                    const filtered = dirImages
-                      .map((img, i) => ({ img, i, num: i+1 }))
-                      .filter(({ num }) => !dirMention.query || String(num).startsWith(dirMention.query));
-                    if (!filtered.length) return null;
-                    const insertMention = (num) => {
-                      const tag = `@image${num}`;
-                      const before = dirPrompt.slice(0, dirMention.start);
-                      const after = dirPrompt.slice(dirMention.start + 1 + "image".length + dirMention.query.length);
-                      setDirPrompt(before + tag + (after.startsWith(" ") ? "" : " ") + after);
-                      setDirMention(null);
-                    };
-                    return (
-                      <div style={{ position: "absolute", left: 0, right: 0, zIndex: 50, background: "#0e0e1e", border: "1px solid rgba(0,240,255,.25)", borderRadius: 10, padding: "6px", boxShadow: "0 8px 24px rgba(0,0,0,.5)", marginTop: 2 }}>
-                        <p style={{ fontSize: 9, color: "#3a3a50", margin: "0 0 6px 4px", letterSpacing: 1 }}>IMÁGENES</p>
+                    {/* Images */}
+                    {uiDrop({
+                      title: dirKeepFrame ? LL("Frame inicial", "Start frame") : LL("Imágenes de referencia", "Reference images"),
+                      sub: dirKeepFrame ? LL("1 imagen · el video empieza exactamente con ella", "1 image · the video starts exactly on it") : LL("Hasta 9 · jpg, png, webp · usa @image1, @image2… en el prompt", "Up to 9 · jpg, png, webp · use @image1, @image2… in the prompt"),
+                      icons: dirKeepFrame ? ["🏞️"] : ["🧍", "🏞️", "📦"],
+                      accept: "image/jpeg,image/png,image/webp",
+                      onFiles: (fs) => uploadDirFile(fs[0], true),
+                      canAdd: !dirUploading.img && ((!dirKeepFrame && dirImages.length < 9) || (dirKeepFrame && dirImages.length === 0)),
+                      counter: dirKeepFrame ? null : `${dirImages.length}/9`,
+                      children: (dirImages.length || dirUploading.img) ? (
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {filtered.map(({ img, num }) => (
-                            <div key={num} onMouseDown={() => insertMention(num)}
-                              style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 5px", borderRadius: 8, background: "rgba(0,240,255,.06)", border: "1px solid rgba(0,240,255,.15)", cursor: "pointer" }}
-                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,240,255,.14)"}
-                              onMouseLeave={e => e.currentTarget.style.background = "rgba(0,240,255,.06)"}>
-                              <div style={{ position: "relative" }}>
-                                <img src={img.preview} alt="" style={{ width: 28, height: 28, borderRadius: 5, objectFit: "cover", display: "block" }} />
-                                <div style={{ position: "absolute", bottom: -2, right: -2, background: "#00f0ff", borderRadius: 3, padding: "0 3px", fontSize: 8, color: "#06060e", fontWeight: 800, lineHeight: "14px" }}>{num}</div>
-                              </div>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: "#00f0ff", fontFamily: "'JetBrains Mono',monospace" }}>@image{num}</span>
+                          {dirImages.map((img, i) => <span key={i}>{uiThumb(img.preview, () => setDirImages(prev => prev.filter((_, j) => j !== i)), dirKeepFrame ? LL("Inicio", "Start") : `@image${i + 1}`)}</span>)}
+                          {dirUploading.img && uiSpinTile()}
+                        </div>
+                      ) : null,
+                    })}
+
+                    {/* Audio */}
+                    {!dirKeepFrame && uiDrop({
+                      title: LL("Audio (opcional)", "Audio (optional)"),
+                      sub: LL("Hasta 2 · mp3, wav, m4a", "Up to 2 · mp3, wav, m4a"),
+                      icons: ["🔊"],
+                      accept: "audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac",
+                      onFiles: (fs) => uploadDirFile(fs[0], false),
+                      canAdd: !dirUploading.aud && dirAudios.length < 2,
+                      counter: `${dirAudios.length}/2`,
+                      children: (dirAudios.length || dirUploading.aud) ? (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {dirAudios.map((aud, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, height: 40, padding: "0 10px", borderRadius: 9, background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.1)", maxWidth: 180 }}>
+                              <span>🔊</span>
+                              <span style={{ fontSize: 11, color: "#e0e0ec", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{(aud.name || "audio").slice(0, 22)}</span>
+                              <button onClick={() => setDirAudios(prev => prev.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "#8a8a9e", cursor: "pointer", fontSize: 13, padding: 0 }}>×</button>
                             </div>
                           ))}
+                          {dirUploading.aud && uiSpinTile(40)}
                         </div>
-                      </div>
-                    );
-                  })()}
+                      ) : null,
+                    })}
+                    {dirUploadError && uiErr(dirUploadError, () => setDirUploadError(null))}
 
-                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}><span style={{ color: dirPrompt.length > 3000 ? "#ffb800" : "#3a3a50" }}>{dirPrompt.length}</span>/3500</p>
-                </div>
-
-                {/* Aspect ratio */}
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Formato" : "Aspect ratio"}</p>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {[["9:16"],["16:9"],["1:1"]].map(([v]) => (
-                      <button key={v} onClick={() => setDirAspect(v)} style={{ flex: 1, padding: "8px 4px", fontSize: 10, fontWeight: dirAspect === v ? 700 : 400, color: dirAspect === v ? "#00f0ff" : "#5a5a70", background: dirAspect === v ? "rgba(0,240,255,.08)" : "rgba(255,255,255,.02)", border: dirAspect === v ? "1px solid rgba(0,240,255,.25)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                        <span style={{ display:"flex", alignItems:"center", gap:4 }}>
-                          {v === "9:16" ? <svg width="11" height="18" viewBox="0 0 11 18"><rect x="1" y="1" width="9" height="16" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : v === "16:9" ? <svg width="18" height="11" viewBox="0 0 18 11"><rect x="1" y="1" width="16" height="9" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg> : <svg width="13" height="13" viewBox="0 0 13 13"><rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>}
-                          {v}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Keep initial frame toggle */}
-                <div style={{ marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: "rgba(0,240,255,.03)", border: "1px solid rgba(0,240,255,.08)" }}>
-                  <div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: "#e0e0f0", margin: "0 0 2px" }}>{lang === "es" ? "🎯 Mantener frame inicial" : "🎯 Keep initial frame"}</p>
-                    <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "El video comienza exactamente con tu imagen · Solo 1 imagen · Sin audio" : "Video starts exactly with your image · 1 image only · No audio"}</p>
-                  </div>
-                  <div onClick={() => { setDirKeepFrame(v => !v); if (!dirKeepFrame) { setDirImages(prev => prev.slice(0,1)); setDirAudios([]); } }} style={{ width: 44, height: 24, borderRadius: 12, background: dirKeepFrame ? "#00f0ff" : "rgba(255,255,255,.1)", cursor: "pointer", position: "relative", transition: "background .2s", flexShrink: 0 }}>
-                    <div style={{ position: "absolute", top: 3, left: dirKeepFrame ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
-                  </div>
-                </div>
-
-                {/* Duration + credits — slider 5-15s */}
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>{lang === "es" ? "Duración" : "Duration"}</p>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 16, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: "#00f0ff" }}>{dirDuration}s</span>
-                      <span style={{ fontSize: 10, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 5, padding: "2px 8px", fontWeight: 700 }}>{dirCredits} {lang === "es" ? "créditos" : "credits"}</span>
-                    </div>
-                  </div>
-                  <div style={{ position: "relative", paddingBottom: 4 }}>
-                    <input type="range" min={5} max={15} step={1} value={dirDuration}
-                      onChange={e => setDirDuration(Number(e.target.value))}
-                      style={{ width: "100%", accentColor: "#00f0ff", cursor: "pointer", height: 4 }} />
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-                      <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>5s</span>
-                      <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>10s</span>
-                      <span style={{ fontSize: 9, color: "#3a3a50", fontFamily: "'JetBrains Mono',monospace" }}>15s</span>
-                    </div>
-                  </div>
-                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "6px 0 0", textAlign: "center" }}>
-                    {lang === "es" ? `5s = 180 créditos · 10s = 260 · 15s = 390` : `5s = 180 credits · 10s = 260 · 15s = 390`}
-                  </p>
-                </div>
-
-                {/* Video pack section when credits insufficient */}
-                {hasPlan && (profile?.credits ?? 0) < dirCredits && (() => {
-                  const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
-                  const vidPacks = [
-                    { id: "vid_s", label: "Pack S", amount: 20, price: 39.99 },
-                    { id: "vid_m", label: "Pack M", amount: 30, price: 57.99 },
-                    { id: "vid_l", label: "Pack L", amount: 50, price: 89.99 },
-                  ];
-                  return (
-                    <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>
-                        {lang === "es" ? "⚡ Sin créditos suficientes" : "⚡ Not enough credits"}
-                      </p>
-                      {isPackEligible ? (
-                        <>
-                          <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 10px" }}>
-                            {lang === "es" ? "Agrega créditos extra" : "Add extra credits"}
-                          </p>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            {vidPacks.map(pk => (
-                              <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)}
-                                style={{ flex: 1, padding: "10px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
-                                <p style={{ fontSize: 10, fontWeight: 600, color: "#8a8aaa", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: 1 }}>{pk.label}</p>
-                                <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount * VID_UNIT}</p>
-                                <p style={{ fontSize: 9, color: "#8a8aaa", margin: "0 0 4px" }}>{lang === "es" ? "créditos" : "credits"}</p>
-                                <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
-                              </button>
+                    {/* Prompt card with @image autocomplete */}
+                    <div style={{ ...uiCard, padding: "12px 14px", marginBottom: 10, position: "relative" }}>
+                      {uiLabel("Prompt", `${dirPrompt.length}/3500`)}
+                      <textarea value={dirPrompt}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setDirPrompt(val);
+                          const pos = e.target.selectionStart;
+                          const match = val.slice(0, pos).match(/@image(\d*)$/);
+                          if (match && dirImages.length > 0 && !dirKeepFrame) setDirMention({ query: match[1], start: pos - match[0].length });
+                          else setDirMention(null);
+                        }}
+                        onKeyDown={e => { if (e.key === "Escape" && dirMention) { setDirMention(null); e.preventDefault(); } }}
+                        onBlur={() => setTimeout(() => setDirMention(null), 150)}
+                        placeholder={dirImages.length > 1
+                          ? LL("Describe la escena. Escribí @image1, @image2... para referenciar tus imágenes...", "Describe the scene. Type @image1, @image2... to reference your images...")
+                          : LL("Describe la escena. Escribí @image1 para referenciar tu imagen...", "Describe the scene. Type @image1 to reference your image...")}
+                        rows={4} maxLength={3500} style={uiTextarea} />
+                      {!dirKeepFrame && dirImages.length > 0 && (
+                        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                          {dirImages.map((_, i) => <button key={i} onClick={() => setDirPrompt(p => (p ? p.trimEnd() + " " : "") + `@image${i + 1} `)} style={{ ...uiPill(false), padding: "4px 8px", fontSize: 11 }}>@image{i + 1}</button>)}
+                        </div>
+                      )}
+                      {dirMention && dirImages.length > 0 && (() => {
+                        const filtered = dirImages.map((img, i) => ({ img, num: i + 1 })).filter(({ num }) => !dirMention.query || String(num).startsWith(dirMention.query));
+                        if (!filtered.length) return null;
+                        const insertMention = (num) => {
+                          const tag = `@image${num}`;
+                          const before = dirPrompt.slice(0, dirMention.start);
+                          const after = dirPrompt.slice(dirMention.start + 1 + "image".length + dirMention.query.length);
+                          setDirPrompt(before + tag + (after.startsWith(" ") ? "" : " ") + after);
+                          setDirMention(null);
+                        };
+                        return (
+                          <div style={{ position: "absolute", left: 8, right: 8, top: "100%", marginTop: 4, zIndex: 50, ...uiCard, background: "#1c1c25", padding: 6, display: "flex", gap: 6, flexWrap: "wrap", boxShadow: "0 12px 30px rgba(0,0,0,.6)" }}>
+                            {filtered.map(({ img, num }) => (
+                              <div key={num} onMouseDown={() => insertMention(num)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 4px", borderRadius: 8, background: "rgba(232,196,58,.08)", border: "1px solid rgba(232,196,58,.25)", cursor: "pointer" }}>
+                                <img src={img.preview} alt="" style={{ width: 26, height: 26, borderRadius: 5, objectFit: "cover" }} />
+                                <span style={{ fontSize: 12, fontWeight: 700, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>@image{num}</span>
+                              </div>
                             ))}
                           </div>
-                          <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", marginTop: 7, padding: "7px", fontSize: 10, color: "#5a5a70", background: "transparent", border: "1px solid rgba(255,255,255,.06)", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
-                            {lang === "es" ? "O actualiza tu plan →" : "Or upgrade plan →"}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <p style={{ fontSize: 10, color: "#5a5a70", margin: "0 0 10px" }}>
-                            {lang === "es" ? "Actualiza a Básico o superior para comprar packs extra" : "Upgrade to Basic or higher to buy extra packs"}
-                          </p>
-                          <button onClick={() => setPage(P.PLANS)} style={{ width: "100%", padding: "10px", fontSize: 13, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg, #00f0ff, #00c8ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                            {lang === "es" ? "Actualizar plan →" : "Upgrade plan →"}
-                          </button>
-                        </>
-                      )}
+                        );
+                      })()}
                     </div>
-                  );
-                })()}
 
-                <button onClick={handleDirGen} disabled={!canGenDir}
-                  style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGenDir ? "#06060e" : "#3a3a50", background: canGenDir ? "linear-gradient(135deg,#00f0ff,#b44aff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGenDir ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGenDir ? "0 0 22px rgba(0,240,255,.25)" : "none", transition: "all .2s" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : (dirUploading.img || dirUploading.aud) ? (lang === "es" ? "⏳ Subiendo..." : "⏳ Uploading...") : !primaryImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !primaryImage.url ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : !dirPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.credits ?? 0) < dirCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎬 Generar Director (${dirCredits} créditos)` : `🎬 Generate Director (${dirCredits} credits)`)}
-                </button>
-
-                {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={dirDuration} lang={lang} genStatus={genStatus} /></div>}
-                {genError && <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a" }}>
-                  {genError}
-                  {showConcurrentUpgrade && (
-                    <div style={{ marginTop: 6 }}>
-                      <button onClick={() => { setGenError(""); setShowConcurrentUpgrade(false); setPage(P.PLANS); }}
-                        style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit" }}>
-                        {lang === "es" ? "⚡ Mejorar plan y eliminar la espera →" : "⚡ Upgrade plan to skip the wait →"}
-                      </button>
+                    {/* Settings */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                      {uiSetting(LL("Duración", "Duration"), `${dirDuration}s`, "dirDur")}
+                      {uiSetting(LL("Relación de aspecto", "Aspect ratio"), dirAspect, "dirAspect")}
                     </div>
-                  )}
-                </div>}
+                    {uiPop === "dirDur" && (
+                      <div style={{ ...uiCard, padding: 12, marginBottom: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#e8e8f0", marginBottom: 6 }}><span>{dirDuration}s</span><span style={{ color: "#e8c23a" }}>⚡ {dirCredits}</span></div>
+                        <input type="range" min={5} max={15} step={1} value={dirDuration} onChange={e => setDirDuration(Number(e.target.value))} style={{ width: "100%", accentColor: "#e8f542", cursor: "pointer" }} />
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#5a5a78" }}><span>5s</span><span>10s</span><span>15s</span></div>
+                        <p style={{ fontSize: 10, color: "#6a6a82", margin: "8px 0 0" }}>{LL("5s = 180 créditos · 10s = 260 · 15s = 390", "5s = 180 credits · 10s = 260 · 15s = 390")}</p>
+                      </div>
+                    )}
+                    {uiPopList("dirAspect", ["9:16", "16:9", "1:1"].map(r => ({ id: r, label: r, icon: <RatioShape r={r} active={dirAspect === r} color="#e8c23a" /> })), dirAspect, setDirAspect)}
 
-      
-
-          {genResult && !genning && tab === T.DIR && (
-                  <div style={{ marginTop: 14, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,240,255,.15)" }}>
-                    <video src={genResult.url} controls playsInline style={{ width: "100%", display: "block", maxHeight: 300, objectFit: "contain", background: "#000" }} />
-                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
-                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ Director Premium</span>
-                      <button onClick={() => downloadFile(genResult.url, `director-${Date.now()}.mp4`)} style={{ fontSize: 10, color: "#00f0ff", background: "rgba(0,240,255,.08)", border: "1px solid rgba(0,240,255,.15)", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
-                    </div>
-                  </div>
-                )}
+                    {uiGenerating(T.VID, dirDuration)}
+                    {tab === T.DIR && uiResult(true, "Director", "director")}
+                    {uiGenBar({ onClick: handleDirGen, disabled: !canGenDir, needTopUp: dirTopUp && !genning, label: dirLabel, cost: dirCredits })}
                   </div>
                 </div>
               </div>
@@ -4260,89 +4136,54 @@ export default function App() {
               } catch(e) { setGenError(e.message); setGenning(false); }
             };
 
+            const wsSizes = [["auto", "Auto"], ["2048*2048", "1:1"], ["2688*1536", "16:9"], ["1536*2688", "9:16"], ["2048*1536", "4:3"], ["1536*2048", "3:4"]];
+            const wsSizeLabel = (wsSizes.find(([v]) => v === wsImgSize) || ["", wsImgSize])[1];
+            const wsImgTopUp = (profile?.credits ?? 0) < 18 && !genning;
+            const wsImgLabel = genning ? LL("Generando...", "Generating...")
+              : wsImgUploading ? LL("⏳ Subiendo...", "⏳ Uploading...")
+              : wsImgImages.length === 0 ? LL("Sube una imagen primero", "Upload an image first")
+              : !wsImgPrompt.trim() ? LL("Escribí una descripción", "Write a description")
+              : LL("✨ Generar", "✨ Generate");
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
-                <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 12, background: "rgba(255,184,0,.04)", border: "1px solid rgba(255,184,0,.15)" }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "#ffb800", margin: "0 0 2px" }}>✨ Imagen Premium Pro</p>
-                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Edición avanzada con IA · Tipografía nítida · Alta resolución" : "Advanced AI editing · Crisp typography · High resolution"}</p>
-                </div>
+                {imageSubTabs("pro")}
+                {uiHero({ video: "imgpro.mp4", title: LL("Imagen Pro", "Image Pro"), name: LL("Edición avanzada · tipografía nítida · alta resolución", "Advanced editing · crisp typography · high resolution"), color: "#ffb800", chip: "⚡ 18" })}
 
-                {/* Image upload grid */}
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, margin: 0 }}>{lang === "es" ? `🖼️ Imágenes de referencia (${wsImgImages.length}/10)` : `🖼️ Reference images (${wsImgImages.length}/10)`}</p>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {wsImgImages.map((img, i) => (
-                      <div key={i} style={{ position: "relative", width: 72, height: 72, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,184,0,.3)", flexShrink: 0 }}>
-                        <img src={img.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        <button onClick={() => setWsImgImages(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 9, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-                      </div>
-                    ))}
-                    {wsImgImages.length < 10 && (
-                      <label style={{ width: 72, height: 72, borderRadius: 8, border: "1px dashed rgba(255,255,255,.15)", background: "rgba(255,255,255,.02)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        {wsImgUploading ? <div style={{ width: 16, height: 16, border: "2px solid rgba(255,184,0,.3)", borderTop: "2px solid #ffb800", borderRadius: "50%", animation: "spin .8s linear infinite" }} /> : <><span style={{ fontSize: 18, color: "#5a5a70" }}>+</span><span style={{ fontSize: 8, color: "#5a5a70" }}>img</span></>}
-                        <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadWsImg(e.target.files[0])} />
-                      </label>
-                    )}
-                  </div>
-                  {wsImgError && <p style={{ fontSize: 10, color: "#ff4d6a", marginTop: 6 }}>{wsImgError}</p>}
-                </div>
-
-                {/* Prompt */}
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción *" : "Description *"}</p>
-                  <textarea value={wsImgPrompt} onChange={e => setWsImgPrompt(e.target.value)}
-                    placeholder={lang === "es" ? "Describe qué editar. Ej: Cambia el fondo a una ciudad de noche con neón, mantén el personaje..." : "Describe what to edit. E.g. Change background to neon night city, keep the character..."}
-                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
-                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{wsImgPrompt.length}/3500</p>
-                </div>
-
-                {/* Proporción — SVG style igual que el resto */}
-                <div style={{ marginBottom: 14 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Proporción" : "Aspect ratio"}</p>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    {[
-                      ["2048*2048","1:1"],
-                      ["2688*1536","16:9"],
-                      ["1536*2688","9:16"],
-                      ["2048*1536","4:3"],
-                      ["1536*2048","3:4"],
-                    ].map(([v, ratio]) => (
-                      <button key={v} onClick={() => setWsImgSize(v)}
-                        style={{ flex: 1, padding: "7px 4px", fontSize: 10, fontWeight: wsImgSize === v ? 700 : 400, color: wsImgSize === v ? "#ffb800" : "#5a5a70", background: wsImgSize === v ? "rgba(255,184,0,.08)" : "rgba(255,255,255,.02)", border: wsImgSize === v ? "1px solid rgba(255,184,0,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                        <RatioShape r={ratio} active={wsImgSize === v} color="#ffb800" />
-                        {ratio}
-                      </button>
-                    ))}
-                    <button onClick={() => setWsImgSize("auto")}
-                      style={{ flex: "2", padding: "7px 4px", fontSize: 10, fontWeight: wsImgSize === "auto" ? 700 : 400, color: wsImgSize === "auto" ? "#ffb800" : "#5a5a70", background: wsImgSize === "auto" ? "rgba(255,184,0,.08)" : "rgba(255,255,255,.02)", border: wsImgSize === "auto" ? "1px solid rgba(255,184,0,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                      <RatioShape r="auto" active={wsImgSize === "auto"} color="#ffb800" />
-                      Auto
-                    </button>
-                  </div>
-                </div>
-
-                {genning && (
-                  <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}>
-                    <Generating type={T.WS_IMG} duration={0} lang={lang} genStatus={genStatus} />
-                  </div>
-                )}
-
-                <button onClick={(profile?.credits ?? 0) < 18 ? () => (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? setShowTopUpMenu(true) : setPage(P.PLANS)) : handleWsImgGen} disabled={(profile?.credits ?? 0) >= 18 && !canGen}
-                  style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#ffb800,#ff8800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(255,184,0,.25)" : "none" }}>
-                  {(profile?.credits ?? 0) < 18 && !genning ? (lang === "es" ? "⚡ Recargar créditos · necesitas 18" : "⚡ Top up credits · need 18") : genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar · ⚡ 18 créditos" : "✨ Generate · ⚡ 18 credits")}
-                </button>
-
-                {genResult && !genning && tab === T.WS_IMG && (
-                  <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,184,0,.2)", animation: "fadeUp .5s ease" }}>
-                    <img src={genResult.url} alt="Generated" style={{ width: "100%", display: "block", borderRadius: "14px 14px 0 0" }} />
-                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
-                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {lang === "es" ? "Imagen Pro" : "Pro Image"}</span>
-                      <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-img-pro-${Date.now()}.png`)} style={{ fontSize: 11, color: "#ffb800", background: "rgba(255,184,0,.08)", border: "1px solid rgba(255,184,0,.2)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
+                {uiDrop({
+                  title: LL("Imágenes a editar", "Images to edit"),
+                  sub: LL("Hasta 10 · jpg, png, webp", "Up to 10 · jpg, png, webp"),
+                  icons: ["🧍", "🏞️", "📦"],
+                  accept: "image/jpeg,image/png,image/webp",
+                  multiple: true,
+                  onFiles: async (fs) => { for (const f of fs.slice(0, Math.max(0, 10 - wsImgImages.length))) await uploadWsImg(f); },
+                  canAdd: !wsImgUploading && wsImgImages.length < 10,
+                  counter: `${wsImgImages.length}/10`,
+                  children: (wsImgImages.length || wsImgUploading) ? (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {wsImgImages.map((img, i) => <span key={i}>{uiThumb(img.preview, () => setWsImgImages(prev => prev.filter((_, j) => j !== i)), `img ${i + 1}`)}</span>)}
+                      {wsImgUploading && uiSpinTile()}
                     </div>
-                  </div>
-                )}
+                  ) : null,
+                })}
+                {wsImgError && uiErr(wsImgError, () => setWsImgError(null))}
+
+                {/* Prompt card */}
+                <div style={{ ...uiCard, padding: "12px 14px", marginBottom: 10 }}>
+                  {uiLabel(LL("Qué quieres cambiar", "What to change"), `${wsImgPrompt.length}/3500`)}
+                  <textarea value={wsImgPrompt} onChange={e => setWsImgPrompt(e.target.value)} rows={4} maxLength={3500} style={uiTextarea}
+                    placeholder={LL("Describe qué editar. Ej: Cambia el fondo a una ciudad de noche con neón, mantén el personaje...", "Describe what to edit. E.g. Change background to a neon night city, keep the character...")} />
+                </div>
+
+                {/* Settings */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  {uiSetting(LL("Relación de aspecto", "Aspect ratio"), wsSizeLabel, "wsImgSize")}
+                  {uiSetting(LL("Costo", "Cost"), "⚡ 18", "wsImgCost", { static: true })}
+                </div>
+                {uiPopList("wsImgSize", wsSizes.map(([v, r]) => ({ id: v, label: r, icon: <RatioShape r={v === "auto" ? "auto" : r} active={wsImgSize === v} color="#e8c23a" /> })), wsImgSize, setWsImgSize)}
+
+                {uiGenerating(T.WS_IMG, 0)}
+                {tab === T.WS_IMG && uiResult(false, LL("Imagen Pro", "Image Pro"), "nanobanano-img-pro")}
+                {uiGenBar({ onClick: handleWsImgGen, disabled: !canGen, needTopUp: wsImgTopUp, label: wsImgLabel, cost: 18 })}
               </div>
             );
           })()}
@@ -4413,107 +4254,63 @@ export default function App() {
               } catch(e) { setGenError(e.message); setGenning(false); }
             };
 
+            const wsResLabel = { "1080p": "HD 1080p", "2k": "2K", "4k": "4K" };
+            const wsVidTopUp = hasPlan && (profile?.credits ?? 0) < wsVidCredits && !genning;
+            const wsVidCost = (d, r) => ((wsVidCreditTable[d] || wsVidCreditTable[5])[r] ?? 2) * VID_UNIT;
+            const wsVidLabel = genning ? LL("Generando...", "Generating...")
+              : wsVidUploading ? LL("⏳ Subiendo...", "⏳ Uploading...")
+              : !wsVidImage ? LL("Sube una imagen primero", "Upload an image first")
+              : !wsVidPrompt.trim() ? LL("Escribí una descripción", "Write a description")
+              : LL("🌊 Generar Vid Pro", "🌊 Generate Vid Pro");
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
-                <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 12, background: "rgba(0,200,255,.04)", border: "1px solid rgba(0,200,255,.15)" }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "#00c8ff", margin: "0 0 2px" }}>🌊 Video Premium Pro</p>
-                  <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? "Video cinemático desde imagen · Alta resolución · Audio nativo" : "Cinematic video from image · High resolution · Native audio"}</p>
-                </div>
+                {uiHero({ video: "vidpro.mp4", title: "Video Pro", name: LL("Video cinemático desde una imagen · hasta 4K", "Cinematic video from one image · up to 4K"), color: "#00c8ff", chip: `⚡ ${wsVidCredits}` })}
 
-                {/* Image upload */}
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#8a8a9e", fontWeight: 600, marginBottom: 6 }}>{lang === "es" ? "🖼️ Imagen de referencia *" : "🖼️ Reference image *"}</p>
-                  <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 130, borderRadius: 12, border: wsVidImage ? "1px solid rgba(0,200,255,.3)" : "1px dashed rgba(255,255,255,.15)", background: wsVidImage ? "rgba(0,200,255,.04)" : "rgba(255,255,255,.02)", cursor: "pointer", overflow: "hidden", position: "relative" }}>
-                    {wsVidImage
-                      ? <><img src={wsVidImage.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          {wsVidUploading && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 20, height: 20, border: "2px solid rgba(0,200,255,.3)", borderTop: "2px solid #00c8ff", borderRadius: "50%", animation: "spin .8s linear infinite" }} /></div>}
-                          <button onClick={e => { e.preventDefault(); setWsVidImage(null); }} style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 10, cursor: "pointer" }}>×</button>
-                        </>
-                      : <><span style={{ fontSize: 28, marginBottom: 6 }}>🖼️</span><span style={{ fontSize: 10, color: "#5a5a70" }}>{lang === "es" ? "Subí tu imagen" : "Upload your image"}</span></>}
-                    <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={e => uploadWsVid(e.target.files[0])} />
+                {/* Start frame */}
+                <div style={{ ...uiCard, marginBottom: 10, overflow: "hidden" }}>
+                  <label style={{ position: "relative", minHeight: 170, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    {wsVidImage ? (
+                      <>
+                        <img src={wsVidImage.preview} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                        {wsVidUploading && (
+                          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <div style={{ width: 22, height: 22, border: "2px solid rgba(232,196,58,.3)", borderTop: "2px solid #e8c23a", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
+                          </div>
+                        )}
+                        <button onClick={e => { e.preventDefault(); setWsVidImage(null); }} style={{ position: "absolute", top: 8, right: 8, width: 22, height: 22, borderRadius: "50%", background: "rgba(0,0,0,.7)", border: "none", color: "#fff", cursor: "pointer", fontSize: 12 }}>×</button>
+                        <span style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "4px 0", fontSize: 10, textAlign: "center", background: "rgba(0,0,0,.6)", color: "#e8e8f0" }}>{LL("Fotograma inicial", "Start frame")}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ position: "absolute", top: 8, right: 8, fontSize: 10, padding: "2px 7px", borderRadius: 5, background: "rgba(255,255,255,.06)", color: "#e8c23a" }}>{LL("Requerido", "Required")}</span>
+                        {uiDropIcons(["🏞️"])}
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#e8e8f0" }}>{LL("Fotograma inicial", "Start frame")}</span>
+                        <span style={{ fontSize: 10, color: "#6a6a82", marginTop: 4 }}>jpg · png · webp</span>
+                      </>
+                    )}
+                    <input type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) uploadWsVid(f); }} />
                   </label>
-                  {wsVidError && <p style={{ fontSize: 10, color: "#ff4d6a", marginTop: 6 }}>{wsVidError}</p>}
+                </div>
+                {wsVidError && uiErr(wsVidError, () => setWsVidError(null))}
+
+                {/* Prompt card */}
+                <div style={{ ...uiCard, padding: "12px 14px", marginBottom: 10 }}>
+                  {uiLabel("Prompt", `${wsVidPrompt.length}/3500`)}
+                  <textarea value={wsVidPrompt} onChange={e => setWsVidPrompt(e.target.value)} rows={4} maxLength={3500} style={uiTextarea}
+                    placeholder={LL("Describe el movimiento y la escena. Ej: Cámara se aleja lentamente, personaje mira hacia el horizonte, luz dorada de atardecer, cinemático...", "Describe the motion and scene. E.g. Camera slowly pulls back, character looks at the horizon, golden sunset light, cinematic...")} />
                 </div>
 
-                {/* Prompt */}
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Descripción de escena *" : "Scene description *"}</p>
-                  <textarea value={wsVidPrompt} onChange={e => setWsVidPrompt(e.target.value)}
-                    placeholder={lang === "es" ? "Describe el movimiento y la escena. Ej: Cámara se aleja lentamente, personaje mira hacia el horizonte, luz dorada de atardecer, cinemático..." : "Describe the motion and scene. E.g. Camera slowly pulls back, character looks toward the horizon, golden sunset light, cinematic..."}
-                    rows={3} style={{ ...inp, resize: "none", fontSize: 12, lineHeight: 1.5, borderRadius: 10 }} maxLength={3500} />
-                  <p style={{ fontSize: 9, color: "#3a3a50", margin: "3px 0 0", textAlign: "right" }}>{wsVidPrompt.length}/3500</p>
+                {/* Settings */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  {uiSetting(LL("Duración", "Duration"), `${wsVidDuration}s`, "wsVidDur")}
+                  {uiSetting(LL("Calidad", "Quality"), wsResLabel[wsVidRes] || wsVidRes, "wsVidRes")}
                 </div>
+                {uiPopList("wsVidDur", [5, 10, 15].map(d => ({ id: d, label: `${d}s`, right: `⚡ ${wsVidCost(d, wsVidRes)}` })), wsVidDuration, setWsVidDuration)}
+                {uiPopList("wsVidRes", ["1080p", "2k", "4k"].map(r => ({ id: r, label: wsResLabel[r], right: `⚡ ${wsVidCost(wsVidDuration, r)}` })), wsVidRes, setWsVidRes)}
 
-                {/* Resolution */}
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Resolución" : "Resolution"}</p>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {[["1080p","HD"],["2k","2K"],["4k","4K"]].map(([v,l]) => (
-                      <button key={v} onClick={() => setWsVidRes(v)} style={{ flex: 1, padding: "7px 4px", fontSize: 10, fontWeight: wsVidRes === v ? 700 : 400, color: wsVidRes === v ? "#00c8ff" : "#5a5a70", background: wsVidRes === v ? "rgba(0,200,255,.08)" : "rgba(255,255,255,.02)", border: wsVidRes === v ? "1px solid rgba(0,200,255,.3)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                        <svg width="14" height="10" viewBox="0 0 14 10"><rect x="1" y="1" width="12" height="8" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Duration */}
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>{lang === "es" ? "Duración" : "Duration"}</p>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 16, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: "#00c8ff" }}>{wsVidDuration}s</span>
-                      <span style={{ fontSize: 10, color: "#00c8ff", background: "rgba(0,200,255,.08)", border: "1px solid rgba(0,200,255,.2)", borderRadius: 5, padding: "2px 8px", fontWeight: 700 }}>{wsVidCredits} {lang === "es" ? "créditos" : "credits"}</span>
-                    </div>
-                  </div>
-                  <input type="range" min={5} max={15} step={5} value={wsVidDuration}
-                    onChange={e => setWsVidDuration(Number(e.target.value))}
-                    style={{ width: "100%", accentColor: "#00c8ff", cursor: "pointer", height: 4 }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-                    {[5,10,15].map(d => <span key={d} style={{ fontSize: 9, color: d === wsVidDuration ? "#00c8ff" : "#3a3a50" }}>{d}s</span>)}
-                  </div>
-                  <p style={{ fontSize: 9, color: "#3a3a50", marginTop: 4, textAlign: "center" }}>5s: HD=2 · 2K/4K=3 &nbsp;|&nbsp; 10s: HD=3 · 2K/4K=4 &nbsp;|&nbsp; 15s: HD=3 · 2K=4 · 4K=5</p>
-                </div>
-
-                {/* Credits warning */}
-                {hasPlan && (profile?.credits ?? 0) < wsVidCredits && (() => {
-                  const vidPacks = [{ id: "vid_s", label: "Pack S", amount: 20, price: 39.99 }, { id: "vid_m", label: "Pack M", amount: 30, price: 57.99 }, { id: "vid_l", label: "Pack L", amount: 50, price: 89.99 }];
-                  return (
-                    <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14 }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 8px" }}>{lang === "es" ? "⚡ Sin créditos suficientes" : "⚡ Not enough credits"}</p>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        {vidPacks.map(pk => (
-                          <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)} style={{ flex: 1, padding: "8px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
-                            <p style={{ fontSize: 10, fontWeight: 600, color: "#8a8aaa", margin: "0 0 2px", textTransform: "uppercase" }}>{pk.label}</p>
-                            <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px" }}>+{pk.amount * VID_UNIT}</p>
-                            <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {genning && (
-                  <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}>
-                    <Generating type={T.WS_VID} duration={wsVidDuration} lang={lang} genStatus={genStatus} />
-                  </div>
-                )}
-
-                <button onClick={handleWsVidGen} disabled={!canGen}
-                  style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#00c8ff,#0080ff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(0,200,255,.25)" : "none" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsVidUploading ? "⏳..." : !wsVidImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsVidPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.credits ?? 0) < wsVidCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🌊 Generar Vid Pro (${wsVidCredits} créditos)` : `🌊 Generate Vid Pro (${wsVidCredits} credits)`)}
-                </button>
-
-                {genResult && !genning && tab === T.WS_VID && (
-                  <div style={{ marginTop: 16, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,200,255,.2)", animation: "fadeUp .5s ease" }}>
-                    <video src={genResult.url} controls autoPlay playsInline style={{ width: "100%", display: "block", borderRadius: "14px 14px 0 0" }} />
-                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,.02)" }}>
-                      <span style={{ fontSize: 10, color: "#5a5a70" }}>✓ {lang === "es" ? "Video Pro" : "Pro Video"}</span>
-                      <button data-download-btn onClick={() => downloadFile(genResult.url, `nanobanano-vid-pro-${Date.now()}.mp4`)} style={{ fontSize: 11, color: "#00c8ff", background: "rgba(0,200,255,.08)", border: "1px solid rgba(0,200,255,.2)", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>↓ {lang === "es" ? "Descargar" : "Download"}</button>
-                    </div>
-                  </div>
-                )}
+                {uiGenerating(T.WS_VID, wsVidDuration)}
+                {tab === T.WS_VID && uiResult(true, "Video Pro", "nanobanano-vid-pro")}
+                {uiGenBar({ onClick: handleWsVidGen, disabled: !canGen, needTopUp: wsVidTopUp, label: wsVidLabel, cost: wsVidCredits })}
               </div>
             );
           })()}
@@ -4551,21 +4348,21 @@ export default function App() {
         )}
 
         {/* ── RIGHT OUTPUT PANEL: Higgsfield-style thumbnail feed ── */}
-        {(tab === T.IMG || tab === T.VID || tab === T.VID_EDIT) && (
+        {isStudioTab && (
           <div style={{ flex: 1, minWidth: 0, ...(isDesk ? { height: "100%", overflowY: "auto" } : {}), padding: isDesk ? "20px 24px 40px" : "14px", background: "#0a0a0f" }}>
             {(() => {
-              const wantType = tab === T.IMG ? "image" : "video";
+              const wantType = (tab === T.IMG || tab === T.WS_IMG) ? "image" : "video";
               const feed = gens.filter(g => g.type === wantType && (g.status === "processing" ? (activeJobs.length === 0 && Date.now() - new Date(g.created_at).getTime() < 15 * 60 * 1000) : g.status === "failed" ? (Date.now() - new Date(g.created_at).getTime() < 7 * 24 * 3600 * 1000) : (g.status !== "dismissed" && !!g.url)));
               const tile = { position: "relative", aspectRatio: "3 / 4", borderRadius: 10, overflow: "hidden", background: "#13131a", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer" };
               return (
                 <>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "#e2e2ea" }}>{tab === T.IMG ? (lang === "es" ? "Tus imágenes" : "Your images") : (lang === "es" ? "Tus videos" : "Your videos")} <span style={{ fontSize: 11, color: "#4a4a62", fontWeight: 400, marginLeft: 6 }}>{feed.length}</span></p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: "#e2e2ea" }}>{wantType === "image" ? (lang === "es" ? "Tus imágenes" : "Your images") : (lang === "es" ? "Tus videos" : "Your videos")} <span style={{ fontSize: 11, color: "#4a4a62", fontWeight: 400, marginLeft: 6 }}>{feed.length}</span></p>
                     {feed.length > 0 && <button onClick={() => setTab(T.GAL)} style={{ fontSize: 11, color: "#8a8a9e", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>{lang === "es" ? "Ver galería →" : "View gallery →"}</button>}
                   </div>
                   {feed.length === 0 && activeJobs.filter(j => j.type === wantType).length === 0 ? (
                     <div style={{ height: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", opacity: .35 }}>
-                      <div style={{ fontSize: 44, marginBottom: 10 }}>{tab === T.IMG ? "🖼️" : "🎬"}</div>
+                      <div style={{ fontSize: 44, marginBottom: 10 }}>{wantType === "image" ? "🖼️" : "🎬"}</div>
                       <p style={{ fontSize: 13, color: "#5a5a78" }}>{lang === "es" ? "Tus creaciones aparecerán aquí" : "Your creations will appear here"}</p>
                     </div>
                   ) : (

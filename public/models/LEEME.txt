@@ -8,3 +8,12 @@ Si falta un archivo, se muestra un degradado con el color de la marca.
 Pestaña Jutsu (NanoJutsu):
   nanojutsu.mp4       → Transferencia de movimiento
   nanojutsu_swap.mp4  → Intercambio de objetos
+
+v23 — Encabezados de las demás pestañas (mismo formato 720x360, 3-5 s, sin audio):
+  Pestaña Imagen (uno por modelo, cambia al elegir modelo):
+    nb2.mp4  nbpro.mp4  gpt2.mp4  flux2pro.mp4  seedream5.mp4
+  motion.mp4    → Motion Control
+  director.mp4  → Director
+  imgpro.mp4    → Img Pro
+  vidpro.mp4    → Vid Pro
+Para el encabezado de Imagen puedes exportar un video corto o un slideshow de 3-4 imágenes con zoom lento.
