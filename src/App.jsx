@@ -4313,7 +4313,7 @@ export default function App() {
               : LL("🌊 Generar Vid Pro", "🌊 Generate Vid Pro");
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
-                {uiHero({ video: "vidpro.mp4", title: "Video Pro", name: LL("Seedance 2.5 · video desde una imagen · hasta 4K y 30 s", "Seedance 2.5 · video from one image · up to 4K & 30 s"), color: "#00c8ff", chip: `⚡ ${wsVidCredits}` })}
+                {uiHero({ video: "vidpro.mp4", title: "Video Pro", name: LL("Realismo Explícito hasta 4K", "Explicit Realism up to 4K"), color: "#00c8ff", chip: `⚡ ${wsVidCredits}` })}
 
                 {/* Start frame */}
                 <div style={{ ...uiCard, marginBottom: 10, overflow: "hidden" }}>
