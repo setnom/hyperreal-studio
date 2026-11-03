@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Component } from "react";
-import { VIDEO_MODELS, IMAGE_MODELS, findVideoModel, findImageModel, videoCredits, imageCredits } from "../api/_models.js";
+import { VIDEO_MODELS, IMAGE_MODELS, findVideoModel, findImageModel, videoCredits, imageCredits, clampDuration, pickRes } from "../api/_models.js";
 
 // ─── ERROR BOUNDARY — prevents blank screen on any crash ───
 class ErrorBoundary extends Component {
@@ -699,6 +699,9 @@ export default function App() {
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [vidRefVideo, setVidRefVideo] = useState(null); // { file, url, preview, duration }
   const [vidRefUploading, setVidRefUploading] = useState(false);
+  const [vidRes, setVidRes] = useState("720p");
+  const [vidMode, setVidMode] = useState("frames"); // Seedance 2.5: frames | omni | extend
+  const [vidOmniImages, setVidOmniImages] = useState([]); // File[] for Omni references
   const maxRealism = imgModelId === "gpt2"; // legacy flag kept for older code paths
   const [vidDur, setVidDur] = useState(5);
   const [vidRatio, setVidRatio] = useState("16:9");
@@ -1451,8 +1454,12 @@ export default function App() {
     if ((!prompt.trim() && style !== "restore" && style !== "colorize") || !profile || !session) return;
     const isVid = tab === T.VID;
     const vM = findVideoModel(vidModelId), iM = findImageModel(imgModelId);
-    const creditCostNow = isVid ? videoCredits(vM, vidDur) : imageCredits(iM, imgQuality, refImages.length > 0 && iM.maxRefs > 0);
-    if (isVid && vM.needsImage && !startFrame) { setGenError(lang === "es" ? `${vM.name} necesita una imagen inicial.` : `${vM.name} needs a start image.`); return; }
+    const vModeNow = vM.modes?.includes(vidMode) ? vidMode : "frames";
+    const vUsesVideo = vM.needsVideo || vModeNow === "extend" || (vModeNow === "omni" && !!vidRefVideo?.url);
+    const creditCostNow = isVid ? videoCredits(vM, vidDur, vidRes, vUsesVideo ? (vidRefVideo?.duration || 0) : 0, vModeNow) : imageCredits(iM, imgQuality, refImages.length > 0 && iM.maxRefs > 0);
+    if (isVid && vModeNow === "extend" && !vidRefVideo?.url) { setGenError(lang === "es" ? "Extend necesita un video." : "Extend needs a video."); return; }
+    if (isVid && vModeNow === "omni" && !vidRefVideo?.url && vidOmniImages.length === 0 && !startFrame) { setGenError(lang === "es" ? "Omni necesita al menos una imagen o video." : "Omni needs at least one image or video."); return; }
+    if (isVid && (vM.needsImage || vM.res[pickRes(vM, vidRes)]?.needsImage) && vModeNow === "frames" && !startFrame) { setGenError(lang === "es" ? `${vM.name} necesita una imagen inicial.` : `${vM.name} needs a start image.`); return; }
     if (isVid && vM.needsVideo && !vidRefVideo?.url) { setGenError(lang === "es" ? `${vM.name} necesita un video.` : `${vM.name} needs a video.`); return; }
     if ((profile.credits ?? 0) < creditCostNow) return;
 
@@ -1515,6 +1522,7 @@ export default function App() {
       try {
         if (isVid && startFrame) startFrameUrl = await uploadFile(startFrame);
         if (isVid && endFrame) endFrameUrl = await uploadFile(endFrame);
+        if (isVid && vModeNow === "omni") { for (const f of vidOmniImages.slice(0, 8)) imageUrls.push(await uploadFile(f)); }
       } catch (uploadErr) {
         setGenError("Error al subir frame. Intenta con una imagen más pequeña.");
         endJob();
@@ -1534,11 +1542,13 @@ export default function App() {
           image_quality: !isVid ? imgQuality : undefined,
           max_realism: !isVid ? maxRealism : undefined,
           model_id: isVid ? vidModelId : imgModelId,
-          video_url: isVid && findVideoModel(vidModelId).needsVideo ? vidRefVideo?.url : undefined,
+          video_url: isVid && vUsesVideo ? vidRefVideo?.url : undefined,
+          resolution: isVid ? pickRes(vM, vidRes) : undefined,
+          mode: isVid ? vModeNow : undefined,
           plan: profile.plan || "basic",
           duration: isVid ? vidDur : undefined,
           audio: isVid ? audioOn : undefined,
-          image_urls: !isVid && imageUrls.length > 0 ? imageUrls : undefined,
+          image_urls: imageUrls.length > 0 ? imageUrls : undefined,
           start_frame: isVid ? startFrameUrl : undefined,
           end_frame: isVid ? endFrameUrl : undefined,
           multishot: isVid ? multishot : undefined,
@@ -2360,7 +2370,7 @@ export default function App() {
                 <div style={{ marginTop: 18, borderRadius: 20, overflow: "hidden", background: pl.id === "test" ? "transparent" : theme.band, border: pl.id === "test" ? "1px solid #e5e5e5" : "none" }}>
                   {pl.id !== "test" && (
                     <div style={{ padding: "8px 10px", textAlign: "center", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#1a1a1a" }}>
-                      {lang === "es" ? `Calidad ${pl.resolution} · Videos ${vidDur}` : `${pl.resolution} quality · ${vidDur} videos`}
+                      {lang === "es" ? `Imagen ${pl.resolution} · Videos hasta 30s` : `${pl.resolution} images · videos up to 30s`}
                     </div>
                   )}
                   <div style={{ background: "#fff", borderRadius: 18, padding: "26px 14px", textAlign: "center", minHeight: 130, display: "flex", flexDirection: "column", justifyContent: "center", border: pl.id === "test" ? "none" : `1px solid ${theme.ring}` }}>
@@ -2504,13 +2514,18 @@ export default function App() {
   const curVidModel = findVideoModel(vidModelId);
   const curImgModel = findImageModel(imgModelId);
   const curImgCost = imageCredits(curImgModel, imgQuality, refImages.length > 0 && curImgModel.maxRefs > 0);
-  const curVidCost = videoCredits(curVidModel, vidDur);
+  const curVidMode = curVidModel.modes?.includes(vidMode) ? vidMode : "frames";
+  const curVidRes = pickRes(curVidModel, vidRes);
+  const curVidUsesVideo = curVidModel.needsVideo || curVidMode === "extend" || (curVidMode === "omni" && !!vidRefVideo?.url);
+  const curVidCost = videoCredits(curVidModel, vidDur, curVidRes, curVidUsesVideo ? (vidRefVideo?.duration || 0) : 0, curVidMode);
+  const curVidNeedsImage = curVidMode === "frames" && (curVidModel.needsImage || curVidModel.res[curVidRes]?.needsImage);
+  const curVidShowVideo = curVidModel.needsVideo || curVidMode === "extend" || curVidMode === "omni";
   const renderModelPicker = (kind) => {
     const list = kind === "vid" ? VIDEO_MODELS : IMAGE_MODELS;
     const cur = kind === "vid" ? curVidModel : curImgModel;
     const setId = kind === "vid" ? setVidModelId : setImgModelId;
     const families = [...new Set(list.map(m => m.family))];
-    const priceOf = (m) => kind === "vid" ? (m.fixedSec ? `⚡ ${m.perSec * m.fixedSec}` : `⚡ ${m.perSec}/s`) : `⚡ ${imageCredits(m, imgQuality, false)}`;
+    const priceOf = (m) => kind === "vid" ? `${Object.keys(m.res).length > 1 ? (lang === "es" ? "desde " : "from ") : ""}⚡ ${Math.min(...Object.values(m.res).map(r => r.perSec))}/s` : `⚡ ${imageCredits(m, imgQuality, false)}`;
     const open = modelMenuOpen === kind;
     return (
       <div style={{ position: "relative", marginBottom: 12 }}>
@@ -2535,7 +2550,7 @@ export default function App() {
                   {list.filter(m => m.family === fam).map(m => {
                     const sel = m.id === cur.id;
                     return (
-                      <button key={m.id} onClick={() => { setId(m.id); setModelMenuOpen(false); }}
+                      <button key={m.id} onClick={() => { setId(m.id); setModelMenuOpen(false); if (kind === "vid") { setVidRes(m.defRes); setVidDur(d => clampDuration(m, d)); if (!m.modes?.includes(vidMode)) setVidMode("frames"); } }}
                         style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: "none", background: sel ? "rgba(232,196,58,.1)" : "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
                         onMouseEnter={e => { if (!sel) e.currentTarget.style.background = "rgba(255,255,255,.04)"; }}
                         onMouseLeave={e => { if (!sel) e.currentTarget.style.background = "transparent"; }}>
@@ -2764,12 +2779,56 @@ export default function App() {
                     ))}
                   </div>
 
-                  {!curVidModel.fixedSec && <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{t("duration")} · <span style={{ color: "#e8c23a", letterSpacing: 0, textTransform: "none" }}>⚡ {curVidCost}</span></p>}
-                  {!curVidModel.fixedSec && <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
-                    {getAllowedDurations().map(d => (
-                      <button key={d} onClick={() => setVidDur(d)} style={{ flex: 1, padding: "8px 0", fontSize: 12, fontWeight: vidDur === d ? 600 : 400, color: vidDur === d ? "#b44aff" : "#5a5a70", background: vidDur === d ? "rgba(180,74,255,.08)" : "rgba(255,255,255,.02)", border: vidDur === d ? "1px solid rgba(180,74,255,.2)" : "1px solid rgba(255,255,255,.04)", borderRadius: 6, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{d}s</button>
-                    ))}
-                  </div>}
+                  {/* Mode switch (Seedance 2.5) */}
+                  {curVidModel.modes && (
+                    <div style={{ marginBottom: 12 }}>
+                      <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Modo" : "Mode"}</p>
+                      <div style={{ display: "flex", gap: 3, padding: 3, borderRadius: 9, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.05)" }}>
+                        {[["frames", "Frame to Frame"], ["omni", "Omni"], ["extend", "Extend"]].map(([k, l]) => (
+                          <button key={k} onClick={() => setVidMode(k)} style={{ flex: 1, padding: "8px 4px", fontSize: 11, fontWeight: curVidMode === k ? 700 : 400, color: curVidMode === k ? "#e8c23a" : "#6a6a82", background: curVidMode === k ? "rgba(232,196,58,.1)" : "rgba(255,255,255,.02)", border: `1px solid ${curVidMode === k ? "rgba(232,196,58,.35)" : "rgba(255,255,255,.05)"}`, borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                        ))}
+                      </div>
+                      <p style={{ fontSize: 9, color: "#4a4a62", margin: "6px 0 0" }}>{curVidMode === "frames" ? (lang === "es" ? "Texto o imagen inicial/final" : "Text or first/last frame") : curVidMode === "omni" ? (lang === "es" ? "Referencias: imágenes y/o un video (@Image1, @Video1 en el prompt)" : "References: images and/or a video (@Image1, @Video1 in prompt)") : (lang === "es" ? "Continúa un video desde su último frame" : "Continue a video from its last frame")}</p>
+                    </div>
+                  )}
+
+                  {/* Resolution */}
+                  {Object.keys(curVidModel.res).length > 1 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{lang === "es" ? "Calidad" : "Quality"}</p>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {Object.entries(curVidModel.res).map(([k, r]) => (
+                          <button key={k} onClick={() => setVidRes(k)} style={{ flex: 1, padding: "8px 4px", fontSize: 11, fontWeight: curVidRes === k ? 700 : 400, color: curVidRes === k ? "#e8c23a" : "#6a6a82", background: curVidRes === k ? "rgba(232,196,58,.1)" : "rgba(255,255,255,.02)", border: `1px solid ${curVidRes === k ? "rgba(232,196,58,.35)" : "rgba(255,255,255,.05)"}`, borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>
+                            {k}<span style={{ display: "block", fontSize: 9, opacity: .7, fontFamily: "'JetBrains Mono',monospace" }}>⚡{r.perSec}/s</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Duration — slider when the model accepts any length */}
+                  {curVidModel.kind !== "klingEdit" && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                        <p style={{ fontSize: 10, color: "#5a5a70", letterSpacing: 1.5, textTransform: "uppercase", margin: 0 }}>{t("duration")}</p>
+                        <span style={{ fontSize: 12, color: "#e2e2ea", fontFamily: "'JetBrains Mono',monospace" }}>{clampDuration(curVidModel, vidDur)}s · <span style={{ color: "#e8c23a" }}>⚡ {curVidCost}</span></span>
+                      </div>
+                      {curVidModel.durRange ? (
+                        <>
+                          <input type="range" min={curVidModel.durRange[0]} max={curVidModel.durRange[1]} step={1} value={clampDuration(curVidModel, vidDur)} onChange={e => setVidDur(Number(e.target.value))}
+                            style={{ width: "100%", accentColor: "#e8c23a", cursor: "pointer" }} />
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#4a4a62", fontFamily: "'JetBrains Mono',monospace" }}><span>{curVidModel.durRange[0]}s</span><span>{curVidModel.durRange[1]}s</span></div>
+                        </>
+                      ) : (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {curVidModel.durOptions.map(d => (
+                            <button key={d} onClick={() => setVidDur(d)} style={{ flex: 1, padding: "8px 4px", fontSize: 11, fontWeight: clampDuration(curVidModel, vidDur) === d ? 700 : 400, color: clampDuration(curVidModel, vidDur) === d ? "#e8c23a" : "#6a6a82", background: clampDuration(curVidModel, vidDur) === d ? "rgba(232,196,58,.1)" : "rgba(255,255,255,.02)", border: `1px solid ${clampDuration(curVidModel, vidDur) === d ? "rgba(232,196,58,.35)" : "rgba(255,255,255,.05)"}`, borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>{d}s</button>
+                          ))}
+                        </div>
+                      )}
+                      {curVidUsesVideo && <p style={{ fontSize: 9, color: "#6a6a82", margin: "6px 0 0" }}>{lang === "es" ? "Incluye los segundos del video de entrada (fal los cobra)." : "Includes input video seconds (billed by fal)."}</p>}
+                    </div>
+                  )}
 
                   {/* Audio toggle */}
                   {(curVidModel.kind === "kling3" || curVidModel.kind === "kling4") && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: 14, borderRadius: 8, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.04)" }}>
@@ -2782,10 +2841,10 @@ export default function App() {
                     </button>
                   </div>}
 
-                  {/* Video input (Omni Edit) */}
-                  {curVidModel.needsVideo && (
+                  {/* Video input (Omni Edit / Extend / Omni) */}
+                  {curVidShowVideo && (
                     <div style={{ marginBottom: 14, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(232,196,58,.2)" }}>
-                      <p style={{ fontSize: 11, color: "#e0e0f0", margin: "0 0 8px", fontWeight: 500 }}>🎞️ {lang === "es" ? "Video a editar" : "Video to edit"} <span style={{ fontSize: 9, color: "#e8c23a", fontWeight: 400 }}>· {lang === "es" ? `Requerido · máx ${curVidModel.fixedSec}s` : `Required · max ${curVidModel.fixedSec}s`}</span></p>
+                      <p style={{ fontSize: 11, color: "#e0e0f0", margin: "0 0 8px", fontWeight: 500 }}>🎞️ {curVidMode === "extend" ? (lang === "es" ? "Video a extender" : "Video to extend") : curVidMode === "omni" ? (lang === "es" ? "Video de referencia" : "Reference video") : (lang === "es" ? "Video a editar" : "Video to edit")} <span style={{ fontSize: 9, color: "#e8c23a", fontWeight: 400 }}>· {curVidMode === "omni" ? (lang === "es" ? "Opcional" : "Optional") : (lang === "es" ? "Requerido" : "Required")} · {lang === "es" ? "máx" : "max"} {curVidModel.maxInputSec || 15}s</span></p>
                       {vidRefVideo ? (
                         <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(232,196,58,.25)" }}>
                           <video src={vidRefVideo.preview} muted playsInline style={{ width: "100%", height: 110, objectFit: "cover", display: "block" }} />
@@ -2800,7 +2859,7 @@ export default function App() {
                             setGenError("");
                             const preview = URL.createObjectURL(f);
                             const dur = await new Promise(r => { const v = document.createElement("video"); v.preload = "metadata"; v.onloadedmetadata = () => r(v.duration); v.onerror = () => r(0); v.src = preview; });
-                            if (dur > curVidModel.fixedSec + 0.5) { setGenError(lang === "es" ? `El video dura ${dur.toFixed(1)}s. Máximo ${curVidModel.fixedSec}s.` : `Video is ${dur.toFixed(1)}s. Max ${curVidModel.fixedSec}s.`); return; }
+                            const maxIn = curVidModel.maxInputSec || 15; if (dur > maxIn + 0.5) { setGenError(lang === "es" ? `El video dura ${dur.toFixed(1)}s. Máximo ${maxIn}s.` : `Video is ${dur.toFixed(1)}s. Max ${maxIn}s.`); return; }
                             setVidRefUploading(true);
                             try { const url = await uploadVideoToStorage(f); setVidRefVideo({ file: f, url, preview, duration: dur }); }
                             catch (err) { setGenError(err.message); }
@@ -2811,9 +2870,35 @@ export default function App() {
                     </div>
                   )}
 
+                  {/* Omni references (Seedance 2.5) */}
+                  {curVidMode === "omni" && (
+                    <div style={{ marginBottom: 14, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.04)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <p style={{ fontSize: 11, color: "#e0e0f0", margin: 0, fontWeight: 500 }}>🖼️ {lang === "es" ? "Imágenes de referencia" : "Reference images"} <span style={{ fontSize: 9, color: "#5a5a70", fontWeight: 400 }}>· @Image1…</span></p>
+                        <span style={{ fontSize: 9, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>{vidOmniImages.length}/8</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {vidOmniImages.map((f, i) => (
+                          <div key={i} style={{ position: "relative", width: 48, height: 48, borderRadius: 6, overflow: "hidden", border: "1px solid rgba(232,196,58,.2)" }}>
+                            <img src={URL.createObjectURL(f)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            <span style={{ position: "absolute", bottom: 0, left: 0, right: 0, fontSize: 8, textAlign: "center", background: "rgba(0,0,0,.6)", color: "#fff" }}>@Image{i + 1}</span>
+                            <button onClick={() => setVidOmniImages(p => p.filter((_, j) => j !== i))} style={{ position: "absolute", top: -2, right: -2, width: 16, height: 16, borderRadius: "50%", background: "#ff4d6a", border: "none", color: "#fff", fontSize: 9, cursor: "pointer" }}>×</button>
+                          </div>
+                        ))}
+                        {vidOmniImages.length < 8 && (
+                          <label style={{ width: 48, height: 48, borderRadius: 6, border: "1px dashed rgba(232,196,58,.3)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, color: "#6a6a82" }}>
+                            +
+                            <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={e => { const fs = Array.from(e.target.files || []); setVidOmniImages(p => [...p, ...fs].slice(0, 8)); e.target.value = ""; }} />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {curVidMode === "frames" && (<>
                   {/* Start & End Frames */}
-                  <div style={{ marginBottom: 14, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: `1px solid ${curVidModel.needsImage && !startFrame ? "rgba(232,196,58,.3)" : "rgba(255,255,255,.04)"}` }}>
-                    <p style={{ fontSize: 11, color: "#e0e0f0", margin: "0 0 8px", fontWeight: 500 }}>🖼️ {curVidModel.needsVideo ? (lang === "es" ? "Imagen de referencia" : "Reference image") : (curVidModel.endFrame || curVidModel.kind === "seedance") ? "Frames de inicio / final" : (lang === "es" ? "Frame inicial" : "Start frame")} <span style={{ fontSize: 9, color: curVidModel.needsImage ? "#e8c23a" : "#5a5a70", fontWeight: 400 }}>· {curVidModel.needsImage ? (lang === "es" ? "Requerido" : "Required") : (lang === "es" ? "Opcional" : "Optional")}</span></p>
+                  <div style={{ marginBottom: 14, padding: "12px", borderRadius: 10, background: "rgba(255,255,255,.02)", border: `1px solid ${curVidNeedsImage && !startFrame ? "rgba(232,196,58,.3)" : "rgba(255,255,255,.04)"}` }}>
+                    <p style={{ fontSize: 11, color: "#e0e0f0", margin: "0 0 8px", fontWeight: 500 }}>🖼️ {curVidModel.needsVideo ? (lang === "es" ? "Imagen de referencia" : "Reference image") : (curVidModel.endFrame || curVidModel.kind === "seedance") ? "Frames de inicio / final" : (lang === "es" ? "Frame inicial" : "Start frame")} <span style={{ fontSize: 9, color: curVidNeedsImage ? "#e8c23a" : "#5a5a70", fontWeight: 400 }}>· {curVidNeedsImage ? (lang === "es" ? "Requerido" : "Required") : (lang === "es" ? "Opcional" : "Optional")}</span></p>
                     <div style={{ display: "flex", gap: 10 }}>
                       {/* Start frame */}
                       <div style={{ flex: 1 }}>
@@ -2847,6 +2932,7 @@ export default function App() {
                       </div>}
                     </div>
                   </div>
+                  </>)}
                 </>
               )}
 
@@ -4316,7 +4402,7 @@ export default function App() {
             const atLimit = activeJobs.length >= jobLimit;
             return (
             <div style={{ padding: "12px 14px 16px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0d0d14", flexShrink: 0 }}>
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || atLimit || (tab === T.VID && curVidModel.needsImage && !startFrame) || (tab === T.VID && curVidModel.needsVideo && !vidRefVideo?.url) || vidRefUploading || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost))}
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || atLimit || (tab === T.VID && curVidNeedsImage && !startFrame) || (tab === T.VID && (curVidModel.needsVideo || curVidMode === "extend") && !vidRefVideo?.url) || (tab === T.VID && curVidMode === "omni" && !vidRefVideo?.url && vidOmniImages.length === 0) || vidRefUploading || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost))}
                 style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
                 {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? curImgCost : curVidCost; const have = profile?.credits ?? 0; return have < c ? (lang === "es" ? `Sin créditos suficientes (${c} necesarios)` : `Not enough credits (${c} needed)`) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : "Generar video"} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : "Generate video"} · ⚡ ${c}`); })()}
               </button>

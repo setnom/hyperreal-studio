@@ -5,29 +5,53 @@
 // fal prices checked Nov 2026 (audio ON = worst case). Re-check when fal changes prices.
 export const MIN_REVENUE_PER_CREDIT = 0.02;
 
-// perSec = credits per second · falPerSec = fal USD/second (720p, audio on)
+// res: per-resolution pricing. perSec = credits/second · fal = fal USD/second (worst case, audio on)
+//      vin = credits per BILLED second when a video is attached (fal bills input+output seconds × 0.6)
+// durRange: [min,max] seconds for the slider · durOptions: fixed choices when the model only takes those
+// modes (Seedance 2.5): frames = text/first-last frame · omni = references (images+video) · extend = continue a video
 export const VIDEO_MODELS = [
   // ── Kling ──
-  { id: "kling3_std",   family: "Kling", name: "Kling 3.0",            badge: "Standard", perSec: 12, falPerSec: 0.126, kind: "kling3",
+  { id: "kling3_std",   family: "Kling", name: "Kling 3.0",       badge: "Standard", kind: "kling3", durRange: [3, 15],
+    res: { "720p": { perSec: 12, fal: 0.126 } }, defRes: "720p",
     t2v: "fal-ai/kling-video/v3/standard/text-to-video", i2v: "fal-ai/kling-video/v3/standard/image-to-video", endFrame: true },
-  { id: "kling3_pro",   family: "Kling", name: "Kling 3.0 Pro",        badge: "Pro",      perSec: 15, falPerSec: 0.168, kind: "kling3",
+  { id: "kling3_pro",   family: "Kling", name: "Kling 3.0 Pro",   badge: "Pro",      kind: "kling3", durRange: [3, 15],
+    res: { "1080p": { perSec: 15, fal: 0.168 },
+           "4K":    { perSec: 36, fal: 0.42, t2v: "fal-ai/kling-video/v3/4k/text-to-video", i2v: "fal-ai/kling-video/v3/4k/image-to-video" } }, defRes: "1080p",
     t2v: "fal-ai/kling-video/v3/pro/text-to-video", i2v: "fal-ai/kling-video/v3/pro/image-to-video", endFrame: true },
-  { id: "kling3_turbo", family: "Kling", name: "Kling 3.0 Turbo",      badge: "Rápido",   perSec: 15, falPerSec: 0.168, kind: "kling3",
+  { id: "kling3_turbo", family: "Kling", name: "Kling 3.0 Turbo", badge: "Rápido",   kind: "kling3", durOptions: [5, 10],
+    res: { "1080p": { perSec: 15, fal: 0.168 } }, defRes: "1080p",
     i2v: "fal-ai/kling-video/v3/turbo/pro/image-to-video", needsImage: true },
-  { id: "kling_o3",     family: "Kling", name: "Kling 3.0 Omni",       badge: "Omni",     perSec: 13, falPerSec: 0.14,  kind: "kling3",
+  { id: "kling_o3",     family: "Kling", name: "Kling 3.0 Omni",  badge: "Omni",     kind: "kling3", durRange: [3, 15],
+    res: { "1080p": { perSec: 13, fal: 0.14 },
+           "4K":    { perSec: 36, fal: 0.42, i2v: "fal-ai/kling-video/o3/4k/image-to-video", needsImage: true } }, defRes: "1080p",
     t2v: "fal-ai/kling-video/o3/pro/text-to-video", i2v: "fal-ai/kling-video/o3/pro/image-to-video", endFrame: true },
-  { id: "kling_o3_edit",family: "Kling", name: "Kling 3.0 Omni Edit",  badge: "Editar video", perSec: 11, falPerSec: 0.126, kind: "klingEdit",
-    v2v: "fal-ai/kling-video/o3/standard/video-to-video/edit", needsVideo: true, fixedSec: 10 },
-  { id: "kling4",       family: "Kling", name: "Kling 4.0",            badge: "Nuevo",    perSec: 16, falPerSec: 0.157, kind: "kling4",
+  { id: "kling_o3_edit",family: "Kling", name: "Kling 3.0 Omni Edit", badge: "Editar video", kind: "klingEdit", maxInputSec: 10,
+    res: { "720p": { perSec: 11, fal: 0.126 } }, defRes: "720p",
+    v2v: "fal-ai/kling-video/o3/standard/video-to-video/edit", needsVideo: true },
+  { id: "kling4",       family: "Kling", name: "Kling 4.0",       badge: "Nuevo",    kind: "kling4", durOptions: [5, 10],
+    res: { "720p": { perSec: 16, fal: 0.157 }, "1080p": { perSec: 24, fal: 0.235 } }, defRes: "720p",
     t2v: "kling/v4/text-to-video", i2v: "kling/v4/image-to-video" },
   // ── Seedance ──
-  { id: "seedance25",   family: "Seedance", name: "Seedance 2.5",      badge: "Top",      perSec: 40, falPerSec: 0.473, kind: "seedance",
-    t2v: "bytedance/seedance-2.5/text-to-video", i2v: "bytedance/seedance-2.5/image-to-video" },
-  { id: "seedance2",    family: "Seedance", name: "Seedance 2.0",      badge: "",         perSec: 26, falPerSec: 0.303, kind: "seedance",
+  { id: "seedance25",   family: "Seedance", name: "Seedance 2.5", badge: "Top", kind: "seedance", durRange: [4, 30],
+    res: { "480p": { perSec: 19, fal: 0.2205, vin: 12 }, "720p": { perSec: 40, fal: 0.473, vin: 24 } }, defRes: "720p",
+    modes: ["frames", "omni", "extend"], maxInputSec: 15,
+    t2v: "bytedance/seedance-2.5/text-to-video", i2v: "bytedance/seedance-2.5/image-to-video", ref: "bytedance/seedance-2.5/reference-to-video" },
+  { id: "seedance2",    family: "Seedance", name: "Seedance 2.0", badge: "",    kind: "seedance", durRange: [4, 15],
+    res: { "480p": { perSec: 13, fal: 0.141 }, "720p": { perSec: 26, fal: 0.303 }, "1080p": { perSec: 58, fal: 0.682 } }, defRes: "720p",
     t2v: "bytedance/seedance-2.0/text-to-video", i2v: "bytedance/seedance-2.0/image-to-video" },
-  { id: "seedance2_fast", family: "Seedance", name: "Seedance 2.0 Fast", badge: "Rápido", perSec: 21, falPerSec: 0.242, kind: "seedance",
+  { id: "seedance2_fast", family: "Seedance", name: "Seedance 2.0 Fast", badge: "Rápido", kind: "seedance", durRange: [4, 15],
+    res: { "480p": { perSec: 10, fal: 0.113 }, "720p": { perSec: 21, fal: 0.242 } }, defRes: "720p",
     t2v: "bytedance/seedance-2.0/fast/text-to-video", i2v: "bytedance/seedance-2.0/fast/image-to-video" },
 ];
+
+export const modelResolutions = (m) => Object.keys(m.res);
+export const pickRes = (m, res) => (m.res[res] ? res : m.defRes);
+export function clampDuration(m, sec) {
+  const n = Math.round(Number(sec) || 5);
+  if (m.durOptions) return m.durOptions.includes(n) ? n : m.durOptions[0];
+  if (m.durRange) return Math.min(m.durRange[1], Math.max(m.durRange[0], n));
+  return 5;
+}
 
 // cost: number or { "1K","2K","4K" } · costWithRefs: price when reference images are sent
 export const IMAGE_MODELS = [
@@ -51,9 +75,13 @@ export const IMAGE_MODELS = [
 export const findVideoModel = (id) => VIDEO_MODELS.find(m => m.id === id) || VIDEO_MODELS[0];
 export const findImageModel = (id) => IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0];
 
-export function videoCredits(model, durationSec) {
-  const sec = model.fixedSec || Math.max(5, Number(durationSec) || 5);
-  return model.perSec * sec;
+// inputSec = seconds of attached video (omni / extend / edit). Server re-measures it — never trusts the client.
+export function videoCredits(model, durationSec, res, inputSec = 0, mode = "frames") {
+  const r = model.res[pickRes(model, res)];
+  if (model.kind === "klingEdit") return r.perSec * Math.max(3, Math.ceil(inputSec || model.maxInputSec));
+  const out = clampDuration(model, durationSec);
+  if (inputSec > 0 && r.vin && (mode === "omni" || mode === "extend")) return Math.ceil(r.vin * (out + Math.ceil(inputSec)));
+  return r.perSec * out;
 }
 
 export function imageCredits(model, resolution = "1K", hasRefs = false) {

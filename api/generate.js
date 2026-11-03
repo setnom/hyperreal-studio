@@ -1,5 +1,6 @@
 import { deductCredits, addCredits, insufficientMsg } from "./_credits.js";
-import { VIDEO_MODELS, IMAGE_MODELS, findImageModel, videoCredits, imageCredits } from "./_models.js";
+import { VIDEO_MODELS, IMAGE_MODELS, findImageModel, videoCredits, imageCredits, clampDuration, pickRes } from "./_models.js";
+import { probeVideoSeconds } from "./_media.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
@@ -108,7 +109,7 @@ export default async function handler(req, res) {
   if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
   const { type, prompt: rawPrompt, user_prompt: rawUserPrompt, aspect_ratio, style_id, image_quality, duration, audio,
-          image_urls, start_frame, end_frame, multishot, max_realism, model_id, video_url, user_token } = req.body || {};
+          image_urls, start_frame, end_frame, multishot, max_realism, model_id, video_url, resolution, mode, user_token } = req.body || {};
 
   // Validate style_id against allowed values only
   const VALID_STYLE_IDS = ["photorealistic", "cinematic", "product", "portrait", "pixar", "ads", "neutral", "restore", "colorize"];
@@ -190,12 +191,31 @@ export default async function handler(req, res) {
   const hasEnd   = typeof end_frame   === "string" && isSafeImageUrl(end_frame);
   const hasVideo = typeof video_url === "string" && isSafeImageUrl(video_url);
 
-  if (isVid && vModel.needsImage && !hasStart)
-    return res.status(400).json({ error: `${vModel.name} necesita una imagen inicial. / requires a start image.` });
-  if (isVid && vModel.needsVideo && !hasVideo)
-    return res.status(400).json({ error: `${vModel.name} necesita un video. / requires a video.` });
+  // Video settings: per-model duration range, resolution and mode (credits pay per second — no plan cap)
+  const vDur  = isVid ? clampDuration(vModel, duration) : 0;
+  const vRes  = isVid ? pickRes(vModel, resolution) : null;
+  const vR    = isVid ? vModel.res[vRes] : null;
+  const vMode = isVid && vModel.modes?.includes(mode) ? mode : "frames";
+  const usesVideo = isVid && (vModel.needsVideo || vMode === "extend" || (vMode === "omni" && hasVideo));
 
-  const creditCost = isVid ? videoCredits(vModel, allowedDuration) : imageCredits(iModel, imageResolution, hasRefs);
+  if (isVid && (vModel.needsImage || vR.needsImage) && !hasStart)
+    return res.status(400).json({ error: `${vModel.name} ${vRes} necesita una imagen inicial. / requires a start image.` });
+  if (isVid && (vModel.needsVideo || vMode === "extend") && !hasVideo)
+    return res.status(400).json({ error: `${vModel.name} necesita un video. / requires a video.` });
+  if (isVid && vMode === "omni" && !hasVideo && refList.length === 0 && !hasStart)
+    return res.status(400).json({ error: "Omni necesita al menos una imagen o un video de referencia. / needs at least one reference." });
+
+  // Measure attached video on the server — bill input seconds (fal charges them). Unreadable → bill the maximum.
+  let inputSec = 0;
+  if (usesVideo) {
+    const measured = await probeVideoSeconds(video_url);
+    const maxIn = vModel.maxInputSec || 15;
+    if (measured && measured > maxIn + 0.5)
+      return res.status(400).json({ error: `El video dura ${measured.toFixed(1)}s. Máximo ${maxIn}s. / Video too long.` });
+    inputSec = measured ? Math.ceil(measured) : maxIn;
+  }
+
+  const creditCost = isVid ? videoCredits(vModel, vDur, vRes, inputSec, vMode) : imageCredits(iModel, imageResolution, hasRefs);
   if (creditsBalance < creditCost)
     return res.status(403).json({ error: insufficientMsg(creditCost, creditsBalance) });
 
@@ -253,30 +273,45 @@ export default async function handler(req, res) {
       if (refs.length) body.image_urls = refs;
     } else {
       const m = vModel;
-      const dur = String(m.fixedSec || allowedDuration);
+      const t2v = vR.t2v || m.t2v, i2v = vR.i2v || m.i2v;
+      const dur = String(vDur);
       if (m.kind === "klingEdit") {
         endpoint = m.v2v;
         body = { prompt, video_url };
-        const vrefs = Array.isArray(image_urls) ? image_urls.filter(u => typeof u === "string" && isSafeImageUrl(u)).slice(0, 4) : [];
+        const vrefs = refList.slice(0, 4);
         if (hasStart) vrefs.unshift(start_frame);
         if (vrefs.length) body.image_urls = vrefs;
       } else if (m.kind === "seedance") {
-        endpoint = hasStart && m.i2v ? m.i2v : m.t2v;
-        body = { prompt, duration: dur, aspect_ratio: safeRatio, resolution: "720p", generate_audio: true, enable_safety_checker: true, end_user_id: userId };
-        if (hasStart) body.image_url = start_frame;
-        if (hasEnd)   body.end_image_url = end_frame;
+        const base = { duration: dur, resolution: vRes, aspect_ratio: safeRatio, generate_audio: true, enable_safety_checker: true, end_user_id: userId };
+        if (vMode === "omni") {
+          endpoint = m.ref;
+          const imgs = [...(hasStart ? [start_frame] : []), ...refList].slice(0, 9);
+          body = { prompt, ...base };
+          if (imgs.length) body.image_urls = imgs;
+          if (hasVideo) body.video_urls = [video_url];
+        } else if (vMode === "extend") {
+          endpoint = m.ref;
+          body = { prompt: `Extend @Video1 forward, continuing seamlessly from its last frame. ${prompt}`, ...base, video_urls: [video_url] };
+          delete body.aspect_ratio; // locked to the input video
+        } else {
+          endpoint = hasStart && i2v ? i2v : t2v;
+          body = { prompt, ...base };
+          if (hasStart) body.image_url = start_frame;
+          if (hasEnd)   body.end_image_url = end_frame;
+        }
       } else {
         // kling3 / kling4 family
-        const useI2V = (hasStart || m.needsImage) && m.i2v;
-        endpoint = useI2V ? m.i2v : m.t2v;
+        const useI2V = (hasStart || m.needsImage || vR.needsImage) && i2v;
+        endpoint = useI2V ? i2v : t2v;
         body = { prompt, duration: dur, generate_audio: audio === true };
         if (!useI2V) body.aspect_ratio = safeRatio;
+        if (m.kind === "kling4" && vRes === "1080p") body.resolution = "1080p";
         if (hasStart) { body.start_image_url = start_frame; body.image_url = start_frame; }
         if (hasEnd && m.endFrame) body.end_image_url = end_frame;
       }
       if (!endpoint) throw new Error(`Model ${m.id} has no endpoint for this input`);
     }
-    console.log(`generate: model=${isVid ? vModel.id : iModel.id} endpoint=${endpoint} credits=${creditCost} user=${userId}`);
+    console.log(`generate: model=${isVid ? `${vModel.id} ${vRes} ${vMode} ${vDur}s in=${inputSec}s` : iModel.id} endpoint=${endpoint} credits=${creditCost} user=${userId}`);
 
     const WEBHOOK_URL = "https://nanobanano.studio/api/webhook?source=fal";
     const falRes = await fetch(`https://queue.fal.run/${endpoint}?fal_webhook=${encodeURIComponent(WEBHOOK_URL)}`, {
