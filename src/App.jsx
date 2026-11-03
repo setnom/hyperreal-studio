@@ -1405,13 +1405,24 @@ export default function App() {
     const ext = (file.name.split(".").pop() || "mp4").toLowerCase();
     const uid = session?.user?.id || profile?.userId || profile?.id;
     if (!uid) throw new Error("Not authenticated");
-    const path = `${uid}/${Date.now()}.${ext}`;
+    const MAX_VID_MB = 50; // Supabase storage limit per file
+    if (file.size > MAX_VID_MB * 1024 * 1024) throw new Error(lang === "es" ? `El archivo pesa ${Math.round(file.size / 1048576)}MB. Máximo ${MAX_VID_MB}MB — expórtalo en 720p/1080p o recórtalo.` : `File is ${Math.round(file.size / 1048576)}MB. Max ${MAX_VID_MB}MB — export at 720p/1080p or trim it.`);
+    const safeExt = ext === "mov" || ext === "qt" ? "mov" : ext === "webm" ? "webm" : ext === "m4v" ? "m4v" : ext.match(/^(mp3|wav|m4a|aac|ogg)$/) ? ext : "mp4";
+    const ctype = file.type || (safeExt === "mov" ? "video/quicktime" : safeExt === "webm" ? "video/webm" : "video/mp4");
+    const path = `${uid}/${Date.now()}.${safeExt}`;
     const up = await fetch(`${SB_URL}/storage/v1/object/motion-refs/${path}`, {
       method: "POST",
-      headers: { apikey: SB_KEY, Authorization: `Bearer ${session.access_token}`, "Content-Type": file.type, "x-upsert": "true" },
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${session.access_token}`, "Content-Type": ctype, "x-upsert": "true" },
       body: file,
     });
-    if (!up.ok) throw new Error(`Upload error: ${up.status}`);
+    if (!up.ok) {
+      const body = await up.text().catch(() => "");
+      let msg = body; try { const j = JSON.parse(body); msg = j.message || j.error || body; } catch {}
+      console.error("Storage upload failed", up.status, body);
+      if (/mime|content.?type/i.test(msg)) throw new Error(lang === "es" ? `Formato no permitido (${ctype}). Usa MP4 o MOV.` : `Format not allowed (${ctype}). Use MP4 or MOV.`);
+      if (/size|large|exceed/i.test(msg)) throw new Error(lang === "es" ? `Archivo demasiado pesado (${Math.round(file.size / 1048576)}MB).` : `File too large (${Math.round(file.size / 1048576)}MB).`);
+      throw new Error(`Upload error ${up.status}${msg ? `: ${String(msg).slice(0, 120)}` : ""}`);
+    }
     const sign = await fetch(`${SB_URL}/storage/v1/object/sign/motion-refs/${path}`, {
       method: "POST",
       headers: { apikey: SB_KEY, Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
@@ -3144,7 +3155,9 @@ export default function App() {
   const jutsuModel = findVideoModel("nanojutsu");
   const jutsuMd = pickMode(jutsuModel, jutsuMode);
   const jutsuResNow = pickRes(jutsuModel, jutsuRes);
-  const curJutsuCost = videoCredits(jutsuModel, 0, jutsuResNow, jutsuVideo?.duration || 0, jutsuMd.id);
+  const jutsuSecs = jutsuVideo?.duration || 0;
+  const curJutsuCost = jutsuSecs ? videoCredits(jutsuModel, 0, jutsuResNow, jutsuSecs, jutsuMd.id) : 0; // 0 = no video yet → nothing to charge
+  const jutsuFrom = videoCredits(jutsuModel, 0, jutsuResNow, jutsuMd.minSourceSec || 4, jutsuMd.id);   // price of the shortest clip
   const curJutsuBlocked = !jutsuVideo?.url || jutsuImages.length === 0 || vidRefUploadingN > 0;
 
   const renderJutsuPanel = () => {
@@ -3260,7 +3273,7 @@ export default function App() {
         <button onClick={() => setVidPop(vidPop === "jres" ? null : "jres")} style={{ ...card, width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", marginBottom: 8, cursor: "pointer", fontFamily: "inherit", textAlign: "left", borderColor: vidPop === "jres" ? "rgba(232,196,58,.4)" : "rgba(255,255,255,.06)" }}>
           <span>
             <span style={{ display: "block", fontSize: 10, color: "#6a6a82" }}>{lang === "es" ? "Calidad" : "Quality"}</span>
-            <span style={{ display: "block", fontSize: 14, color: "#e8e8f0", fontWeight: 500, marginTop: 2 }}>{jutsuResNow}</span>
+            <span style={{ display: "block", fontSize: 14, color: "#e8e8f0", fontWeight: 500, marginTop: 2 }}>{jutsuResNow} <span style={{ fontSize: 11, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace", marginLeft: 6 }}>{jutsuSecs ? `⚡ ${curJutsuCost}` : `${lang === "es" ? "desde" : "from"} ⚡ ${jutsuFrom}`}</span></span>
           </span>
           <span style={{ color: "#5a5a78" }}>›</span>
         </button>
@@ -3271,12 +3284,12 @@ export default function App() {
               <button key={k} onClick={() => { setJutsuRes(k); setVidPop(null); }} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 10px", borderRadius: 8, border: "none", background: jutsuResNow === k ? "rgba(255,255,255,.06)" : "transparent", color: "#e8e8f0", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
                 <span>{k}</span>
                 <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <span style={{ fontSize: 10, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>⚡{r.vin * 2}/s</span>
+                  <span style={{ fontSize: 10, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>{jutsuSecs ? `⚡${videoCredits(jutsuModel, 0, k, jutsuSecs, jutsuMd.id)} · ${Math.ceil(jutsuSecs)}s` : `⚡${r.vin * 2}/s`}</span>
                   {jutsuResNow === k && <span>✓</span>}
                 </span>
               </button>
             ))}
-            <p style={{ fontSize: 10, color: "#5a5a78", margin: "6px 10px 4px" }}>{lang === "es" ? "Se cobra por segundo del video que subes (entrada + salida)." : "Charged per second of your uploaded video (input + output)."}</p>
+            <p style={{ fontSize: 10, color: "#5a5a78", margin: "6px 10px 4px" }}>{lang === "es" ? "Se cobra por segundo del video que subes (entrada + salida). Un clip corto en 480p es lo más barato; 1080p cuesta ~5× más." : "Charged per second of your uploaded video (input + output). A short 480p clip is cheapest; 1080p costs ~5× more."}</p>
           </div>
         )}
       </div>
@@ -4328,7 +4341,7 @@ export default function App() {
             <div style={{ padding: "12px 14px 16px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0d0d14", flexShrink: 0 }}>
               <button onClick={!hasPlan ? () => setPage(P.PLANS) : needTopUp ? () => (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? setShowTopUpMenu(true) : setPage(P.PLANS)) : handleGen} disabled={!needTopUp && hasPlan && (genBtnLocked || atLimit || (tab === T.VID && curVidBlocked) || (tab === T.VID_EDIT && curJutsuBlocked) || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost))}
                 style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : atLimit || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : atLimit || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: atLimit || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
-                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? curImgCost : tab === T.VID_EDIT ? curJutsuCost : curVidCost; const have = profile?.credits ?? 0; const vLabel = tab === T.VID_EDIT ? (lang === "es" ? "Generar" : "Generate") : curVidModel.draft ? (lang === "es" ? "Generar borrador" : "Generate draft") : (lang === "es" ? "Generar" : "Generate"); return have < c ? (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? (lang === "es" ? `⚡ Recargar créditos · necesitas ${c}` : `⚡ Top up credits · need ${c}`) : (lang === "es" ? `Mejorar plan · necesitas ${c} créditos` : `Upgrade plan · need ${c} credits`)) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : vLabel} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : vLabel} · ⚡ ${c}`); })()}
+                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? curImgCost : tab === T.VID_EDIT ? curJutsuCost : curVidCost; const have = profile?.credits ?? 0; if (tab === T.VID_EDIT && !c) return lang === "es" ? `Sube un video · desde ⚡ ${jutsuFrom}` : `Upload a video · from ⚡ ${jutsuFrom}`; const vLabel = tab === T.VID_EDIT ? (lang === "es" ? "Generar" : "Generate") : curVidModel.draft ? (lang === "es" ? "Generar borrador" : "Generate draft") : (lang === "es" ? "Generar" : "Generate"); return have < c ? (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? (lang === "es" ? `⚡ Recargar créditos · necesitas ${c}` : `⚡ Top up credits · need ${c}`) : (lang === "es" ? `Mejorar plan · necesitas ${c} créditos` : `Upgrade plan · need ${c} credits`)) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : vLabel} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : vLabel} · ⚡ ${c}`); })()}
               </button>
               {activeJobs.length > 0 && <div style={{ marginTop: 9, fontSize: 11, color: "#6a6a82", textAlign: "center" }}>{lang === "es" ? `${activeJobs.length}/${jobLimit} generando · puedes seguir creando` : `${activeJobs.length}/${jobLimit} generating · keep creating`}</div>}
               {genError && <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 7, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", textAlign: "center" }}>
