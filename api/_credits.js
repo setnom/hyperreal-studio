@@ -62,3 +62,20 @@ export async function addCredits(userId, amount, key) {
 export function insufficientMsg(need, have) {
   return `No tenés créditos suficientes. Necesitás ${need}, tenés ${have}. / Not enough credits. Need ${need}, have ${have}.`;
 }
+
+// Classify a failure for the UI chip: "nsfw" (content blocked) | "error"
+export function classifyFailure(msg = "") {
+  const m = String(msg).toLowerCase();
+  return /nsfw|sensitive|safety|harmful|likeness|real people|private information|content polic|moderat|blocked|seguridad|sensible|personas reales|bloque/.test(m) ? "nsfw" : "error";
+}
+
+// Mark a generation failed + refunded (extra columns may not exist yet → best effort, never blocks the refund)
+export async function tagFailure(genId, reason, refunded, key) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, {
+      method: "PATCH",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ fail_reason: reason, refunded }),
+    });
+  } catch {}
+}

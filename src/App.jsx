@@ -1084,7 +1084,7 @@ export default function App() {
           }
           setGens(prev => prev.map(gen =>
             stale.find(s => s.id === gen.id) ? { ...gen, status: "failed" } : gen
-          ).filter(gen => gen.status !== "failed"));
+          ).filter(gen => gen.status !== "dismissed"));
         }
 
         // ── Recover ALL pending generations silently ──────────────────────
@@ -1628,7 +1628,8 @@ export default function App() {
           }
 
           if (statusData.status === "FAILED") { // with error refresh
-            setGenError("La generación falló. Intenta con otro prompt.");
+            setGenError(statusData.error || "La generación falló. Intenta con otro prompt.");
+            setTimeout(reloadGens, 1200);
             endJob();
             setGenStatus({ phase: "idle", position: null, elapsed: 0 });
             return;
@@ -1658,6 +1659,21 @@ export default function App() {
     }
   };
 
+  // Reload generations + credits from DB (used after failures so the failed tile and refund show up)
+  const reloadGens = async () => {
+    try {
+      const u = await sb.getUser(session.access_token);
+      if (!u?.id) return;
+      const [p, g] = await Promise.all([sb.getProfile(u.id, session.access_token), sb.getGens(u.id, session.access_token)]);
+      if (p) setProfile(prev => ({ ...prev, credits: p.credits }));
+      if (Array.isArray(g)) setGens(g.map(gen => ({ ...gen, url: gen.result_url && !gen.result_url.includes("|") ? gen.result_url : gen.url })));
+    } catch {}
+  };
+  const dismissFailed = async (g) => {
+    setGens(prev => prev.filter(x => x.id !== g.id));
+    try { await fetch(`${SB_URL}/rest/v1/generations?id=eq.${g.id}`, { method: "PATCH", headers: { ...hdr(session.access_token), Prefer: "return=minimal" }, body: JSON.stringify({ status: "dismissed" }) }); } catch {}
+  };
+
   // Seedance 2.5 Draft → render the same take in 1080p (charged server-side from the saved duration)
   const handleDraftComplete = async (item) => {
     if (!session || !item?.id) return;
@@ -1681,7 +1697,7 @@ export default function App() {
             body: JSON.stringify({ request_id: d.request_id, endpoint: d.endpoint, type: "video", user_token: session.access_token, status_url: d.status_url, response_url: d.response_url }) });
           const sd = await sr.json();
           if (sd.status === "COMPLETED" && sd.url) { endJob(); playDoneSound(); await saveGenResult(true, { ...d, url: sd.url }); return; }
-          if (sd.status === "FAILED") { endJob(); setGenError(sd.error || "Error"); return; }
+          if (sd.status === "FAILED") { endJob(); setGenError(sd.error || "Error"); setTimeout(reloadGens, 1200); return; }
         } catch {}
         setTimeout(poll, 4000);
       };
@@ -3369,7 +3385,7 @@ export default function App() {
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
+                    if (sd.status === "FAILED") { setTimeout(reloadGens, 1200); setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
                     setGenStatus({ phase: (sd.position ?? 0) > 0 ? "queued" : "generating", position: sd.position || null, elapsed });
                     setTimeout(poll, 4000);
                   } catch { setTimeout(poll, 5000); }
@@ -3699,7 +3715,7 @@ export default function App() {
                       const sd = await sr.json();
                       const elapsed = Math.round((Date.now() - pollStart) / 1000);
                       if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                      if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
+                      if (sd.status === "FAILED") { setTimeout(reloadGens, 1200); setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
                       setGenStatus({ phase: (sd.position ?? 0) > 0 ? "queued" : "generating", position: sd.position || null, elapsed });
                       setTimeout(poll, 4000);
                     } catch { setTimeout(poll, 5000); }
@@ -4071,7 +4087,7 @@ export default function App() {
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { setGenStatus({ phase: "done", position: null, elapsed }); await saveGenResult(false, { url: sd.url }); playDoneSound(); return; }
-                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
+                    if (sd.status === "FAILED") { setTimeout(reloadGens, 1200); setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
                     setGenStatus({ phase: "generating", position: null, elapsed });
                     setTimeout(poll, 3000);
                   } catch { setTimeout(poll, 5000); }
@@ -4151,7 +4167,7 @@ export default function App() {
 
                 <button onClick={handleWsImgGen} disabled={!canGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#ffb800,#ff8800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(255,184,0,.25)" : "none" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar (1 crédito)" : "✨ Generate (1 credit)")}
+                  {(profile?.credits ?? 0) < 18 && !genning ? (lang === "es" ? "Sin créditos suficientes (18 necesarios)" : "Not enough credits (18 needed)") : genning ? (lang === "es" ? "Generando..." : "Generating...") : wsImgUploading ? "⏳..." : wsImgImages.length === 0 ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsImgPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (lang === "es" ? "✨ Generar · ⚡ 18 créditos" : "✨ Generate · ⚡ 18 credits")}
                 </button>
 
                 {genResult && !genning && tab === T.WS_IMG && (
@@ -4224,7 +4240,7 @@ export default function App() {
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { setGenStatus({ phase: "done", position: null, elapsed }); await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
+                    if (sd.status === "FAILED") { setTimeout(reloadGens, 1200); setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
                     setGenStatus({ phase: "generating", position: null, elapsed });
                     setTimeout(poll, 5000);
                   } catch { setTimeout(poll, 6000); }
@@ -4619,7 +4635,7 @@ export default function App() {
           <div style={{ flex: 1, minWidth: 0, ...(isDesk ? { height: "100%", overflowY: "auto" } : {}), padding: isDesk ? "20px 24px 40px" : "14px", background: "#0a0a0f" }}>
             {(() => {
               const wantType = tab === T.IMG ? "image" : "video";
-              const feed = gens.filter(g => g.type === wantType && (g.status === "processing" ? (activeJobs.length === 0 && Date.now() - new Date(g.created_at).getTime() < 15 * 60 * 1000) : !!g.url));
+              const feed = gens.filter(g => g.type === wantType && (g.status === "processing" ? (activeJobs.length === 0 && Date.now() - new Date(g.created_at).getTime() < 15 * 60 * 1000) : g.status === "failed" ? (Date.now() - new Date(g.created_at).getTime() < 7 * 24 * 3600 * 1000) : (g.status !== "dismissed" && !!g.url)));
               const tile = { position: "relative", aspectRatio: "3 / 4", borderRadius: 10, overflow: "hidden", background: "#13131a", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer" };
               return (
                 <>
@@ -4643,7 +4659,24 @@ export default function App() {
                       ))}
                       {feed.slice(0, visibleCount).map(g => {
                         const gi = gens.indexOf(g);
-                        const ready = g.url && g.status !== "processing";
+                        const ready = g.url && g.status !== "processing" && g.status !== "failed";
+                        if (g.status === "failed") {
+                          const isNsfw = g.fail_reason === "nsfw";
+                          const chip = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.08)", color: "#e8e8f0", fontSize: 12, fontWeight: 600, width: "fit-content" };
+                          return (
+                            <div key={g.id || gi} style={{ ...tile, cursor: "default", background: "linear-gradient(180deg, rgba(120,40,40,.22) 0%, #16161d 28%)", display: "flex", flexDirection: "column", gap: 8, padding: 12 }} title={g.prompt || ""}>
+                              <span style={chip}>{isNsfw ? "🚫 NSFW" : "⚠️ Error"}</span>
+                              {g.refunded
+                                ? <span style={chip}>ⓘ {lang === "es" ? "Créditos reembolsados" : "Credits refunded"}</span>
+                                : <span style={{ ...chip, color: "#9a9ab0", fontWeight: 500 }}>ⓘ {lang === "es" ? "Sin reembolso" : "No refund"}</span>}
+                              {g.prompt && <span style={{ fontSize: 10, color: "#5a5a72", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", marginTop: "auto" }}>{g.prompt}</span>}
+                              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                <button onClick={() => { setPrompt(g.prompt || ""); }} title={lang === "es" ? "Reusar prompt" : "Reuse prompt"} style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", color: "#e8e8f0", cursor: "pointer" }}>↺</button>
+                                <button onClick={() => dismissFailed(g)} title={lang === "es" ? "Quitar" : "Dismiss"} style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", color: "#e8e8f0", cursor: "pointer" }}>✕</button>
+                              </div>
+                            </div>
+                          );
+                        }
                         return (
                           <div key={g.id || gi} onClick={() => ready && openPreview(g, gi)} style={tile}
                             onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,.2)"; }}
@@ -4684,8 +4717,8 @@ export default function App() {
             ) : (
               <>
                 <div style={{ columns: isDesk ? "4 220px" : "2 140px", gap: 8 }}>
-                  {gens.slice(0, visibleCount).map((g, i) => (
-                    <div key={g.id || i} onClick={() => openPreview(g, i)} style={{ breakInside: "avoid", marginBottom: 8, borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "opacity .15s" }} onMouseEnter={e => e.currentTarget.style.opacity = ".8"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
+                  {gens.filter(g => g.status !== "failed" && g.status !== "dismissed").slice(0, visibleCount).map((g, i) => (
+                    <div key={g.id || i} onClick={() => openPreview(g, gens.indexOf(g))} style={{ breakInside: "avoid", marginBottom: 8, borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,.05)", cursor: "pointer", transition: "opacity .15s" }} onMouseEnter={e => e.currentTarget.style.opacity = ".8"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
                       {g.url && g.status !== "processing" ? (
                         g.type === "image" ? <img src={g.url} alt="" loading="lazy" style={{ width: "100%", display: "block" }} onError={e => { e.currentTarget.parentElement.style.display = "none"; }} /> : <video src={g.url} muted style={{ width: "100%", display: "block" }} onMouseEnter={e => e.target.play()} onMouseLeave={e => { e.target.pause(); e.target.currentTime = 0; }} />
                       ) : (

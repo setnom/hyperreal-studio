@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { addCredits, IMG_UNIT, VID_UNIT } from './_credits.js';
+import { addCredits, IMG_UNIT, VID_UNIT, classifyFailure, tagFailure } from './_credits.js';
 
 async function getRawBody(req) {
   const chunks = [];
@@ -238,6 +238,7 @@ export default async function handler(req, res) {
             if (Array.isArray(failed) && failed.length > 0) {
               const amount = failed[0].credits_cost ?? (genRow.type === "image" ? IMG_UNIT : VID_UNIT);
               await addCredits(genRow.user_id, amount, SERVICE_KEY);
+              await tagFailure(genRow.id, classifyFailure(JSON.stringify(falError || payload || "")), true, SERVICE_KEY);
             }
           } catch (e) { console.error("fal-webhook refund error:", e.message); }
         }

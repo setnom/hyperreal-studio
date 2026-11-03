@@ -1,5 +1,5 @@
 // Wavespeed AI — unified: Seedream 4.5 Edit + WAN 2.6 I2V Pro + polling
-import { COSTS, deductCredits, addCredits, insufficientMsg, IMG_UNIT, VID_UNIT } from "./_credits.js";
+import { COSTS, deductCredits, addCredits, insufficientMsg, IMG_UNIT, VID_UNIT, classifyFailure, tagFailure } from "./_credits.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const WS_BASE = "https://api.wavespeed.ai/api/v3";
@@ -46,7 +46,7 @@ function sbH(key) {
 
 // Idempotent refund: only refunds if the generation is still "processing" (marks it failed atomically).
 // Amount comes from credits_cost stored in DB — never from the client.
-async function refundGeneration(userId, genId, type, serviceKey) {
+async function refundGeneration(userId, genId, type, serviceKey, errMsg = "") {
   try {
     if (!genId) return;
     const r = await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}&user_id=eq.${userId}&status=eq.processing`, {
@@ -56,6 +56,7 @@ async function refundGeneration(userId, genId, type, serviceKey) {
     if (!Array.isArray(rows) || rows.length === 0) return; // already refunded / not ours
     const amount = rows[0].credits_cost ?? (rows[0].type === "image" || type === "image" ? IMG_UNIT : VID_UNIT);
     await addCredits(userId, amount, serviceKey);
+    await tagFailure(genId, classifyFailure(errMsg), true, serviceKey);
   } catch(e) { console.error("WS refund error:", e.message); }
 }
 
@@ -277,7 +278,7 @@ async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
     if (!pollRes.ok) {
       const errBody = await pollRes.json().catch(() => ({}));
       const errMsg = humanizeError(errBody?.message || errBody?.error || "Generation failed");
-      await refundGeneration(userId, gen_id, type, SERVICE_KEY);
+      await refundGeneration(userId, gen_id, type, SERVICE_KEY, errMsg);
       return res.status(200).json({ status: "FAILED", error: errMsg });
     }
 
@@ -301,7 +302,7 @@ async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
 
     if (status === "FAILED" || data?.data?.error) {
       const errMsg = humanizeError(data?.data?.error || "Generation failed");
-      await refundGeneration(userId, gen_id, type, SERVICE_KEY);
+      await refundGeneration(userId, gen_id, type, SERVICE_KEY, errMsg);
       return res.status(200).json({ status: "FAILED", error: errMsg });
     }
 

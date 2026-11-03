@@ -1,4 +1,4 @@
-import { addCredits, IMG_UNIT, VID_UNIT } from "./_credits.js";
+import { addCredits, IMG_UNIT, VID_UNIT, classifyFailure, tagFailure } from "./_credits.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
@@ -68,7 +68,8 @@ function humanizeError(msg) {
 }
 
 
-async function refundCredits(userId, endpoint, reqId, serviceKey) {
+// Refund ONLY when fal produced no output (it didn't run / was rejected) — every caller is a no-output path.
+async function refundCredits(userId, endpoint, reqId, serviceKey, errMsg = "") {
   try {
     const searchKey = encodeURIComponent(reqId + "|" + endpoint);
     const findRes = await fetch(
@@ -93,6 +94,7 @@ async function refundCredits(userId, endpoint, reqId, serviceKey) {
     // Refund exactly what this generation cost (credits_cost saved at submit time)
     const refund = found[0].credits_cost ?? (genType === "image" ? IMG_UNIT : VID_UNIT);
     await addCredits(userId, refund, serviceKey);
+    await tagFailure(genId, classifyFailure(errMsg), true, serviceKey);
 
     console.log(`✓ Refunded ${found[0].credits_cost ?? "default"} credits for user ${userId} gen ${genId} type=${genType}`);
   } catch (e) {
@@ -160,7 +162,7 @@ export default async function handler(req, res) {
         const errBody = await statusRes.json().catch(() => ({}));
         const errMsg = humanizeError(extractErrorMessage(errBody));
         console.error(`Status check error ${statusRes.status}: ${errMsg}`);
-        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY, typeof errMsg !== "undefined" ? errMsg : "");
         return res.status(200).json({ status: "FAILED", error: errMsg });
       }
       return res.status(200).json({ status: "IN_PROGRESS" });
@@ -180,7 +182,7 @@ export default async function handler(req, res) {
           const errBody = await resultRes.json().catch(() => ({}));
           const errMsg = humanizeError(extractErrorMessage(errBody));
           console.error(`Result fetch error ${resultRes.status}: ${errMsg}`);
-          if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+          if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY, typeof errMsg !== "undefined" ? errMsg : "");
           return res.status(200).json({ status: "FAILED", error: errMsg });
         }
         return res.status(200).json({ status: "COMPLETED", error: "Could not fetch result" });
@@ -192,7 +194,7 @@ export default async function handler(req, res) {
       if (result?.detail || result?.error || (result?.status === "FAILED")) {
         const errMsg = humanizeError(extractErrorMessage(result));
         console.error(`Generation error in result: ${errMsg}`);
-        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY, typeof errMsg !== "undefined" ? errMsg : "");
         return res.status(200).json({ status: "FAILED", error: errMsg });
       }
 
@@ -202,7 +204,7 @@ export default async function handler(req, res) {
       if (!url) {
         // No URL in result — treat as failure
         const errMsg = humanizeError(extractErrorMessage(result)) || "No output URL in result";
-        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY, typeof errMsg !== "undefined" ? errMsg : "");
         return res.status(200).json({ status: "FAILED", error: errMsg });
       }
 
@@ -240,7 +242,7 @@ export default async function handler(req, res) {
       const errMsg = humanizeError(extractErrorMessage(statusData));
       console.error(`Generation FAILED: ${errMsg} endpoint=${endpoint}`);
       // Refund credits
-      if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY);
+      if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY, typeof errMsg !== "undefined" ? errMsg : "");
       return res.status(200).json({ status: "FAILED", error: errMsg });
     }
 
