@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, Component } from "react";
+import { WS_VID_RATES, WS_VID_DUR, wsVidCredits as wsVidCreditsFor } from "../api/_models.js";
 import { VIDEO_MODELS, IMAGE_MODELS, MODE_LABELS, findVideoModel, findImageModel, videoCredits, imageCredits, clampDuration, pickRes, pickMode, draftCompleteCredits } from "../api/_models.js";
 
 // ─── ERROR BOUNDARY — prevents blank screen on any crash ───
@@ -759,7 +760,7 @@ export default function App() {
   const [wsVidPrompt, setWsVidPrompt] = useState("");
   const [wsVidImage, setWsVidImage] = useState(null);
   const [wsVidDuration, setWsVidDuration] = useState(5);
-  const [wsVidRes, setWsVidRes] = useState("1080p");
+  const [wsVidRes, setWsVidRes] = useState("720p");
   const [wsVidUploading, setWsVidUploading] = useState(false);
   const [wsVidError, setWsVidError] = useState(null);
   // ── VID_EDIT (Cambio de Personaje) states ──────────────────────────────────
@@ -4223,14 +4224,9 @@ export default function App() {
             );
           })()}
 
-          {/* ── Wavespeed Vid Pro (WAN 2.6 I2V Pro) ── */}
+          {/* ── Wavespeed Vid Pro (Seedance 2.5 I2V Spicy) ── */}
           {tab === T.WS_VID && (() => {
-            const wsVidCreditTable = {
-              5:  { "1080p": 2, "2k": 3, "4k": 3 },
-              10: { "1080p": 3, "2k": 4, "4k": 4 },
-              15: { "1080p": 3, "2k": 4, "4k": 5 },
-            };
-            const wsVidCredits = ((wsVidCreditTable[wsVidDuration] || wsVidCreditTable[5])[wsVidRes] ?? 2) * VID_UNIT;
+            const wsVidCredits = wsVidCreditsFor(wsVidDuration, wsVidRes); // Seedance 2.5 Spicy · per second by quality
             const canGen = !genning && !wsVidUploading && wsVidImage?.url && wsVidPrompt.trim() && (profile?.credits ?? 0) >= wsVidCredits;
 
             const uploadWsVid = async (file) => {
@@ -4289,9 +4285,9 @@ export default function App() {
               } catch(e) { setGenError(e.message); setGenning(false); }
             };
 
-            const wsResLabel = { "1080p": "HD 1080p", "2k": "2K", "4k": "4K" };
+            const wsResLabel = { "480p": "480p", "720p": "720p", "1080p": "1080p", "4k": "4K" };
             const wsVidTopUp = hasPlan && (profile?.credits ?? 0) < wsVidCredits && !genning;
-            const wsVidCost = (d, r) => ((wsVidCreditTable[d] || wsVidCreditTable[5])[r] ?? 2) * VID_UNIT;
+            const wsVidCost = (d, r) => wsVidCreditsFor(d, r);
             const wsVidLabel = genning ? LL("Generando...", "Generating...")
               : wsVidUploading ? LL("⏳ Subiendo...", "⏳ Uploading...")
               : !wsVidImage ? LL("Sube una imagen primero", "Upload an image first")
@@ -4299,7 +4295,7 @@ export default function App() {
               : LL("🌊 Generar Vid Pro", "🌊 Generate Vid Pro");
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
-                {uiHero({ video: "vidpro.mp4", title: "Video Pro", name: LL("Video cinemático desde una imagen · hasta 4K", "Cinematic video from one image · up to 4K"), color: "#00c8ff", chip: `⚡ ${wsVidCredits}` })}
+                {uiHero({ video: "vidpro.mp4", title: "Video Pro", name: LL("Seedance 2.5 · video desde una imagen · hasta 4K y 30 s", "Seedance 2.5 · video from one image · up to 4K & 30 s"), color: "#00c8ff", chip: `⚡ ${wsVidCredits}` })}
 
                 {/* Start frame */}
                 <div style={{ ...uiCard, marginBottom: 10, overflow: "hidden" }}>
@@ -4340,8 +4336,14 @@ export default function App() {
                   {uiSetting(LL("Duración", "Duration"), `${wsVidDuration}s`, "wsVidDur")}
                   {uiSetting(LL("Calidad", "Quality"), wsResLabel[wsVidRes] || wsVidRes, "wsVidRes")}
                 </div>
-                {uiPopList("wsVidDur", [5, 10, 15].map(d => ({ id: d, label: `${d}s`, right: `⚡ ${wsVidCost(d, wsVidRes)}` })), wsVidDuration, setWsVidDuration)}
-                {uiPopList("wsVidRes", ["1080p", "2k", "4k"].map(r => ({ id: r, label: wsResLabel[r], right: `⚡ ${wsVidCost(wsVidDuration, r)}` })), wsVidRes, setWsVidRes)}
+                {uiPop === "wsVidDur" && (
+                  <div style={{ ...uiCard, padding: 12, marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#e8e8f0", marginBottom: 6 }}><span>{wsVidDuration}s</span><span style={{ color: "#e8c23a" }}>⚡ {wsVidCredits}</span></div>
+                    <input type="range" min={WS_VID_DUR[0]} max={WS_VID_DUR[1]} step={1} value={wsVidDuration} onChange={e => setWsVidDuration(Number(e.target.value))} style={{ width: "100%", accentColor: "#e8f542", cursor: "pointer" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#5a5a78" }}><span>{WS_VID_DUR[0]}s</span><span>{WS_VID_DUR[1]}s</span></div>
+                  </div>
+                )}
+                {uiPopList("wsVidRes", Object.keys(WS_VID_RATES).map(r => ({ id: r, label: wsResLabel[r], sub: `⚡ ${WS_VID_RATES[r].perSec}/s`, right: `⚡ ${wsVidCost(wsVidDuration, r)}` })), wsVidRes, setWsVidRes)}
 
                 {uiGenerating(T.WS_VID, wsVidDuration)}
                 {tab === T.WS_VID && uiResult(true, "Video Pro", "nanobanano-vid-pro")}

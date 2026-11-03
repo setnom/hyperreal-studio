@@ -198,3 +198,17 @@ export function imageCredits(model, resolution = "1K", hasRefs = false, opts = {
   if (hasRefs && model.costWithRefs) return model.costWithRefs;
   return typeof model.cost === "number" ? model.cost : (model.cost[resolution] ?? model.cost["1K"]);
 }
+
+// ─── Vid Pro (Wavespeed · bytedance/seedance-2.5/image-to-video-spicy) ───
+// Juan's real cost per second (30 s quotes): 480p $5.50 · 720p $10.80 · 1080p $27 · 4K $54.
+// credits/s = cost/s ÷ (0.6 × $0.025) → ≥40% margin on monthly plans (same basis as Seedance 2.5 / NanoJutsu).
+export const WS_VID_RATES = {
+  "480p":  { perSec: 13,  cost: 5.5 / 30 },
+  "720p":  { perSec: 24,  cost: 10.8 / 30 },
+  "1080p": { perSec: 60,  cost: 27 / 30 },
+  "4k":    { perSec: 120, cost: 54 / 30 },
+};
+export const WS_VID_DUR = [5, 30]; // seconds (slider)
+export const wsVidRes = (r) => (WS_VID_RATES[r] ? r : "720p");
+export const wsVidDur = (d) => Math.max(WS_VID_DUR[0], Math.min(WS_VID_DUR[1], Math.round(Number(d) || 5)));
+export const wsVidCredits = (dur, res) => WS_VID_RATES[wsVidRes(res)].perSec * wsVidDur(dur);

@@ -1,4 +1,5 @@
 // Wavespeed AI — unified: Seedream 4.5 Edit + WAN 2.6 I2V Pro + polling
+import { wsVidCredits, wsVidRes, wsVidDur } from "./_models.js";
 import { COSTS, deductCredits, addCredits, insufficientMsg, IMG_UNIT, VID_UNIT, classifyFailure, tagFailure } from "./_credits.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
@@ -213,13 +214,12 @@ async function generateVidEdit(body, userId, WS_KEY, SERVICE_KEY, res) {
 
 // ── action: generate_vid ─────────────────────────────────────────────────────
 async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
-  const { prompt, image_url, duration = 5, resolution = "1080p" } = body;
+  const { prompt, image_url, duration = 5, resolution = "720p" } = body;
   if (!prompt?.trim()) return res.status(400).json({ error: "Prompt required" });
   if (!image_url || !isSafeUrl(image_url)) return res.status(400).json({ error: "Invalid image URL" });
-  const safeDuration = [5, 10, 15].includes(Number(duration)) ? Number(duration) : 5;
-  const safeResolution = ["1080p", "2k", "4k"].includes(resolution) ? resolution : "1080p";
-  const creditTable = { 5: {"1080p":2,"2k":3,"4k":3}, 10: {"1080p":3,"2k":4,"4k":4}, 15: {"1080p":3,"2k":4,"4k":5} };
-  const creditsNeeded = COSTS.legacyVideo((creditTable[safeDuration] || creditTable[5])[safeResolution] ?? 2);
+  const safeDuration = wsVidDur(duration);
+  const safeResolution = wsVidRes(resolution);
+  const creditsNeeded = wsVidCredits(safeDuration, safeResolution); // per second × quality (image input only, no extra surcharges)
 
   const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=credits,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
   const prof = (await profRes.json())?.[0];
@@ -238,10 +238,10 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
   const genId = gen?.id;
 
   try {
-    const wsBody = { prompt: prompt.trim().slice(0, 3500), image: image_url, duration: safeDuration, resolution: safeResolution, shot_type: "single", enable_prompt_expansion: false, seed: -1 };
+    const wsBody = { prompt: prompt.trim().slice(0, 3500), image: image_url, duration: safeDuration, resolution: safeResolution, generate_audio: true, seed: -1 };
     console.log(`WS generate_vid: dur=${safeDuration} res=${safeResolution} credits=${creditsNeeded}`);
 
-    const wsRes = await fetch(`${WS_BASE}/alibaba/wan-2.6/image-to-video-pro`, {
+    const wsRes = await fetch(`${WS_BASE}/bytedance/seedance-2.5/image-to-video-spicy`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${WS_KEY}` },
       body: JSON.stringify(wsBody)
     });
