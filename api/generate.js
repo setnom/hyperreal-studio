@@ -1,4 +1,5 @@
 import { deductCredits, addCredits, insufficientMsg } from "./_credits.js";
+import { buildIdSheetPrompt } from "./_idsheet.js";
 import { VIDEO_MODELS, IMAGE_MODELS, findImageModel, videoCredits, imageCredits, clampDuration, pickRes, pickMode, draftCompleteCredits } from "./_models.js";
 import { probeVideoSeconds } from "./_media.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
@@ -115,10 +116,10 @@ export default async function handler(req, res) {
   if (!FAL_KEY) return res.status(500).json({ error: "Server misconfiguration" });
 
   const { type, prompt: rawPrompt, user_prompt: rawUserPrompt, aspect_ratio, style_id, image_quality, duration, audio,
-          image_urls, start_frame, end_frame, multishot, max_realism, model_id, video_url, resolution, mode, video_urls, audio_urls, middle_frames, gen_id, user_token } = req.body || {};
+          image_urls, start_frame, end_frame, multishot, max_realism, model_id, video_url, resolution, mode, video_urls, audio_urls, middle_frames, gen_id, user_token, char_height } = req.body || {};
 
   // Validate style_id against allowed values only
-  const VALID_STYLE_IDS = ["photorealistic", "cinematic", "product", "portrait", "pixar", "ads", "neutral", "restore", "colorize"];
+  const VALID_STYLE_IDS = ["photorealistic", "cinematic", "product", "portrait", "pixar", "ads", "neutral", "restore", "colorize", "idsheet"];
   const safeStyleId = VALID_STYLE_IDS.includes(style_id) ? style_id : "photorealistic";
 
   if (!user_token || typeof user_token !== "string")
@@ -253,7 +254,10 @@ export default async function handler(req, res) {
     inputSec = Math.ceil(inputSec);
   }
 
-  const creditCost = !isVid ? imageCredits(iModel, imageResolution, hasRefs)
+  const isIdSheet = !isVid && safeStyleId === "idsheet";
+  if (isIdSheet && (iModel.kind !== "gpt" || !hasRefs))
+    return res.status(400).json({ error: "ID Sheet: usa GPT Image 2 y sube al menos 1 imagen del personaje. / ID Sheet needs GPT Image 2 and at least 1 character image." });
+  const creditCost = !isVid ? imageCredits(iModel, imageResolution, hasRefs, { nRefs: Math.min(refList.length, iModel.maxRefs || 0), style: safeStyleId })
     : isDraftComplete ? draftCompleteCredits(vModel, vDur)
     : videoCredits(vModel, vDur, vRes, inputSec, vMode, { nImages: vImgs.length, nAudios: vAuds.length });
   if (creditsBalance < creditCost)
@@ -302,6 +306,11 @@ export default async function handler(req, res) {
         const GPT_SIZE_MAP = { "1:1": "square_hd", "16:9": "landscape_16_9", "9:16": "portrait_16_9", "4:3": "landscape_4_3", "3:4": "portrait_4_3" };
         body = { prompt, quality: "high", output_format: "png", num_images: 1 };
         if (GPT_SIZE_MAP[safeRatio]) body.image_size = GPT_SIZE_MAP[safeRatio];
+        if (isIdSheet) {
+          // Full master prompt is built here (bypasses the 2000-char user prompt cap) · forced 16:9 large sheet
+          body.prompt = buildIdSheetPrompt(char_height, rawUserPrompt).prompt;
+          body.image_size = { width: 2048, height: 1152 };
+        }
       } else if (iModel.kind === "nano") {
         body = { prompt, resolution: imageResolution, limit_generations: true };
         if (safeRatio !== "auto") body.aspect_ratio = safeRatio;

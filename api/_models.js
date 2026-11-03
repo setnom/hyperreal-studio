@@ -175,7 +175,10 @@ export const IMAGE_MODELS = [
     t2i: "fal-ai/nano-banana-pro", edit: "fal-ai/nano-banana-pro/edit", maxRefs: 14 },
   { id: "gpt2",     family: "OpenAI",   name: "GPT Image 2",      badge: "Máx realismo", kind: "gpt",
     cost: 24, costWithRefs: 32, falCost: 0.211, falCostWithRefs: 0.37,
-    t2i: "fal-ai/gpt-image-2", edit: "openai/gpt-image-2/edit", maxRefs: 4 },
+    t2i: "fal-ai/gpt-image-2", edit: "openai/gpt-image-2/edit", maxRefs: 14,
+    // input image tokens scale with the number of refs → price by tiers (≥40% margin at $0.02/credit)
+    refTiers: [[4, 32], [9, 44], [14, 56]],
+    idSheetCost: 72 }, // ID Sheet: 2048×1152 high quality + up to 14 refs + long master prompt
   { id: "flux2pro", family: "Black Forest Labs", name: "FLUX.2 Pro", badge: "",     kind: "flux",
     cost: 5, costWithRefs: 10, falCost: 0.045, falCostWithRefs: 0.09,
     t2i: "fal-ai/flux-2-pro", edit: "fal-ai/flux-2-pro/edit", maxRefs: 4 },
@@ -186,7 +189,12 @@ export const IMAGE_MODELS = [
 
 export const findImageModel = (id) => IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0];
 
-export function imageCredits(model, resolution = "1K", hasRefs = false) {
+export function imageCredits(model, resolution = "1K", hasRefs = false, opts = {}) {
+  if (opts.style === "idsheet" && model.idSheetCost) return model.idSheetCost;
+  if (hasRefs && model.refTiers) {
+    const n = Math.max(1, Math.min(model.maxRefs || 1, Number(opts.nRefs) || 1));
+    return (model.refTiers.find(([max]) => n <= max) || model.refTiers[model.refTiers.length - 1])[1];
+  }
   if (hasRefs && model.costWithRefs) return model.costWithRefs;
   return typeof model.cost === "number" ? model.cost : (model.cost[resolution] ?? model.cost["1K"]);
 }

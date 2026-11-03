@@ -393,6 +393,7 @@ const STYLE_PROMPTS = {
     prefix: "",
     suffix: "",
   },
+  idsheet: { prefix: "", suffix: "" }, // built server-side (api/_idsheet.js)
   restore: {
     prefix: "",
     suffix: "Do not alter facial features or characteristics. Restore, colorize, and enhance this old photograph to ultra-high quality 8K resolution. IDENTITY & COMPOSITION - NON-NEGOTIABLE: Preserve 100% of facial geometry, bone structure, expressions, and identity. Zero alterations. Keep exact composition: same pose, framing, background, and all elements. Do NOT reimagine, stylize, or add anything that wasn't in the original.",
@@ -444,6 +445,7 @@ const PLAN_TAGLINE = {
   pro:     { es: "Para crear contenido con IA de forma constante", en: "For creators building AI content consistently" },
   creator: { es: "Para creadores y equipos produciendo a escala", en: "For creators and teams producing at scale" },
 };
+const NO_PROMPT_STYLES = ["restore", "colorize", "idsheet"]; // styles that work with an empty prompt + need a reference image
 const STYLES = [
   { id: "photorealistic", label: "Fotorrealista", icon: "📸" },
   { id: "cinematic", label: "Cinemático", icon: "🎬" },
@@ -454,6 +456,7 @@ const STYLES = [
   { id: "neutral", label: "Neutro", icon: "⚪" },
   { id: "restore", label: "Restaurar", icon: "🔧" },
   { id: "colorize", label: "Colorear", icon: "🖍️" },
+  { id: "idsheet", label: "ID Sheet", icon: "🪪", onlyModel: "gpt2" }, // full master prompt lives in api/_idsheet.js
 ];
 const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"];
 const SAMPLE = ["Luxury perfume bottle on black marble, volumetric lighting, 8K", "Latin woman CEO in modern office, golden hour, shallow DOF", "Gourmet burger floating, ingredients exploding, dark bg, studio light", "Futuristic car in neon-lit Tokyo street, rain reflections, cinematic"];
@@ -692,7 +695,8 @@ export default function App() {
   const [tab, setTab] = useState(T.IMG);
   const [prompt, setPrompt] = useState("");
   const [style, setStyle] = useState("neutral");
-  const [uiPop, setUiPop] = useState(null); // v23: open settings popover in studio tabs
+  const [uiPop, setUiPop] = useState(null);
+  const [charHeight, setCharHeight] = useState(""); // ID Sheet height in cm (empty → 170) // v23: open settings popover in studio tabs
   const [ratio, setRatio] = useState("1:1");
   const [imgQuality, setImgQuality] = useState("1K");
   const [imgModelId, setImgModelId] = useState("nb2");
@@ -1477,7 +1481,7 @@ export default function App() {
 
   const handleGen = async () => {
     const J = tab === T.VID_EDIT; // NanoJutsu reuses the video pipeline
-    if ((!J && !prompt.trim() && style !== "restore" && style !== "colorize") || !profile || !session) return;
+    if ((!J && !prompt.trim() && !NO_PROMPT_STYLES.includes(style)) || !profile || !session) return;
     const isVid = tab === T.VID || J;
     const vM = findVideoModel((J ? "nanojutsu" : vidModelId)), iM = findImageModel(imgModelId);
     const vMd = pickMode(vM, (J ? jutsuMode : vidMode));
@@ -1487,7 +1491,7 @@ export default function App() {
     const vEnd = vMulti ? (vidFrames.length > 1 ? vidFrames[vidFrames.length - 1] : null) : (vMd.endFrame ? endFrame : null);
     const vMiddle = vMulti ? vidFrames.slice(1, -1) : [];
     const vInSec = (vMd.source ? ((J ? jutsuVideo : vidRefVideo)?.duration || 0) : 0) + (vModeNow === "refs" ? vidRefVids.reduce((a, v) => a + (v.duration || 0), 0) : 0);
-    const creditCostNow = isVid ? videoCredits(vM, vidDur, (J ? jutsuRes : vidRes), vInSec, vModeNow, { nImages: (J ? jutsuImages : vidOmniImages).length, nAudios: vidRefAuds.length }) : imageCredits(iM, imgQuality, refImages.length > 0 && iM.maxRefs > 0);
+    const creditCostNow = isVid ? videoCredits(vM, vidDur, (J ? jutsuRes : vidRes), vInSec, vModeNow, { nImages: (J ? jutsuImages : vidOmniImages).length, nAudios: vidRefAuds.length }) : imageCredits(iM, imgQuality, refImages.length > 0 && iM.maxRefs > 0, { nRefs: Math.min(refImages.length, iM.maxRefs || 0), style });
     if (isVid && vMd.source && !(J ? jutsuVideo : vidRefVideo)?.url) { setGenError(lang === "es" ? "Sube el video primero." : "Upload the video first."); return; }
     if (isVid && vModeNow === "refs" && (J ? jutsuImages : vidOmniImages).length + vidRefVids.length === 0) { setGenError(lang === "es" ? "Añade al menos una imagen o video de referencia." : "Add at least one image or video reference."); return; }
     if (isVid && vModeNow === "frames" && (vMd.needsImage || vM.res[pickRes(vM, (J ? jutsuRes : vidRes))]?.needsImage) && !vStart) { setGenError(lang === "es" ? `${vM.name} necesita un fotograma inicial.` : `${vM.name} needs a start frame.`); return; }
@@ -1495,10 +1499,10 @@ export default function App() {
     if ((profile.credits ?? 0) < creditCostNow) return;
 
     // Restore & colorize require at least 1 reference image
-    if (!isVid && (style === "restore" || style === "colorize") && refImages.length === 0) {
+    if (!isVid && NO_PROMPT_STYLES.includes(style) && refImages.length === 0) {
       setGenError(lang === "es"
-        ? `⚠️ El modo "${style === "restore" ? "Restaurar" : "Colorear"}" requiere subir al menos 1 imagen de referencia.`
-        : `⚠️ "${style === "restore" ? "Restore" : "Coloring Page"}" mode requires at least 1 reference image.`
+        ? `⚠️ El modo "${style === "restore" ? "Restaurar" : style === "idsheet" ? "ID Sheet" : "Colorear"}" requiere subir al menos 1 imagen de referencia.`
+        : `⚠️ "${style === "restore" ? "Restore" : style === "idsheet" ? "ID Sheet" : "Coloring Page"}" mode requires at least 1 reference image.`
       );
       return;
     }
@@ -1571,6 +1575,7 @@ export default function App() {
           prompt: buildStyledPrompt(prompt, tab === T.IMG ? style : "cinematic"),
           user_prompt: J ? (jutsuPromptOn ? prompt.trim() : "") : prompt.trim(), // raw user input — saved to DB, never sent to fal.ai
           style_id: tab === T.IMG ? style : "cinematic",
+          char_height: tab === T.IMG && style === "idsheet" ? (Number(charHeight) || 170) : undefined,
           aspect_ratio: isVid ? vidRatio : ratio,
           image_quality: !isVid ? imgQuality : undefined,
           max_realism: !isVid ? maxRealism : undefined,
@@ -1690,6 +1695,7 @@ export default function App() {
     } catch {}
   };
   useEffect(() => { setUiPop(null); }, [tab]);
+  useEffect(() => { const st = STYLES.find(x => x.id === style); if (st?.onlyModel && st.onlyModel !== imgModelId) setStyle("neutral"); }, [imgModelId]); // eslint-disable-line
   // v23: the right-hand feed also serves Motion/Director/Img Pro/Vid Pro → refresh it when those start/finish
   useEffect(() => { if (!session || ![T.MOT, T.DIR, T.WS_IMG, T.WS_VID].includes(tab)) return; const id = setTimeout(reloadGens, genning ? 2500 : 900); return () => clearTimeout(id); }, [genning, genResult]); // eslint-disable-line
   // Permanently delete a generation (DB row + our stored file + favorite)
@@ -2612,7 +2618,7 @@ export default function App() {
   // ── Model catalog (v16) ──
   const curVidModel = findVideoModel(vidModelId);
   const curImgModel = findImageModel(imgModelId);
-  const curImgCost = imageCredits(curImgModel, imgQuality, refImages.length > 0 && curImgModel.maxRefs > 0);
+  const curImgCost = imageCredits(curImgModel, imgQuality, refImages.length > 0 && curImgModel.maxRefs > 0, { nRefs: Math.min(refImages.length, curImgModel.maxRefs || 0), style });
   const curVidMd = pickMode(curVidModel, vidMode);
   const curVidMode = curVidMd.id;
   const curVidRes = pickRes(curVidModel, vidRes);
@@ -3405,7 +3411,8 @@ export default function App() {
                 const qualities = planQualities[profile?.plan] || ["1K"];
                 const showQuality = qualities.length > 1 && curImgModel.kind === "nano";
                 const imgFamilies = [...new Set(IMAGE_MODELS.map(m => m.family))];
-                const stylesSorted = [...STYLES.filter(s => s.id === "neutral"), ...STYLES.filter(s => s.id !== "neutral")];
+                const stylesAvail = STYLES.filter(s => !s.onlyModel || s.onlyModel === curImgModel.id);
+                const stylesSorted = [...stylesAvail.filter(s => s.id === "neutral"), ...stylesAvail.filter(s => s.onlyModel), ...stylesAvail.filter(s => s.id !== "neutral" && !s.onlyModel)];
                 return (
                   <>
                     {imageSubTabs("img")}
@@ -3455,7 +3462,7 @@ export default function App() {
                     {/* Prompt card */}
                     <div style={{ ...uiCard, padding: "12px 14px", marginBottom: 10 }}>
                       {uiLabel("Prompt")}
-                      <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} placeholder={t("prompt_img")} style={uiTextarea} />
+                      <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={4} placeholder={style === "idsheet" ? LL("Opcional: notas extra del personaje (p. ej. «tatuaje en el antebrazo derecho»). El prompt completo de ID Sheet ya va incluido.", "Optional: extra character notes (e.g. “tattoo on right forearm”). The full ID Sheet prompt is already included.") : t("prompt_img")} style={uiTextarea} />
                       <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                         <button onClick={() => setPrompt(SAMPLE[Math.floor(Math.random() * SAMPLE.length)])} style={{ ...uiPill(false), padding: "5px 10px", fontSize: 12 }}>🎲</button>
                         {style !== "neutral" && (
@@ -3468,20 +3475,35 @@ export default function App() {
                     {uiSetting(LL("Modelo", "Model"), <>{curImgModel.name}{curImgModel.badge && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "rgba(255,255,255,.06)", color: "#8a8a9e" }}>{curImgModel.badge}</span>}</>, "imgModelCard", { full: true, onClick: () => setModelMenuOpen(modelMenuOpen === "imghero" ? false : "imghero") })}
                     <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                       {uiSetting(LL("Estilo", "Style"), <>{curStyle.icon} {styleLabel(curStyle)}</>, "imgStyle")}
-                      {uiSetting(LL("Relación de aspecto", "Aspect ratio"), ratio === "auto" ? "Auto" : ratio, "imgRatio")}
+                      {style === "idsheet" ? uiSetting(LL("Relación de aspecto", "Aspect ratio"), LL("16:9 · fijo", "16:9 · fixed"), "imgRatioFixed", { static: true }) : uiSetting(LL("Relación de aspecto", "Aspect ratio"), ratio === "auto" ? "Auto" : ratio, "imgRatio")}
                     </div>
                     {uiPopList("imgStyle", stylesSorted.map(s => ({
                       id: s.id, icon: s.icon, label: styleLabel(s),
                       sub: s.id === "neutral" ? LL("Por defecto · tu prompt tal cual", "Default · your prompt as-is")
+                        : s.id === "idsheet" ? LL("Hoja de personaje VFX 16:9 · estatura en cm · requiere fotos", "16:9 VFX character sheet · height in cm · needs photos")
                         : (s.id === "restore" || s.id === "colorize") ? LL("Requiere 1 imagen de referencia", "Needs 1 reference image") : null,
                     })), style, setStyle)}
                     {uiPopList("imgRatio", RATIOS.map(r => ({ id: r, label: r === "auto" ? "Auto" : r, icon: <RatioShape r={r} active={ratio === r} color="#e8c23a" /> })), ratio, setRatio)}
+                    {style === "idsheet" && (
+                      <div style={{ ...uiCard, padding: "12px 14px", marginBottom: 8, borderColor: "rgba(232,196,58,.25)" }}>
+                        {uiLabel(LL("🪪 Estatura del personaje", "🪪 Character height"), "CM")}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input type="number" inputMode="decimal" min={40} max={260} step="0.5" value={charHeight} placeholder="170"
+                            onChange={e => setCharHeight(e.target.value.replace(/[^0-9.]/g, "").slice(0, 5))}
+                            style={{ flex: 1, minWidth: 0, background: "#0d0d14", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: "10px 12px", color: "#e8e8f0", fontSize: 16, fontFamily: "'JetBrains Mono',monospace", outline: "none" }} />
+                          {[160, 170, 180].map(h => <button key={h} onClick={() => setCharHeight(String(h))} style={{ ...uiPill(Number(charHeight || 170) === h), padding: "8px 9px" }}>{h}</button>)}
+                        </div>
+                        <p style={{ fontSize: 10, color: "#6a6a82", margin: "8px 0 0", lineHeight: 1.5 }}>
+                          {LL(`Se usará ${Number(charHeight) || 170} cm en la regla. Vacío = 170 cm. Formato fijo 16:9 · sube 1-14 fotos del personaje (cara, cuerpo, ropa).`, `Ruler will use ${Number(charHeight) || 170} cm. Empty = 170 cm. Fixed 16:9 · upload 1-14 photos of the character (face, body, outfit).`)}
+                        </p>
+                      </div>
+                    )}
                     {showQuality && (
                       <>
                         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                           {uiSetting(LL("Calidad", "Quality"), imgQuality, "imgQ")}
                         </div>
-                        {uiPopList("imgQ", qualities.map(q => ({ id: q, label: q, right: `⚡ ${imageCredits(curImgModel, q, refImages.length > 0 && curImgModel.maxRefs > 0)}` })), imgQuality, setImgQuality)}
+                        {uiPopList("imgQ", qualities.map(q => ({ id: q, label: q, right: `⚡ ${imageCredits(curImgModel, q, refImages.length > 0 && curImgModel.maxRefs > 0, { nRefs: Math.min(refImages.length, curImgModel.maxRefs || 0), style })}` })), imgQuality, setImgQuality)}
                       </>
                     )}
                   </>
@@ -4339,9 +4361,9 @@ export default function App() {
             const needTopUp = hasPlan && ((tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost) || (tab === T.VID_EDIT && (profile?.credits ?? 0) < curJutsuCost));
             return (
             <div style={{ padding: "12px 14px 16px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0d0d14", flexShrink: 0 }}>
-              <button onClick={!hasPlan ? () => setPage(P.PLANS) : needTopUp ? () => (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? setShowTopUpMenu(true) : setPage(P.PLANS)) : handleGen} disabled={!needTopUp && hasPlan && (genBtnLocked || atLimit || (tab === T.VID && curVidBlocked) || (tab === T.VID_EDIT && curJutsuBlocked) || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost))}
-                style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : atLimit || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : atLimit || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: atLimit || (!prompt.trim() && tab !== T.VID_EDIT && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
-                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? curImgCost : tab === T.VID_EDIT ? curJutsuCost : curVidCost; const have = profile?.credits ?? 0; if (tab === T.VID_EDIT && !c) return lang === "es" ? `Sube un video · desde ⚡ ${jutsuFrom}` : `Upload a video · from ⚡ ${jutsuFrom}`; const vLabel = tab === T.VID_EDIT ? (lang === "es" ? "Generar" : "Generate") : curVidModel.draft ? (lang === "es" ? "Generar borrador" : "Generate draft") : (lang === "es" ? "Generar" : "Generate"); return have < c ? (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? (lang === "es" ? `⚡ Recargar créditos · necesitas ${c}` : `⚡ Top up credits · need ${c}`) : (lang === "es" ? `Mejorar plan · necesitas ${c} créditos` : `Upgrade plan · need ${c} credits`)) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : vLabel} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : vLabel} · ⚡ ${c}`); })()}
+              <button onClick={!hasPlan ? () => setPage(P.PLANS) : needTopUp ? () => (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? setShowTopUpMenu(true) : setPage(P.PLANS)) : handleGen} disabled={!needTopUp && hasPlan && (genBtnLocked || atLimit || (tab === T.VID && curVidBlocked) || (tab === T.VID_EDIT && curJutsuBlocked) || (!prompt.trim() && tab !== T.VID_EDIT && !NO_PROMPT_STYLES.includes(style)) || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < curImgCost) || (tab === T.VID && (profile?.credits ?? 0) < curVidCost))}
+                style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : atLimit || (!prompt.trim() && tab !== T.VID_EDIT && !NO_PROMPT_STYLES.includes(style)) ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : atLimit || (!prompt.trim() && tab !== T.VID_EDIT && !NO_PROMPT_STYLES.includes(style)) ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: atLimit || (!prompt.trim() && tab !== T.VID_EDIT && !NO_PROMPT_STYLES.includes(style)) ? "#4a4a62" : "#0a0a0f" }}>
+                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : NO_PROMPT_STYLES.includes(style) && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? curImgCost : tab === T.VID_EDIT ? curJutsuCost : curVidCost; const have = profile?.credits ?? 0; if (tab === T.VID_EDIT && !c) return lang === "es" ? `Sube un video · desde ⚡ ${jutsuFrom}` : `Upload a video · from ⚡ ${jutsuFrom}`; const vLabel = tab === T.VID_EDIT ? (lang === "es" ? "Generar" : "Generate") : curVidModel.draft ? (lang === "es" ? "Generar borrador" : "Generate draft") : (lang === "es" ? "Generar" : "Generate"); return have < c ? (PACK_ELIGIBLE_PLANS.includes(profile?.plan) ? (lang === "es" ? `⚡ Recargar créditos · necesitas ${c}` : `⚡ Top up credits · need ${c}`) : (lang === "es" ? `Mejorar plan · necesitas ${c} créditos` : `Upgrade plan · need ${c} credits`)) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : vLabel} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : vLabel} · ⚡ ${c}`); })()}
               </button>
               {activeJobs.length > 0 && <div style={{ marginTop: 9, fontSize: 11, color: "#6a6a82", textAlign: "center" }}>{lang === "es" ? `${activeJobs.length}/${jobLimit} generando · puedes seguir creando` : `${activeJobs.length}/${jobLimit} generating · keep creating`}</div>}
               {genError && <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 7, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", textAlign: "center" }}>
