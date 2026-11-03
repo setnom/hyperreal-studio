@@ -255,7 +255,7 @@ export default async function handler(req, res) {
   }
 
   const isIdSheet = !isVid && safeStyleId === "idsheet";
-  const safeGptQ = ["medium", "high", "high2k"].includes(gpt_quality) ? gpt_quality : "high";
+  const safeGptQ = gpt_quality === "medium" ? "medium" : "high";
   if (isIdSheet && (iModel.kind !== "gpt" || !hasRefs))
     return res.status(400).json({ error: "ID Sheet: usa GPT Image 2 y sube al menos 1 imagen del personaje. / ID Sheet needs GPT Image 2 and at least 1 character image." });
   const creditCost = !isVid ? imageCredits(iModel, imageResolution, hasRefs, { nRefs: Math.min(refList.length, iModel.maxRefs || 0), style: safeStyleId, gptQuality: safeGptQ })
@@ -304,12 +304,15 @@ export default async function handler(req, res) {
       const refs = hasRefs ? refList.slice(0, iModel.maxRefs) : [];
       endpoint = hasRefs && iModel.edit ? iModel.edit : iModel.t2i;
       if (iModel.kind === "gpt") {
-        // Custom sizes (multiples of 16): ~1 MP for Media/Alta, ~2.4 MP for Alta 2K — price follows pixels
-        const GPT_1MP = { "1:1": [1024, 1024], "16:9": [1360, 768], "9:16": [768, 1360], "4:3": [1184, 880], "3:4": [880, 1184] };
-        const GPT_2K  = { "1:1": [1536, 1536], "16:9": [2048, 1152], "9:16": [1152, 2048], "4:3": [1776, 1328], "3:4": [1328, 1776] };
-        const sizes = safeGptQ === "high2k" ? GPT_2K : GPT_1MP;
+        // Custom sizes (multiples of 16) by plan-capped resolution: 1K ≈1 MP · 2K ≈4 MP · 4K ≈8.3 MP (max for GPT Image 2)
+        const GPT_SIZES = {
+          "1K": { "1:1": [1024, 1024], "16:9": [1360, 768],  "9:16": [768, 1360],  "4:3": [1184, 880],  "3:4": [880, 1184] },
+          "2K": { "1:1": [2048, 2048], "16:9": [2720, 1536], "9:16": [1536, 2720], "4:3": [2368, 1776], "3:4": [1776, 2368] },
+          "4K": { "1:1": [2880, 2880], "16:9": [3840, 2160], "9:16": [2160, 3840], "4:3": [3328, 2496], "3:4": [2496, 3328] },
+        };
+        const sizes = GPT_SIZES[imageResolution] || GPT_SIZES["1K"];
         const r = isIdSheet ? "16:9" : safeRatio;
-        body = { prompt, quality: safeGptQ === "medium" ? "medium" : "high", output_format: "png", num_images: 1 };
+        body = { prompt, quality: safeGptQ, output_format: "png", num_images: 1 };
         if (sizes[r]) body.image_size = { width: sizes[r][0], height: sizes[r][1] };
         // ID Sheet: full master prompt is built here (bypasses the 2000-char user prompt cap) · always 16:9
         if (isIdSheet) body.prompt = buildIdSheetPrompt(char_height, rawUserPrompt).prompt;

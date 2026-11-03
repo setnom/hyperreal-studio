@@ -700,7 +700,7 @@ export default function App() {
   const [charHeight, setCharHeight] = useState(""); // ID Sheet height in cm (empty → 170) // v23: open settings popover in studio tabs
   const [ratio, setRatio] = useState("1:1");
   const [imgQuality, setImgQuality] = useState("1K");
-  const [gptQuality, setGptQuality] = useState("high"); // GPT Image 2: medium | high | high2k
+  const [gptQuality, setGptQuality] = useState("high"); // GPT Image 2: medium | high
   const [imgModelId, setImgModelId] = useState("nb2");
   const [vidModelId, setVidModelId] = useState("kling4");
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -3412,7 +3412,7 @@ export default function App() {
                 const curStyle = STYLES.find(s => s.id === style) || STYLES.find(s => s.id === "neutral");
                 const planQualities = { test: ["1K"], basic: ["1K"], pro: ["1K", "2K"], creator: ["1K", "2K", "4K"] };
                 const qualities = planQualities[profile?.plan] || ["1K"];
-                const showQuality = qualities.length > 1 && curImgModel.kind === "nano";
+                const showQuality = qualities.length > 1 && (curImgModel.kind === "nano" || !!curImgModel.gptQualities);
                 const imgFamilies = [...new Set(IMAGE_MODELS.map(m => m.family))];
                 const stylesAvail = STYLES.filter(s => !s.onlyModel || s.onlyModel === curImgModel.id);
                 const stylesSorted = [...stylesAvail.filter(s => s.id === "neutral"), ...stylesAvail.filter(s => s.onlyModel), ...stylesAvail.filter(s => s.id !== "neutral" && !s.onlyModel)];
@@ -3502,7 +3502,7 @@ export default function App() {
                       </div>
                     )}
                     {curImgModel.gptQualities && (() => {
-                      const gq = Object.entries(curImgModel.gptQualities).filter(([k]) => k !== "high2k" || ["pro", "creator"].includes(profile?.plan));
+                      const gq = Object.entries(curImgModel.gptQualities);
                       const lbl = (q) => (lang === "es" ? q.label.es : q.label.en);
                       const cur = curImgModel.gptQualities[gptQuality] || curImgModel.gptQualities.high;
                       return (
@@ -3511,18 +3511,18 @@ export default function App() {
                             {uiSetting(LL("Calidad", "Quality"), lbl(cur), "gptQ")}
                           </div>
                           {uiPopList("gptQ", gq.map(([k, q]) => ({ id: k, label: lbl(q),
-                            sub: k === "medium" ? LL("Más rápida y barata · ~1 MP", "Faster & cheaper · ~1 MP") : k === "high" ? LL("Máximo detalle · ~1 MP", "Max detail · ~1 MP") : LL("Máximo detalle · ~2.4 MP (2048 px)", "Max detail · ~2.4 MP (2048 px)"),
+                            sub: k === "medium" ? LL("Más rápida y barata", "Faster & cheaper") : LL("Máximo detalle", "Max detail"),
                             right: `⚡ ${imageCredits(curImgModel, imgQuality, refImages.length > 0, { nRefs: Math.min(refImages.length, curImgModel.maxRefs || 0), style, gptQuality: k })}` })), gptQuality, setGptQuality)}
-                          {refImages.length > 0 && <p style={{ fontSize: 10, color: "#6a6a82", margin: "-2px 2px 8px" }}>{LL(`Incluye +${curImgModel.perRef} créditos por cada imagen de referencia (${Math.min(refImages.length, curImgModel.maxRefs)}).`, `Includes +${curImgModel.perRef} credits per reference image (${Math.min(refImages.length, curImgModel.maxRefs)}).`)}</p>}
+                          {refImages.length > curImgModel.freeRefs && <p style={{ fontSize: 10, color: "#6a6a82", margin: "-2px 2px 8px" }}>{LL(`Hasta ${curImgModel.freeRefs} referencias incluidas · +${curImgModel.perExtraRef} por cada una extra (${Math.min(refImages.length, curImgModel.maxRefs) - curImgModel.freeRefs}).`, `Up to ${curImgModel.freeRefs} references included · +${curImgModel.perExtraRef} per extra one (${Math.min(refImages.length, curImgModel.maxRefs) - curImgModel.freeRefs}).`)}</p>}
                         </>
                       );
                     })()}
                     {showQuality && (
                       <>
                         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                          {uiSetting(LL("Calidad", "Quality"), imgQuality, "imgQ")}
+                          {uiSetting(curImgModel.gptQualities ? LL("Resolución", "Resolution") : LL("Calidad", "Quality"), imgQuality, "imgQ")}
                         </div>
-                        {uiPopList("imgQ", qualities.map(q => ({ id: q, label: q, right: `⚡ ${imageCredits(curImgModel, q, refImages.length > 0 && curImgModel.maxRefs > 0, { nRefs: Math.min(refImages.length, curImgModel.maxRefs || 0), style })}` })), imgQuality, setImgQuality)}
+                        {uiPopList("imgQ", qualities.map(q => ({ id: q, label: q, right: `⚡ ${imageCredits(curImgModel, q, refImages.length > 0 && curImgModel.maxRefs > 0, { nRefs: Math.min(refImages.length, curImgModel.maxRefs || 0), style, gptQuality })}` })), imgQuality, setImgQuality)}
                       </>
                     )}
                   </>
