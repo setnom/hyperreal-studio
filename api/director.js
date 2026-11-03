@@ -1,5 +1,6 @@
 // Director — bytedance/seedance-2.0/reference-to-video
-// Credits: 5s=3, 6-10s=4, 11-15s=5
+// Credits: 5s=180, 6-10s=240, 11-15s=300 (legacy 3/4/5 × 60)
+import { COSTS, deductCredits, addCredits, insufficientMsg } from "./_credits.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const FAL_ENDPOINT_REF = "bytedance/seedance-2.0/reference-to-video";
@@ -58,7 +59,7 @@ export default async function handler(req, res) {
 
   const safeDuration = [5,6,7,8,9,10,11,12,13,14,15].includes(Number(duration)) ? Number(duration) : 5;
   const safeAspect = ["9:16","16:9","1:1","4:3","3:4","21:9"].includes(aspect_ratio) ? aspect_ratio : "9:16";
-  const creditsNeeded = calcCredits(safeDuration);
+  const creditsNeeded = COSTS.legacyVideo(calcCredits(safeDuration)); // 180 / 240 / 300
 
   let authUser;
   try { authUser = await verifyToken(user_token); }
@@ -67,19 +68,19 @@ export default async function handler(req, res) {
 
   // Get profile
   const profileRes = await fetch(
-    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,videos_remaining,subscription_status`,
+    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,credits,subscription_status`,
     { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
   );
   const profile = (await profileRes.json())?.[0];
   if (!profile) return res.status(403).json({ error: "Profile not found" });
 
-  const { plan, videos_remaining, subscription_status } = profile;
+  const { plan, credits: creditsBalance = 0, subscription_status } = profile;
   if (!["pro","creator"].includes(plan))
     return res.status(403).json({ error: "Director requires Pro or Creator plan." });
   if (subscription_status === "payment_failed")
     return res.status(403).json({ error: "Your subscription has a payment issue." });
-  if ((videos_remaining ?? 0) < creditsNeeded)
-    return res.status(403).json({ error: `Not enough credits. Need ${creditsNeeded}, have ${videos_remaining}.` });
+  if (creditsBalance < creditsNeeded)
+    return res.status(403).json({ error: insufficientMsg(creditsNeeded, creditsBalance) });
 
   // Concurrent generation limit per plan
   const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 3, creator: 4 };
@@ -100,13 +101,11 @@ export default async function handler(req, res) {
   } catch { /* allow if check fails */ }
 
   // Deduct atomically
-  const deductRes = await fetch(
-    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&videos_remaining=eq.${videos_remaining}`,
-    { method: "PATCH", headers: sbHeaders(SERVICE_KEY), body: JSON.stringify({ videos_remaining: videos_remaining - creditsNeeded }) }
-  );
-  const deducted = await deductRes.json();
-  if (!Array.isArray(deducted) || deducted.length === 0)
-    return res.status(409).json({ error: "Credit deduction failed. Try again." });
+  const deduct = await deductCredits(userId, creditsNeeded, SERVICE_KEY);
+  if (!deduct.ok)
+    return deduct.reason === "insufficient"
+      ? res.status(403).json({ error: insufficientMsg(creditsNeeded, deduct.before ?? 0) })
+      : res.status(409).json({ error: "Credit deduction failed. Try again." });
 
   console.log(`Director: plan=${plan} dur=${safeDuration}s credits=${creditsNeeded} user=${userId}`);
 
@@ -156,7 +155,7 @@ export default async function handler(req, res) {
           user_id: userId, type: "video",
           prompt: prompt.trim().slice(0, 3500),
           style: "director", status: "processing",
-          result_url: falData.request_id + "|" + FAL_ENDPOINT,
+          result_url: falData.request_id + "|" + FAL_ENDPOINT, credits_cost: creditsNeeded,
         }),
       });
     } catch {}
@@ -169,10 +168,7 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error("Director error:", err.message);
     // Refund
-    try {
-      const cur = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining`, { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }).then(r => r.json());
-      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbHeaders(SERVICE_KEY), body: JSON.stringify({ videos_remaining: (cur?.[0]?.videos_remaining || 0) + creditsNeeded }) });
-    } catch {}
+    try { await addCredits(userId, creditsNeeded, SERVICE_KEY); } catch {}
     return res.status(500).json({ error: `Director generation failed: ${err.message}` });
   }
 }

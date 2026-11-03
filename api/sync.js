@@ -13,10 +13,10 @@ const PRICE_TO_PLAN = {
 };
 
 const PLAN_CREDITS = {
-  test:    { images: 20,  videos: 2  },
-  basic:   { images: 40,  videos: 8  },
-  pro:     { images: 90,  videos: 18 },
-  creator: { images: 200, videos: 30 },
+  test:    { images: 20,  videos: 2,  credits: 275  },
+  basic:   { images: 40,  videos: 8,  credits: 800  },
+  pro:     { images: 90,  videos: 18, credits: 1800 },
+  creator: { images: 200, videos: 30, credits: 3400 },
 };
 
 function sbHeaders(key) {
@@ -84,6 +84,7 @@ export default async function handler(req, res) {
           // New billing cycle — reset credits
           updateData.images_remaining = PLAN_CREDITS[plan].images;
           updateData.videos_remaining = PLAN_CREDITS[plan].videos;
+          updateData.credits = PLAN_CREDITS[plan].credits;
           updateData.subscription_start = periodStart;
           updateData.plan = plan;
           console.log(`✓ Renewed: ${plan} for ${profile.email} — cycle started ${periodStart}`);

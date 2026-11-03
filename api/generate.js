@@ -1,3 +1,4 @@
+import { COSTS, deductCredits, addCredits, insufficientMsg } from "./_credits.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
@@ -136,7 +137,7 @@ export default async function handler(req, res) {
   let profile;
   try {
     const profileRes = await fetch(
-      `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,images_remaining,videos_remaining,subscription_status`,
+      `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,credits,subscription_status`,
       { headers: sbServiceHeaders() }
     );
     const profiles = await profileRes.json();
@@ -146,7 +147,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to verify profile" });
   }
 
-  const { plan: userPlan, images_remaining: imagesRemaining, videos_remaining: videosRemaining, subscription_status } = profile;
+  const { plan: userPlan, credits: creditsBalance = 0, subscription_status } = profile;
 
   if (!userPlan || userPlan === "none" || !PLAN_CREDITS[userPlan])
     return res.status(403).json({ error: "No active plan. Please subscribe first." });
@@ -155,11 +156,14 @@ export default async function handler(req, res) {
   if (subscription_status === "payment_failed")
     return res.status(403).json({ error: "Your subscription has a payment issue. Please resolve it to continue generating." });
 
-  if (!isVid && imagesRemaining <= 0)
-    return res.status(403).json({ error: "No image credits remaining." });
-
-  if (isVid && videosRemaining <= 0)
-    return res.status(403).json({ error: "No video credits remaining." });
+  // Duration capped by plan — computed early because video cost depends on it
+  const allowedDuration = Math.min(
+    Math.max(typeof duration === "number" && isFinite(duration) ? Math.floor(duration) : 5, 1),
+    MAX_DURATION[userPlan] || 5
+  );
+  const creditCost = isVid ? COSTS.video(allowedDuration) : COSTS.image(max_realism === true);
+  if (creditsBalance < creditCost)
+    return res.status(403).json({ error: insufficientMsg(creditCost, creditsBalance) });
 
   // Concurrent generation limit per plan
   const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 3, creator: 4 };
@@ -179,32 +183,18 @@ export default async function handler(req, res) {
     }
   } catch { /* if check fails, allow — don't block */ }
 
-  // 🟡 FIX: Atomic credit deduction — only deduct if current value matches what we read
-  // This prevents double-spend race conditions from concurrent requests
-  const imgCreditsToUse = (!isVid && max_realism === true) ? 3 : 1;
+  // Atomic credit deduction (compare-and-swap in _credits.js)
+  const imgCreditsToUse = (!isVid && max_realism === true) ? 3 : 1; // legacy, kept for logging
+  let creditsAfter;
   try {
-    const newImages = !isVid ? imagesRemaining - imgCreditsToUse : imagesRemaining;
-    const newVideos =  isVid ? videosRemaining  - 1 : videosRemaining;
-    // Validate enough credits
-    if (!isVid && imagesRemaining < imgCreditsToUse)
-      return res.status(403).json({ error: "No image credits remaining." });
-    // Use conditional filter: only update if credits haven't changed since we read them
-    const atomicFilter = !isVid
-      ? `id=eq.${userId}&images_remaining=gte.${imgCreditsToUse}`
-      : `id=eq.${userId}&videos_remaining=eq.${videosRemaining}`;
-    const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?${atomicFilter}`, {
-      method: "PATCH",
-      headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
-      body: JSON.stringify({ images_remaining: newImages, videos_remaining: newVideos }),
-    });
-    if (!deductRes.ok) throw new Error("Credit deduction failed");
-    const deducted = await deductRes.json();
-    // If no rows updated, another request beat us to it — reject this one
-    if (!Array.isArray(deducted) || deducted.length === 0) {
-      return res.status(409).json({ error: "Credit already used. Please try again." });
+    const d = await deductCredits(userId, creditCost, SERVICE_KEY);
+    if (!d.ok) {
+      return d.reason === "insufficient"
+        ? res.status(403).json({ error: insufficientMsg(creditCost, d.before ?? 0) })
+        : res.status(409).json({ error: "Credit already used. Please try again." });
     }
+    creditsAfter = d.after;
   } catch (err) {
-    if (err.message === "Credit deduction failed") throw err;
     console.error("Credit deduction error:", err.message);
     return res.status(500).json({ error: "Failed to deduct credit. Please try again." });
   }
@@ -218,11 +208,6 @@ export default async function handler(req, res) {
     const reqIdx = ORDER.indexOf(requestedRes);
     return ORDER[Math.min(reqIdx, maxIdx)];
   })();
-  const allowedDuration = Math.min(
-    Math.max(typeof duration === "number" && isFinite(duration) ? Math.floor(duration) : 5, 1),
-    MAX_DURATION[userPlan] || 5
-  );
-
   try {
     let endpoint, body;
 
@@ -307,15 +292,13 @@ export default async function handler(req, res) {
             user_id: userId, type,
             prompt: sanitizePrompt(rawUserPrompt || rawPrompt).slice(0, 3500), // save user's raw input, not the styled version
             style: safeStyleId,
-            status: "processing", result_url: data.request_id + "|" + endpoint,
+            status: "processing", result_url: data.request_id + "|" + endpoint, credits_cost: creditCost,
           }),
         });
       } catch {}
 
       // Log usage transaction
       try {
-        const imgD = !isVid ? -imgCreditsToUse : 0;
-        const vidD = isVid ? -1 : 0;
         await fetch(`${SB_URL}/rest/v1/credit_transactions`, {
           method: "POST",
           headers: { ...sbServiceHeaders(true) },
@@ -323,10 +306,10 @@ export default async function handler(req, res) {
             user_id: userId,
             type: "generation",
             description: `${isVid ? "Video" : "Imagen"} generada${max_realism ? " (Máximo Realismo)" : ""}`,
-            images_delta: imgD,
-            videos_delta: vidD,
-            images_after: !isVid ? imagesRemaining - imgCreditsToUse : imagesRemaining,
-            videos_after: isVid ? videosRemaining - 1 : videosRemaining,
+            images_delta: 0,
+            videos_delta: 0,
+            credits_delta: -creditCost,
+            credits_after: creditsAfter,
             meta: { endpoint, style: safeStyleId, max_realism: max_realism === true },
           }),
         });
@@ -344,21 +327,8 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error("Generation error:", err.message);
-    // Refund credit atomically — increment back, don't overwrite with stale value
-    try {
-      const field = isVid ? "videos_remaining" : "images_remaining";
-      const refundAmount = isVid ? 1 : imgCreditsToUse;
-      const cur = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,videos_remaining`, { headers: sbServiceHeaders() }).then(r => r.json());
-      const curProfile = cur?.[0];
-      if (curProfile) {
-        const refundVal = isVid ? (curProfile.videos_remaining || 0) + 1 : (curProfile.images_remaining || 0) + refundAmount;
-        await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-          method: "PATCH",
-          headers: { ...sbServiceHeaders(true), Prefer: "return=representation" },
-          body: JSON.stringify({ [field]: refundVal }),
-        });
-      }
-    } catch {}
+    // Refund credit atomically
+    try { await addCredits(userId, creditCost, SERVICE_KEY); } catch {}
     return res.status(500).json({ error: "Generation failed. Your credit has been refunded." });
   }
 }

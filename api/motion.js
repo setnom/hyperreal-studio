@@ -1,4 +1,5 @@
 // Motion Control — fal-ai/kling-video/v3/pro/motion-control
+import { COSTS, deductCredits, addCredits, insufficientMsg } from "./_credits.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const FAL_ENDPOINT = "fal-ai/kling-video/v3/pro/motion-control";
@@ -85,13 +86,13 @@ export default async function handler(req, res) {
   const userId = authUser.id;
 
   const profileRes = await fetch(
-    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,videos_remaining,subscription_status`,
+    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,credits,subscription_status`,
     { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
   );
   const profile = (await profileRes.json())?.[0];
   if (!profile) return res.status(403).json({ error: "Profile not found" });
 
-  const { plan, videos_remaining, subscription_status } = profile;
+  const { plan, credits: creditsBalance = 0, subscription_status } = profile;
   if (!["basic","pro","creator"].includes(plan))
     return res.status(403).json({ error: "Motion Control requires Basic plan or higher." });
   if (subscription_status === "payment_failed")
@@ -101,9 +102,9 @@ export default async function handler(req, res) {
   if (videoDurSec > maxDur + 0.5)
     return res.status(403).json({ error: `Video duration (${videoDurSec.toFixed(1)}s) exceeds plan limit (${maxDur}s).` });
 
-  const creditsNeeded = videoDurSec > 10 ? 3 : 2;
-  if ((videos_remaining ?? 0) < creditsNeeded)
-    return res.status(403).json({ error: `Not enough credits. Need ${creditsNeeded}, have ${videos_remaining}.` });
+  const creditsNeeded = COSTS.legacyVideo(videoDurSec > 10 ? 3 : 2); // 120 / 180
+  if (creditsBalance < creditsNeeded)
+    return res.status(403).json({ error: insufficientMsg(creditsNeeded, creditsBalance) });
 
   // Concurrent limit check
   const CONCURRENT_LIMITS = { test: 1, basic: 2, pro: 3, creator: 4 };
@@ -122,14 +123,12 @@ export default async function handler(req, res) {
     }
   } catch {}
 
-  // Deduct credits
-  const deductRes = await fetch(
-    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&videos_remaining=eq.${videos_remaining}`,
-    { method: "PATCH", headers: sbHeaders(SERVICE_KEY), body: JSON.stringify({ videos_remaining: videos_remaining - creditsNeeded }) }
-  );
-  const deducted = await deductRes.json();
-  if (!Array.isArray(deducted) || deducted.length === 0)
-    return res.status(409).json({ error: "Credit deduction failed. Try again." });
+  // Deduct atomically
+  const deduct = await deductCredits(userId, creditsNeeded, SERVICE_KEY);
+  if (!deduct.ok)
+    return deduct.reason === "insufficient"
+      ? res.status(403).json({ error: insufficientMsg(creditsNeeded, deduct.before ?? 0) })
+      : res.status(409).json({ error: "Credit deduction failed. Try again." });
 
   try {
     // Re-upload to fal.ai storage if URLs are from Supabase
@@ -181,7 +180,7 @@ export default async function handler(req, res) {
           user_id: userId, type: "video",
           prompt: (prompt?.trim() || "Motion Control").slice(0, 3500),
           style: "motion_control", status: "processing",
-          result_url: request_id + "|" + FAL_ENDPOINT,
+          result_url: request_id + "|" + FAL_ENDPOINT, credits_cost: creditsNeeded,
         }),
       });
     } catch {}
@@ -193,16 +192,7 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error("Motion error:", err.message);
-    try {
-      const cur = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining`, {
-        headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` }
-      }).then(r => r.json());
-      const refundVal = (cur?.[0]?.videos_remaining || 0) + creditsNeeded;
-      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-        method: "PATCH", headers: sbHeaders(SERVICE_KEY),
-        body: JSON.stringify({ videos_remaining: refundVal }),
-      });
-    } catch {}
+    try { await addCredits(userId, creditsNeeded, SERVICE_KEY); } catch {}
     return res.status(500).json({ error: err.message });
   }
 }

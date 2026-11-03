@@ -195,8 +195,8 @@ const TEXTS = {
     est_time: "puede tardar de",
     est_to: "a",
     est_min: "min",
-    no_credits_img: "Sin créditos de imagen",
-    no_credits_vid: "Sin créditos de video",
+    no_credits_img: "Sin créditos suficientes",
+    no_credits_vid: "Sin créditos suficientes",
     no_credits_sub: "Actualiza tu plan para obtener más créditos",
     upgrade: "Actualizar plan →",
     download: "↓ Descargar",
@@ -316,8 +316,8 @@ const TEXTS = {
     est_time: "may take from",
     est_to: "to",
     est_min: "min",
-    no_credits_img: "No image credits left",
-    no_credits_vid: "No video credits left",
+    no_credits_img: "Not enough credits",
+    no_credits_vid: "Not enough credits",
     no_credits_sub: "Upgrade your plan to get more credits",
     upgrade: "Upgrade plan →",
     download: "↓ Download",
@@ -415,18 +415,24 @@ function buildStyledPrompt(userPrompt, styleId) {
   if (!base) return s.suffix;
   return `${s.prefix}${base}, ${s.suffix}`;
 }
+// ─── Unified credits (v15) — must match api/_credits.js ───
+const IMG_UNIT = 8;        // Nano Banana 2 / Seedream image
+const VID_UNIT = 60;       // legacy video credit (Motion, Director, Img/Vid Pro, Swap tables)
+const VID_PER_SEC = 12;    // Video tab (Kling 3.0): 12 credits per second
+const imgCost = (maxRealism) => (maxRealism ? 3 : 1) * IMG_UNIT;
+const vidCost = (sec) => Math.max(5, Number(sec) || 5) * VID_PER_SEC;
 const PLANS = [
-  { id: "test", name: "Test", nameEn: "Test", price: 9.99, oldPrice: 29.99, images: 20, videos: 2, maxDuration: [5], resolution: "1K",
-    features: { es: ["20 imágenes premium (calidad 1K)/mes", "2 videos premium (5s)/mes", "1 generación simultánea", "Calidad de imagen 1K", "Soporte por email"], en: ["20 premium images (1K quality)/mo", "2 premium videos (5s)/mo", "1 simultaneous generation", "1K image quality", "Email support"] },
+  { id: "test", name: "Test", nameEn: "Test", price: 9.99, oldPrice: 29.99, credits: 275, images: 20, videos: 2, maxDuration: [5], resolution: "1K",
+    features: { es: ["275 créditos/mes para imagen y video", "1 generación simultánea", "Calidad de imagen 1K", "Soporte por email"], en: ["275 credits/mo for image & video", "1 simultaneous generation", "1K image quality", "Email support"] },
     color: "#22c55e", popular: false },
-  { id: "basic", name: "Básico", nameEn: "Basic", price: 19.99, oldPrice: 49.99, images: 40, videos: 8, maxDuration: [5], resolution: "1K",
-    features: { es: ["40 imágenes premium (calidad 1K)/mes", "8 videos premium (5s)/mes", "2 generaciones simultáneas", "Calidad de imagen 1K", "Soporte por email"], en: ["40 premium images (1K quality)/mo", "8 premium videos (5s)/mo", "2 simultaneous generations", "1K image quality", "Email support"] },
+  { id: "basic", name: "Básico", nameEn: "Basic", price: 19.99, oldPrice: 49.99, credits: 800, images: 40, videos: 8, maxDuration: [5], resolution: "1K",
+    features: { es: ["800 créditos/mes para imagen y video", "2 generaciones simultáneas", "Calidad de imagen 1K", "Soporte por email"], en: ["800 credits/mo for image & video", "2 simultaneous generations", "1K image quality", "Email support"] },
     color: "#00f0ff", popular: false },
-  { id: "pro", name: "Pro", nameEn: "Pro", price: 47.99, oldPrice: 99.99, images: 90, videos: 18, maxDuration: [5, 8], resolution: "2K",
-    features: { es: ["90 imágenes premium (calidad 2K)/mes", "18 videos premium (5-8s)/mes", "3 generaciones simultáneas", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["90 premium images (2K quality)/mo", "18 premium videos (5-8s)/mo", "3 simultaneous generations", "2K image quality", "Priority queue", "Priority support"] },
+  { id: "pro", name: "Pro", nameEn: "Pro", price: 47.99, oldPrice: 99.99, credits: 1800, images: 90, videos: 18, maxDuration: [5, 8], resolution: "2K",
+    features: { es: ["1800 créditos/mes para imagen y video", "3 generaciones simultáneas", "Calidad de imagen 2K", "Prioridad en cola", "Soporte prioritario"], en: ["1800 credits/mo for image & video", "3 simultaneous generations", "2K image quality", "Priority queue", "Priority support"] },
     color: "#b44aff", popular: true },
-  { id: "creator", name: "Creador", nameEn: "Creator", price: 99.99, oldPrice: 199, images: 200, videos: 30, maxDuration: [5, 8, 10], resolution: "4K",
-    features: { es: ["200 imágenes premium (calidad 4K)/mes", "30 videos premium (5-15s)/mes", "4 generaciones simultáneas", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["200 premium images (4K quality)/mo", "30 premium videos (5-15s)/mo", "4 simultaneous generations", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
+  { id: "creator", name: "Creador", nameEn: "Creator", price: 99.99, oldPrice: 199, credits: 3400, images: 200, videos: 30, maxDuration: [5, 8, 10], resolution: "4K",
+    features: { es: ["3400 créditos/mes para imagen y video", "4 generaciones simultáneas", "Calidad de imagen 4K", "Cola prioritaria máxima", "Soporte dedicado", "Acceso anticipado a modelos"], en: ["3400 credits/mo for image & video", "4 simultaneous generations", "4K image quality", "Max priority queue", "Dedicated support", "Early access to models"] },
     color: "#ff6b2b", popular: false },
 ];
 // Annual pricing (40% off monthly). annual = price per month when billed yearly
@@ -769,7 +775,7 @@ export default function App() {
   const [langOpen, setLangOpen] = useState(false);
   const [userPanelOpen, setUserPanelOpen] = useState(false);
   const [openFaqIdx, setOpenFaqIdx] = useState(null); // FAQ accordion for landing page
-  const [billingAnnual, setBillingAnnual] = useState(true);
+  const [billingAnnual, setBillingAnnual] = useState(Object.values(PRICES).some(p => p.annualLink));
   const [planFaqIdx, setPlanFaqIdx] = useState(null); // FAQ accordion for plans page
   const [cancelModal, setCancelModal] = useState(false);
   const [showTyC, setShowTyC] = useState(false);
@@ -972,9 +978,9 @@ export default function App() {
             const d = await r.json();
             console.log("Pack response attempt", attempt, ":", d);
             if (d.ok) {
-              const label = packType === "images" ? `+${packAmount} imágenes` : `+${packAmount} videos`;
+              const label = `+${packAmount * (packType === "images" ? IMG_UNIT : VID_UNIT)} créditos`;
               await loadProfile(saved);
-              setPayMsg(`✓ ${label} agregadas a tu cuenta`);
+              setPayMsg(`✓ ${label} agregados a tu cuenta`);
               setTimeout(() => setPayMsg(""), 6000);
               return;
             }
@@ -1083,7 +1089,7 @@ export default function App() {
               const u2 = await sb.getUser(s.access_token);
               if (u2?.id) {
                 const p2 = await sb.getProfile(u2.id, s.access_token);
-                if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining }));
+                if (p2) setProfile(prev => ({ ...prev, credits: p2.credits, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining }));
               }
             } catch {}
           };
@@ -1416,9 +1422,8 @@ export default function App() {
   const handleGen = async () => {
     if ((!prompt.trim() && style !== "restore" && style !== "colorize") || !profile || !session) return;
     const isVid = tab === T.VID;
-    if (isVid && profile.videos_remaining <= 0) return;
-    const imgCreditsNeeded = (!isVid && maxRealism) ? 3 : 1;
-    if (!isVid && profile.images_remaining < imgCreditsNeeded) return;
+    const creditCostNow = isVid ? vidCost(vidDur) : imgCost(maxRealism);
+    if ((profile.credits ?? 0) < creditCostNow) return;
 
     // Restore & colorize require at least 1 reference image
     if (!isVid && (style === "restore" || style === "colorize") && refImages.length === 0) {
@@ -1608,7 +1613,7 @@ export default function App() {
       if (u?.id) {
         // Update credits
         const p = await sb.getProfile(u.id, session.access_token);
-        if (p) setProfile(prev => ({ ...prev, images_remaining: p.images_remaining, videos_remaining: p.videos_remaining }));
+        if (p) setProfile(prev => ({ ...prev, credits: p.credits, images_remaining: p.images_remaining, videos_remaining: p.videos_remaining }));
         // Refresh real generation list from DB (has correct IDs and URLs)
         const g = await sb.getGens(u.id, session.access_token);
         if (Array.isArray(g) && g.length > 0) {
@@ -1732,12 +1737,9 @@ export default function App() {
   // ─── USER PANEL (dropdown) ───
   const hasPlanForPanel = profile?.plan && profile.plan !== "none";
   const planDataForPanel = PLANS.find(p => p.id === profile?.plan) || PLANS[0];
-  const imgTotal = PRICES[profile?.plan]?.images || 0;
-  const vidTotal = PRICES[profile?.plan]?.videos || 0;
-  const imgRemain = profile?.images_remaining ?? 0;
-  const vidRemain = profile?.videos_remaining ?? 0;
-  const imgPct = imgTotal > 0 ? Math.round((imgRemain / imgTotal) * 100) : 0;
-  const vidPct = vidTotal > 0 ? Math.round((vidRemain / vidTotal) * 100) : 0;
+  const credTotal = PLANS.find(p => p.id === profile?.plan)?.credits || 0;
+  const credRemain = profile?.credits ?? 0;
+  const credPct = credTotal > 0 ? Math.min(100, Math.round((credRemain / credTotal) * 100)) : 0;
   const nextBill = getNextBilling();
 
   const UserPanel = () => (
@@ -1762,25 +1764,15 @@ export default function App() {
           {/* Credits bars */}
           {hasPlanForPanel && (
             <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
-              {/* Images bar */}
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 10, color: "#8a8a9e" }}>🖼️ {t("img_credits")}</span>
-                  <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#00f0ff" }}>{imgRemain}<span style={{ color: "#3a3a50" }}>/{imgTotal}</span></span>
-                </div>
-                <div style={{ height: 5, background: "rgba(255,255,255,.06)", borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${imgPct}%`, background: "linear-gradient(90deg, #00f0ff, #00c8ff)", borderRadius: 3, transition: "width .4s ease" }} />
-                </div>
-              </div>
-              {/* Videos bar */}
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 10, color: "#8a8a9e" }}>🎬 {t("vid_credits")}</span>
-                  <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#b44aff" }}>{vidRemain}<span style={{ color: "#3a3a50" }}>/{vidTotal}</span></span>
+                  <span style={{ fontSize: 10, color: "#8a8a9e" }}>⚡ {lang === "es" ? "Créditos" : "Credits"}</span>
+                  <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#e8c23a" }}>{credRemain}<span style={{ color: "#3a3a50" }}>/{credTotal}</span></span>
                 </div>
                 <div style={{ height: 5, background: "rgba(255,255,255,.06)", borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${vidPct}%`, background: "linear-gradient(90deg, #b44aff, #8a2be2)", borderRadius: 3, transition: "width .4s ease" }} />
+                  <div style={{ height: "100%", width: `${credPct}%`, background: "linear-gradient(90deg, #e8d44d, #c8a800)", borderRadius: 3, transition: "width .4s ease" }} />
                 </div>
+                <p style={{ fontSize: 9, color: "#4a4a62", margin: "6px 0 0" }}>≈ {Math.floor(credRemain / IMG_UNIT)} {lang === "es" ? "imágenes" : "images"} · {Math.floor(credRemain / vidCost(5))} {lang === "es" ? "videos 5s" : "5s videos"}</p>
               </div>
             </div>
           )}
@@ -2339,9 +2331,9 @@ export default function App() {
                     </div>
                   )}
                   <div style={{ background: "#fff", borderRadius: 18, padding: "26px 14px", textAlign: "center", minHeight: 130, display: "flex", flexDirection: "column", justifyContent: "center", border: pl.id === "test" ? "none" : `1px solid ${theme.ring}` }}>
-                    <p style={{ fontSize: 19, fontWeight: 600, margin: "0 0 8px" }}>{pl.images} img + {pl.videos} {lang === "es" ? "videos/mes" : "videos/mo."}</p>
-                    <p style={{ fontSize: 12, color: "#555", margin: "0 0 4px" }}>= {pl.images} {lang === "es" ? "imágenes Nano Banana Pro" : "Nano Banana Pro images"}</p>
-                    <p style={{ fontSize: 12, color: "#555", margin: 0 }}>= {pl.videos} {lang === "es" ? `videos premium (${vidDur})` : `premium videos (${vidDur})`}</p>
+                    <p style={{ fontSize: 19, fontWeight: 600, margin: "0 0 8px" }}>{pl.credits.toLocaleString("en-US")} {lang === "es" ? "créditos/mes" : "credits/mo."}</p>
+                    <p style={{ fontSize: 12, color: "#555", margin: "0 0 4px" }}>= {Math.floor(pl.credits / IMG_UNIT)} {lang === "es" ? "imágenes Nano Banana 2" : "Nano Banana 2 images"}</p>
+                    <p style={{ fontSize: 12, color: "#555", margin: 0 }}>= {Math.floor(pl.credits / vidCost(5))} {lang === "es" ? "videos Kling 3.0 (5s)" : "Kling 3.0 videos (5s)"}</p>
                   </div>
                 </div>
 
@@ -2360,6 +2352,47 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+
+                {/* Models (Promptwise-style) */}
+                {(() => {
+                  const rank = { test: 0, basic: 1, pro: 2, creator: 3 }[pl.id];
+                  const models = [
+                    { n: "Nano Banana 2", k: "img", min: 0 },
+                    { n: "GPT Image 2", k: "img", min: 0 },
+                    { n: "Seedream 4.5", k: "img", min: 0 },
+                    { n: "Kling 3.0", k: "vid", min: 0 },
+                    { n: "Wan 2.6", k: "vid", min: 0 },
+                    { n: "Kling 3.0 Motion", k: "vid", min: 1 },
+                    { n: "Seedance 2.0", k: "vid", min: 2 },
+                  ];
+                  const Bars = ({ c }) => (
+                    <svg width="18" height="16" viewBox="0 0 18 16" style={{ flexShrink: 0 }}>
+                      <rect x="1" y="5" width="3" height="10" rx="1" fill={c[0]} /><rect x="5.5" y="2" width="3" height="13" rx="1" fill={c[1]} />
+                      <rect x="10" y="7" width="3" height="8" rx="1" fill={c[2]} /><rect x="14.5" y="3" width="3" height="12" rx="1" fill={c[3]} />
+                    </svg>
+                  );
+                  return (
+                    <div style={{ marginTop: "auto", paddingTop: 22 }}>
+                      <div style={{ border: "1.5px solid #ddd", borderRadius: 14, padding: "12px 14px", background: "#fff", display: "flex", alignItems: "center", gap: 10 }}>
+                        <Bars c={["#3b82f6", "#6366f1", "#22d3ee", "#3b82f6"]} />
+                        <span style={{ fontSize: 14, fontWeight: 600, flex: 1, whiteSpace: "nowrap" }}>Seedance 2.5</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.2, padding: "5px 10px", borderRadius: 6, background: "#111", color: "#fff" }}>FULL ACCESS</span>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+                        {models.map(m => {
+                          const ok = rank >= m.min;
+                          return (
+                            <span key={m.n} title={ok ? "" : (lang === "es" ? (m.min === 1 ? "Desde plan Básico" : "Desde plan Pro") : (m.min === 1 ? "From Basic plan" : "From Pro plan"))}
+                              style={{ fontSize: 11, fontWeight: 500, padding: "4px 9px", borderRadius: 999, border: `1px solid ${ok ? "#d4d4d4" : "#eee"}`, color: ok ? "#222" : "#aaa", background: ok ? "#fafafa" : "transparent", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                              <span style={{ width: 6, height: 6, borderRadius: 3, background: ok ? (m.k === "img" ? "#22c55e" : "#6366f1") : "#ccc" }} />
+                              {m.n}{!ok && " 🔒"}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           );
@@ -2470,8 +2503,7 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: isDesk?12:6, flexShrink: 0, marginLeft: 12 }}>
           {isDesk && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "#4a4a62" }}>
-              <span><span style={{ color: "#00f0ff", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>{profile?.images_remaining ?? 0}</span> img</span>
-              <span><span style={{ color: "#b44aff", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>{profile?.videos_remaining ?? 0}</span> vid</span>
+              <span title={lang === "es" ? "Créditos disponibles" : "Available credits"}><span style={{ color: "#e8c23a", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>⚡ {profile?.credits ?? 0}</span> {lang === "es" ? "créditos" : "credits"}</span>
             </div>
           )}
           <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 12, background: `${hasPlan ? planData.color : "#5a5a70"}15`, border: `1px solid ${hasPlan ? planData.color : "#5a5a70"}35`, color: hasPlan ? planData.color : "#5a5a70", fontWeight: 600, letterSpacing: .8, textTransform: "uppercase" }}>
@@ -2488,19 +2520,19 @@ export default function App() {
             </button>
             {showTopUpMenu && (
               <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 999, background: "#13131e", border: "1px solid rgba(255,255,255,.08)", borderRadius: 14, padding: 16, width: 272, boxShadow: "0 16px 48px rgba(0,0,0,.8)" }} onClick={e => e.stopPropagation()}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", margin: "0 0 10px", letterSpacing: .5 }}>🖼️ {lang === "es" ? "Créditos imagen" : "Image credits"}</p>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#00f0ff", margin: "0 0 10px", letterSpacing: .5 }}>⚡ {lang === "es" ? "Packs pequeños" : "Small packs"}</p>
                 <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
                   {[["img_s",20,"$5.99"],["img_m",50,"$12.99"],["img_l",120,"$27.99"]].map(([id,amt,price]) => (
                     <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "9px 4px", fontSize: 10, fontWeight: 700, color: "#0a0a0f", background: "linear-gradient(135deg,#00f0ff,#00b8cc)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", lineHeight: 1.4 }}>
-                      {amt} img<br/><span style={{ fontSize: 9, opacity: .8 }}>{price}</span>
+                      {amt * IMG_UNIT} cr<br/><span style={{ fontSize: 9, opacity: .8 }}>{price}</span>
                     </button>
                   ))}
                 </div>
-                <p style={{ fontSize: 11, fontWeight: 700, color: "#b44aff", margin: "0 0 10px", letterSpacing: .5 }}>🎬 {lang === "es" ? "Créditos video" : "Video credits"}</p>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#b44aff", margin: "0 0 10px", letterSpacing: .5 }}>⚡ {lang === "es" ? "Packs grandes" : "Large packs"}</p>
                 <div style={{ display: "flex", gap: 6 }}>
                   {[["vid_s",5,"$12.99"],["vid_m",12,"$27.99"],["vid_l",30,"$59.99"]].map(([id,amt,price]) => (
                     <button key={id} onClick={() => { openPack(id, profile?.email || session?.user?.email); setShowTopUpMenu(false); }} style={{ flex: 1, padding: "9px 4px", fontSize: 10, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg,#b44aff,#7a00ff)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", lineHeight: 1.4 }}>
-                      {amt} vid<br/><span style={{ fontSize: 9, opacity: .8 }}>{price}</span>
+                      {amt * VID_UNIT} cr<br/><span style={{ fontSize: 9, opacity: .8 }}>{price}</span>
                     </button>
                   ))}
                 </div>
@@ -2589,8 +2621,8 @@ export default function App() {
                         </p>
                         <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>
                           {lang === "es"
-                            ? `Motor premium de última generación · Alta calidad · 3 créditos`
-                            : `Next-gen premium engine · High quality · 3 credits`}
+                            ? `GPT Image 2 · Alta calidad · ${imgCost(true)} créditos`
+                            : `GPT Image 2 · High quality · ${imgCost(true)} credits`}
                         </p>
                       </div>
                       {/* Toggle switch */}
@@ -2723,7 +2755,7 @@ export default function App() {
               )}
 
               {/* No credits — show packs for eligible plans, upgrade for others */}
-              {hasPlan && ((tab === T.IMG && (profile?.images_remaining ?? 0) <= 0) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0)) && (() => {
+              {hasPlan && ((tab === T.IMG && (profile?.credits ?? 0) < imgCost(maxRealism)) || (tab === T.VID && (profile?.credits ?? 0) < vidCost(vidDur))) && (() => {
                 const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
                 const isImg = tab === T.IMG;
                 const imgPacks = [
@@ -2740,7 +2772,7 @@ export default function App() {
                 return (
                   <div style={{ padding: "16px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
                     <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>
-                      {isImg ? (lang === "en" ? "📸 Out of image credits" : "📸 Sin créditos de imagen") : (lang === "en" ? "🎬 Out of video credits" : "🎬 Sin créditos de video")}
+                      {lang === "en" ? "⚡ Not enough credits" : "⚡ Sin créditos suficientes"}
                     </p>
                     {isPackEligible ? (
                       <>
@@ -2754,8 +2786,8 @@ export default function App() {
                               onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(0,240,255,.5)"; e.currentTarget.style.background = "rgba(0,240,255,.12)"; }}
                               onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(0,240,255,.25)"; e.currentTarget.style.background = "linear-gradient(135deg, rgba(0,240,255,.08), rgba(0,240,255,.04))"; }}>
                               <p style={{ fontSize: 11, fontWeight: 600, color: "#8a8aaa", margin: "0 0 3px", textTransform: "uppercase", letterSpacing: 1 }}>{pk.label}</p>
-                              <p style={{ fontSize: 15, fontWeight: 800, color: "#00f0ff", margin: "0 0 4px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount}</p>
-                              <p style={{ fontSize: 10, color: "#8a8aaa", margin: "0 0 6px" }}>{isImg ? (lang === "en" ? "images" : "imágenes") : (lang === "en" ? "videos" : "videos")}</p>
+                              <p style={{ fontSize: 15, fontWeight: 800, color: "#00f0ff", margin: "0 0 4px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount * (isImg ? IMG_UNIT : VID_UNIT)}</p>
+                              <p style={{ fontSize: 10, color: "#8a8aaa", margin: "0 0 6px" }}>{lang === "en" ? "credits" : "créditos"}</p>
                               <p style={{ fontSize: 16, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
                             </button>
                           ))}
@@ -2786,8 +2818,8 @@ export default function App() {
             const isMotionEligible = ["basic","pro","creator"].includes(profile?.plan);
             const isTestPlan = profile?.plan === "test" || !profile?.plan;
             const motionMaxDur = profile?.plan === "basic" ? 5 : profile?.plan === "pro" ? 8 : 15;
-            const motionCredits = motionVideoDuration > 10 ? 3 : 2; // 5-10s = 2 credits, 11-15s = 3 credits
-            const canGenMotion = isMotionEligible && motionImageUrl && motionVideoUrl && !genning && !motionUploadProgress.img && !motionUploadProgress.vid && (profile?.videos_remaining ?? 0) >= motionCredits;
+            const motionCredits = (motionVideoDuration > 10 ? 3 : 2) * VID_UNIT; // 5-10s = 120, 11-15s = 180
+            const canGenMotion = isMotionEligible && motionImageUrl && motionVideoUrl && !genning && !motionUploadProgress.img && !motionUploadProgress.vid && (profile?.credits ?? 0) >= motionCredits;
 
             const uploadMotionFile = async (file, isImg) => {
               if (!file) return;
@@ -2964,7 +2996,7 @@ export default function App() {
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining, images_remaining: p2.images_remaining })); } } catch {} return; }
+                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
                     setGenStatus({ phase: (sd.position ?? 0) > 0 ? "queued" : "generating", position: sd.position || null, elapsed });
                     setTimeout(poll, 4000);
                   } catch { setTimeout(poll, 5000); }
@@ -2996,7 +3028,7 @@ export default function App() {
                     {/* Header */}
                     <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 10, background: "rgba(255,107,43,.05)", border: "1px solid rgba(255,107,43,.12)" }}>
                       <p style={{ fontSize: 11, fontWeight: 700, color: "#ff6b2b", margin: "0 0 2px" }}>🎭 Motion Control Premium</p>
-                      <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? `Transfiere el movimiento de un video a tu imagen — cuesta ${motionCredits} créditos de video` : `Transfer motion from a video to your image — costs ${motionCredits} video credits`}</p>
+                      <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>{lang === "es" ? `Transfiere el movimiento de un video a tu imagen — cuesta ${motionCredits} créditos` : `Transfer motion from a video to your image — costs ${motionCredits} video credits`}</p>
                     </div>
 
                     {/* Two upload boxes side by side */}
@@ -3071,7 +3103,7 @@ export default function App() {
                       </p>
                       <p style={{ fontSize: 9, color: "#5a5a70", margin: 0 }}>
                         {lang === "es"
-                          ? `Límite de tu plan: máx ${motionMaxDur}s · ${motionCredits} crédito${motionCredits > 1 ? "s" : ""} de video · (5-10s = 2 · 11-15s = 3)`
+                          ? `Límite de tu plan: máx ${motionMaxDur}s · ${motionCredits} créditos · (5-10s = ${2 * VID_UNIT} · 11-15s = ${3 * VID_UNIT})`
                           : `Your plan limit: max ${motionMaxDur}s · ${motionCredits} video credit${motionCredits > 1 ? "s" : ""} · (5-10s = 2 · 11-15s = 3)`}
                         {motionVideoDuration > 0 && <span style={{ color: "#00f0ff", marginLeft: 8 }}>· {lang === "es" ? "Video detectado:" : "Detected:"} {motionVideoDuration.toFixed(1)}s ✓</span>}
                       </p>
@@ -3094,7 +3126,7 @@ export default function App() {
 
                     {/* Credits warning */}
                 {/* Video pack section when credits = 0 */}
-                {hasPlan && (profile?.videos_remaining ?? 0) < motionCredits && (() => {
+                {hasPlan && (profile?.credits ?? 0) < motionCredits && (() => {
                   const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
                   const vidPacks = [
                     { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
@@ -3104,7 +3136,7 @@ export default function App() {
                   return (
                     <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
                       <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>
-                        {lang === "es" ? "🎬 Sin créditos de video" : "🎬 Out of video credits"}
+                        {lang === "es" ? "⚡ Sin créditos suficientes" : "⚡ Not enough credits"}
                       </p>
                       {isPackEligible ? (
                         <>
@@ -3116,8 +3148,8 @@ export default function App() {
                               <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)}
                                 style={{ flex: 1, padding: "10px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
                                 <p style={{ fontSize: 10, fontWeight: 600, color: "#8a8aaa", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: 1 }}>{pk.label}</p>
-                                <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount}</p>
-                                <p style={{ fontSize: 9, color: "#8a8aaa", margin: "0 0 4px" }}>{lang === "es" ? "videos" : "videos"}</p>
+                                <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount * VID_UNIT}</p>
+                                <p style={{ fontSize: 9, color: "#8a8aaa", margin: "0 0 4px" }}>{lang === "es" ? "créditos" : "credits"}</p>
                                 <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
                               </button>
                             ))}
@@ -3143,7 +3175,7 @@ export default function App() {
                     {/* Generate button */}
                     <button onClick={handleMotionGen} disabled={!canGenMotion}
                       style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGenMotion ? "#06060e" : "#3a3a50", background: canGenMotion ? "linear-gradient(135deg, #ff6b2b, #ffb800)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGenMotion ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGenMotion ? "0 0 22px rgba(255,107,43,.3)" : "none", transition: "all .2s" }}>
-                      {genning ? (lang === "es" ? "Generando..." : "Generating...") : (motionUploadProgress.img || motionUploadProgress.vid) ? (lang === "es" ? "⏳ Subiendo archivos..." : "⏳ Uploading files...") : !motionImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !motionVideo ? (lang === "es" ? "Sube un video de movimiento" : "Upload a motion video") : !motionImageUrl || !motionVideoUrl ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : (profile?.videos_remaining ?? 0) < motionCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Generar Motion (${motionCredits} créditos)` : `🎭 Generate Motion (${motionCredits} credits)`)}
+                      {genning ? (lang === "es" ? "Generando..." : "Generating...") : (motionUploadProgress.img || motionUploadProgress.vid) ? (lang === "es" ? "⏳ Subiendo archivos..." : "⏳ Uploading files...") : !motionImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !motionVideo ? (lang === "es" ? "Sube un video de movimiento" : "Upload a motion video") : !motionImageUrl || !motionVideoUrl ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : (profile?.credits ?? 0) < motionCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Generar Motion (${motionCredits} créditos)` : `🎭 Generate Motion (${motionCredits} credits)`)}
                     </button>
                     {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={motionDur} lang={lang} genStatus={genStatus} /></div>}
                     {genError && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 12, color: "#ff4d6a", textAlign: "center" }}>
@@ -3174,11 +3206,11 @@ export default function App() {
 
           {/* Director tab */}
           {tab === T.DIR && (() => {
-            const dirCredits = dirDuration <= 5 ? 3 : dirDuration <= 10 ? 4 : 5;
+            const dirCredits = (dirDuration <= 5 ? 3 : dirDuration <= 10 ? 4 : 5) * VID_UNIT;
             const isDirEligible = ["pro","creator"].includes(profile?.plan);
             const isDirLocked = !isDirEligible;
             const primaryImage = dirImages[0];
-            const canGenDir = isDirEligible && primaryImage?.url && dirPrompt.trim() && !genning && !dirUploading.img && !dirUploading.aud && (profile?.videos_remaining ?? 0) >= dirCredits;
+            const canGenDir = isDirEligible && primaryImage?.url && dirPrompt.trim() && !genning && !dirUploading.img && !dirUploading.aud && (profile?.credits ?? 0) >= dirCredits;
 
             // Upload helper — shared for both images and audios
             const uploadDirFile = async (file, isImg) => {
@@ -3294,7 +3326,7 @@ export default function App() {
                       const sd = await sr.json();
                       const elapsed = Math.round((Date.now() - pollStart) / 1000);
                       if (sd.status === "COMPLETED" && sd.url) { await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                      if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining })); } } catch {} return; }
+                      if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Generación fallida" : "❌ Generation failed") + (sd.error ? `: ${sd.error}` : "") + (lang === "es" ? " — Crédito devuelto." : " — Credit refunded.")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
                       setGenStatus({ phase: (sd.position ?? 0) > 0 ? "queued" : "generating", position: sd.position || null, elapsed });
                       setTimeout(poll, 4000);
                     } catch { setTimeout(poll, 5000); }
@@ -3527,12 +3559,12 @@ export default function App() {
                     </div>
                   </div>
                   <p style={{ fontSize: 9, color: "#3a3a50", margin: "6px 0 0", textAlign: "center" }}>
-                    {lang === "es" ? "5s = 3 créditos · 6–10s = 4 créditos · 11–15s = 5 créditos" : "5s = 3 credits · 6–10s = 4 credits · 11–15s = 5 credits"}
+                    {lang === "es" ? `5s = ${3 * VID_UNIT} créditos · 6–10s = ${4 * VID_UNIT} · 11–15s = ${5 * VID_UNIT}` : `5s = ${3 * VID_UNIT} credits · 6–10s = ${4 * VID_UNIT} · 11–15s = ${5 * VID_UNIT}`}
                   </p>
                 </div>
 
                 {/* Video pack section when credits insufficient */}
-                {hasPlan && (profile?.videos_remaining ?? 0) < dirCredits && (() => {
+                {hasPlan && (profile?.credits ?? 0) < dirCredits && (() => {
                   const isPackEligible = PACK_ELIGIBLE_PLANS.includes(profile?.plan);
                   const vidPacks = [
                     { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
@@ -3542,7 +3574,7 @@ export default function App() {
                   return (
                     <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14, animation: "fadeUp .4s ease" }}>
                       <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 4px" }}>
-                        {lang === "es" ? "🎬 Sin créditos de video" : "🎬 Out of video credits"}
+                        {lang === "es" ? "⚡ Sin créditos suficientes" : "⚡ Not enough credits"}
                       </p>
                       {isPackEligible ? (
                         <>
@@ -3554,8 +3586,8 @@ export default function App() {
                               <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)}
                                 style={{ flex: 1, padding: "10px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
                                 <p style={{ fontSize: 10, fontWeight: 600, color: "#8a8aaa", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: 1 }}>{pk.label}</p>
-                                <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount}</p>
-                                <p style={{ fontSize: 9, color: "#8a8aaa", margin: "0 0 4px" }}>videos</p>
+                                <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px", fontFamily: "'JetBrains Mono',monospace" }}>+{pk.amount * VID_UNIT}</p>
+                                <p style={{ fontSize: 9, color: "#8a8aaa", margin: "0 0 4px" }}>{lang === "es" ? "créditos" : "credits"}</p>
                                 <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
                               </button>
                             ))}
@@ -3580,7 +3612,7 @@ export default function App() {
 
                 <button onClick={handleDirGen} disabled={!canGenDir}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGenDir ? "#06060e" : "#3a3a50", background: canGenDir ? "linear-gradient(135deg,#00f0ff,#b44aff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGenDir ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGenDir ? "0 0 22px rgba(0,240,255,.25)" : "none", transition: "all .2s" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : (dirUploading.img || dirUploading.aud) ? (lang === "es" ? "⏳ Subiendo..." : "⏳ Uploading...") : !primaryImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !primaryImage.url ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : !dirPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.videos_remaining ?? 0) < dirCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎬 Generar Director (${dirCredits} créditos)` : `🎬 Generate Director (${dirCredits} credits)`)}
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : (dirUploading.img || dirUploading.aud) ? (lang === "es" ? "⏳ Subiendo..." : "⏳ Uploading...") : !primaryImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !primaryImage.url ? (lang === "es" ? "Esperando upload..." : "Waiting for upload...") : !dirPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.credits ?? 0) < dirCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎬 Generar Director (${dirCredits} créditos)` : `🎬 Generate Director (${dirCredits} credits)`)}
                 </button>
 
                 {genning && <div style={{ marginTop: 14, position: "relative", height: isDesk ? 180 : 150, borderRadius: 14, overflow: "hidden" }}><Generating type={T.VID} duration={dirDuration} lang={lang} genStatus={genStatus} /></div>}
@@ -3616,7 +3648,7 @@ export default function App() {
 
           {/* ── Wavespeed Img Pro (Seedream 4.5 Edit) ── */}
           {tab === T.WS_IMG && (() => {
-            const canGen = !genning && !wsImgUploading && wsImgImages.length > 0 && wsImgPrompt.trim();
+            const canGen = !genning && !wsImgUploading && wsImgImages.length > 0 && wsImgPrompt.trim() && (profile?.credits ?? 0) >= IMG_UNIT;
 
             const uploadWsImg = async (file) => {
               if (!file) return;
@@ -3666,7 +3698,7 @@ export default function App() {
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { setGenStatus({ phase: "done", position: null, elapsed }); await saveGenResult(false, { url: sd.url }); playDoneSound(); return; }
-                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, images_remaining: p2.images_remaining })); } } catch {} return; }
+                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
                     setGenStatus({ phase: "generating", position: null, elapsed });
                     setTimeout(poll, 3000);
                   } catch { setTimeout(poll, 5000); }
@@ -3769,8 +3801,8 @@ export default function App() {
               10: { "1080p": 3, "2k": 4, "4k": 4 },
               15: { "1080p": 3, "2k": 4, "4k": 5 },
             };
-            const wsVidCredits = (wsVidCreditTable[wsVidDuration] || wsVidCreditTable[5])[wsVidRes] ?? 2;
-            const canGen = !genning && !wsVidUploading && wsVidImage?.url && wsVidPrompt.trim() && (profile?.videos_remaining ?? 0) >= wsVidCredits;
+            const wsVidCredits = ((wsVidCreditTable[wsVidDuration] || wsVidCreditTable[5])[wsVidRes] ?? 2) * VID_UNIT;
+            const canGen = !genning && !wsVidUploading && wsVidImage?.url && wsVidPrompt.trim() && (profile?.credits ?? 0) >= wsVidCredits;
 
             const uploadWsVid = async (file) => {
               if (!file) return;
@@ -3819,7 +3851,7 @@ export default function App() {
                     const sd = await sr.json();
                     const elapsed = Math.round((Date.now() - pollStart) / 1000);
                     if (sd.status === "COMPLETED" && sd.url) { setGenStatus({ phase: "done", position: null, elapsed }); await saveGenResult(true, { url: sd.url }); playDoneSound(); return; }
-                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, videos_remaining: p2.videos_remaining })); } } catch {} return; }
+                    if (sd.status === "FAILED") { setGenning(false); setGenStatus({ phase: "idle", position: null, elapsed: 0 }); setGenError((lang === "es" ? "❌ Error: " : "❌ Error: ") + (sd.error || "Failed")); try { const u2 = await sb.getUser(session.access_token); if (u2?.id) { const p2 = await sb.getProfile(u2.id, session.access_token); if (p2) setProfile(prev => ({ ...prev, credits: p2.credits })); } } catch {} return; }
                     setGenStatus({ phase: "generating", position: null, elapsed });
                     setTimeout(poll, 5000);
                   } catch { setTimeout(poll, 6000); }
@@ -3891,16 +3923,16 @@ export default function App() {
                 </div>
 
                 {/* Credits warning */}
-                {hasPlan && (profile?.videos_remaining ?? 0) < wsVidCredits && (() => {
+                {hasPlan && (profile?.credits ?? 0) < wsVidCredits && (() => {
                   const vidPacks = [{ id: "vid_s", label: "Pack S", amount: 5, price: 12.99 }, { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 }, { id: "vid_l", label: "Pack L", amount: 30, price: 59.99 }];
                   return (
                     <div style={{ padding: "14px", borderRadius: 12, background: "rgba(0,240,255,.04)", border: "1px solid rgba(0,240,255,.12)", marginBottom: 14 }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 8px" }}>{lang === "es" ? "🎬 Sin créditos de video" : "🎬 Out of video credits"}</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#e0e0f0", margin: "0 0 8px" }}>{lang === "es" ? "⚡ Sin créditos suficientes" : "⚡ Not enough credits"}</p>
                       <div style={{ display: "flex", gap: 6 }}>
                         {vidPacks.map(pk => (
                           <button key={pk.id} onClick={() => openPack(pk.id, profile?.email)} style={{ flex: 1, padding: "8px 4px", borderRadius: 9, border: "1px solid rgba(0,240,255,.25)", background: "rgba(0,240,255,.06)", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
                             <p style={{ fontSize: 10, fontWeight: 600, color: "#8a8aaa", margin: "0 0 2px", textTransform: "uppercase" }}>{pk.label}</p>
-                            <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px" }}>+{pk.amount}</p>
+                            <p style={{ fontSize: 14, fontWeight: 800, color: "#00f0ff", margin: "0 0 2px" }}>+{pk.amount * VID_UNIT}</p>
                             <p style={{ fontSize: 14, fontWeight: 800, color: "#fff", margin: 0 }}>${pk.price}</p>
                           </button>
                         ))}
@@ -3917,7 +3949,7 @@ export default function App() {
 
                 <button onClick={handleWsVidGen} disabled={!canGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canGen ? "#06060e" : "#3a3a50", background: canGen ? "linear-gradient(135deg,#00c8ff,#0080ff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canGen ? "0 0 22px rgba(0,200,255,.25)" : "none" }}>
-                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsVidUploading ? "⏳..." : !wsVidImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsVidPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.videos_remaining ?? 0) < wsVidCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🌊 Generar Vid Pro (${wsVidCredits} créditos)` : `🌊 Generate Vid Pro (${wsVidCredits} credits)`)}
+                  {genning ? (lang === "es" ? "Generando..." : "Generating...") : wsVidUploading ? "⏳..." : !wsVidImage ? (lang === "es" ? "Sube una imagen primero" : "Upload an image first") : !wsVidPrompt.trim() ? (lang === "es" ? "Escribí una descripción" : "Write a description") : (profile?.credits ?? 0) < wsVidCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🌊 Generar Vid Pro (${wsVidCredits} créditos)` : `🌊 Generate Vid Pro (${wsVidCredits} credits)`)}
                 </button>
 
                 {genResult && !genning && tab === T.WS_VID && (
@@ -3942,8 +3974,8 @@ export default function App() {
               "1080p":[[15,12],[20,18],[25,24],[30,30]],
             };
             const veBuckets = veCreditsTable[vidEditRes] || veCreditsTable["720p"];
-            const veCredits = (veBuckets.find(([,mx]) => vidEditDuration <= mx) || veBuckets[veBuckets.length-1])[0];
-            const canVeGen = !genning && !vidEditVidUploading && !vidEditImgUploading && vidEditVideo?.url && vidEditImages.length > 0 && (profile?.videos_remaining ?? 0) >= veCredits;
+            const veCredits = (veBuckets.find(([,mx]) => vidEditDuration <= mx) || veBuckets[veBuckets.length-1])[0] * VID_UNIT;
+            const canVeGen = !genning && !vidEditVidUploading && !vidEditImgUploading && vidEditVideo?.url && vidEditImages.length > 0 && (profile?.credits ?? 0) >= veCredits;
 
             const uploadVeVideo = async (file) => {
               if (!file) return;
@@ -4127,14 +4159,14 @@ export default function App() {
 
                 {/* Credit info */}
                 <div style={{ fontSize: 11, color: "#8a8a9e", marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
-                  <span>{lang === "es" ? `Costo: ${veCredits} créditos de video` : `Cost: ${veCredits} video credits`}</span>
-                  <span style={{ color: (profile?.videos_remaining ?? 0) >= veCredits ? "#6a6" : "#a44" }}>{lang === "es" ? `Disponibles: ${profile?.videos_remaining ?? 0}` : `Available: ${profile?.videos_remaining ?? 0}`}</span>
+                  <span>{lang === "es" ? `Costo: ${veCredits} créditos` : `Cost: ${veCredits} credits`}</span>
+                  <span style={{ color: (profile?.credits ?? 0) >= veCredits ? "#6a6" : "#a44" }}>{lang === "es" ? `Disponibles: ${profile?.credits ?? 0}` : `Available: ${profile?.credits ?? 0}`}</span>
                 </div>
 
                 {vidEditError && <p style={{ color: "#f55", fontSize: 11, marginBottom: 10 }}>⚠ {vidEditError}</p>}
 
                 {/* Video pack section when credits insufficient */}
-                {(profile?.videos_remaining ?? 0) < veCredits && (() => {
+                {(profile?.credits ?? 0) < veCredits && (() => {
                   const vidPacks = [
                     { id: "vid_s", label: "Pack S", amount: 5,  price: 12.99 },
                     { id: "vid_m", label: "Pack M", amount: 12, price: 27.99 },
@@ -4143,12 +4175,12 @@ export default function App() {
                   return (
                     <div style={{ padding: "14px", borderRadius: 12, background: "rgba(255,184,0,.06)", border: "1px solid rgba(255,184,0,.25)", marginBottom: 14 }}>
                       <p style={{ fontSize: 13, fontWeight: 700, color: "#ffb800", margin: "0 0 4px" }}>⚡ {lang === "es" ? "Sin créditos suficientes" : "Not enough credits"}</p>
-                      <p style={{ fontSize: 11, color: "#8a8a9e", margin: "0 0 10px" }}>{lang === "es" ? `Necesitás ${veCredits} créditos · Tenés ${profile?.videos_remaining ?? 0}` : `Need ${veCredits} credits · You have ${profile?.videos_remaining ?? 0}`}</p>
-                      <p style={{ fontSize: 11, color: "#8a8a9e", margin: "0 0 8px" }}>{lang === "es" ? "Recargá créditos de video:" : "Top up video credits:"}</p>
+                      <p style={{ fontSize: 11, color: "#8a8a9e", margin: "0 0 10px" }}>{lang === "es" ? `Necesitás ${veCredits} créditos · Tenés ${profile?.credits ?? 0}` : `Need ${veCredits} credits · You have ${profile?.credits ?? 0}`}</p>
+                      <p style={{ fontSize: 11, color: "#8a8a9e", margin: "0 0 8px" }}>{lang === "es" ? "Recargá créditos:" : "Top up credits:"}</p>
                       <div style={{ display: "flex", gap: 6 }}>
                         {vidPacks.map(pk => (
                           <button key={pk.id} onClick={() => openPack(pk.id, profile?.email || session?.user?.email)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, fontWeight: 700, color: "#06060e", background: "linear-gradient(135deg,#ffb800,#ff8c00)", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 8px rgba(255,184,0,.3)" }}>
-                            {pk.label}<br/><span style={{ fontSize: 10 }}>{pk.amount} vid</span><br/><span style={{ fontSize: 10 }}>${pk.price}</span>
+                            {pk.label}<br/><span style={{ fontSize: 10 }}>{pk.amount * (pk.type === "images" ? IMG_UNIT : VID_UNIT)} cr</span><br/><span style={{ fontSize: 10 }}>${pk.price}</span>
                           </button>
                         ))}
                       </div>
@@ -4164,7 +4196,7 @@ export default function App() {
 
                 <button onClick={handleVidEditGen} disabled={!canVeGen}
                   style={{ width: "100%", padding: isDesk ? "15px" : "13px", fontSize: 14, fontWeight: 700, color: canVeGen ? "#fff" : "#3a3a50", background: canVeGen ? "linear-gradient(135deg,#b44aff,#7a00ff)" : "rgba(255,255,255,.03)", border: "none", borderRadius: 11, cursor: canVeGen ? "pointer" : "not-allowed", fontFamily: "inherit", boxShadow: canVeGen ? "0 0 22px rgba(180,74,255,.3)" : "none" }}>
-                  {genning ? (lang === "es" ? "Procesando..." : "Processing...") : vidEditVidUploading || vidEditImgUploading ? "⏳..." : !vidEditVideo ? (lang === "es" ? "Subí un video primero" : "Upload a video first") : vidEditImages.length === 0 ? (lang === "es" ? "Agregá al menos una foto" : "Add at least one photo") : (profile?.videos_remaining ?? 0) < veCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Cambiar Personaje (${veCredits} créditos)` : `🎭 Swap Character (${veCredits} credits)`)}
+                  {genning ? (lang === "es" ? "Procesando..." : "Processing...") : vidEditVidUploading || vidEditImgUploading ? "⏳..." : !vidEditVideo ? (lang === "es" ? "Subí un video primero" : "Upload a video first") : vidEditImages.length === 0 ? (lang === "es" ? "Agregá al menos una foto" : "Add at least one photo") : (profile?.credits ?? 0) < veCredits ? (lang === "es" ? "Sin créditos suficientes" : "Not enough credits") : (lang === "es" ? `🎭 Cambiar Personaje (${veCredits} créditos)` : `🎭 Swap Character (${veCredits} credits)`)}
                 </button>
 
                 {genResult && !genning && tab === T.VID_EDIT && (
@@ -4188,9 +4220,9 @@ export default function App() {
             const atLimit = activeJobs.length >= jobLimit;
             return (
             <div style={{ padding: "12px 14px 16px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0d0d14", flexShrink: 0 }}>
-              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.images_remaining ?? 0) < (maxRealism ? 3 : 1)) || (tab === T.VID && (profile?.videos_remaining ?? 0) <= 0))}
+              <button onClick={hasPlan ? handleGen : () => setPage(P.PLANS)} disabled={hasPlan && (genBtnLocked || atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") || (style === "restore" || style === "colorize" ? refImages.length === 0 : false) || (tab === T.IMG && (profile?.credits ?? 0) < imgCost(maxRealism)) || (tab === T.VID && (profile?.credits ?? 0) < vidCost(vidDur)))}
                 style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, letterSpacing: -.2, color: "#0a0a0f", background: !hasPlan ? "linear-gradient(135deg,#e8c23a,#d4a017)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "rgba(255,255,255,.06)" : tab === T.IMG ? (maxRealism ? "linear-gradient(135deg,#ffb800,#ff8800)" : "linear-gradient(135deg,#e8d44d,#c8a800)") : "linear-gradient(135deg,#b44aff,#8a2be2)", border: "none", borderRadius: 10, cursor: (genBtnLocked && hasPlan) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: !hasPlan ? "0 0 20px rgba(232,196,61,.3)" : atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "none" : tab === T.IMG ? "0 0 24px rgba(232,196,61,.35)" : "0 0 24px rgba(180,74,255,.3)", color: atLimit || (!prompt.trim() && style !== "restore" && style !== "colorize") ? "#4a4a62" : "#0a0a0f" }}>
-                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : tab === T.IMG ? (maxRealism ? `✨ Generar · 3 créditos (${profile?.images_remaining ?? 0} disp.)` : `Generar imagen (${profile?.images_remaining ?? 0})`) : `Generar video (${profile?.videos_remaining ?? 0})`}
+                {!hasPlan ? t("plan_for_gen") : atLimit ? (lang === "es" ? `Límite: ${jobLimit} simultánea${jobLimit > 1 ? "s" : ""} en curso` : `Limit: ${jobLimit} running`) : genBtnLocked ? t("loading") : (style === "restore" || style === "colorize") && refImages.length === 0 ? (lang === "es" ? "Sube imagen de referencia" : "Upload reference image") : (() => { const c = tab === T.IMG ? imgCost(maxRealism) : vidCost(vidDur); const have = profile?.credits ?? 0; return have < c ? (lang === "es" ? `Sin créditos suficientes (${c} necesarios)` : `Not enough credits (${c} needed)`) : (lang === "es" ? `${tab === T.IMG ? "Generar imagen" : "Generar video"} · ⚡ ${c}` : `${tab === T.IMG ? "Generate image" : "Generate video"} · ⚡ ${c}`); })()}
               </button>
               {activeJobs.length > 0 && <div style={{ marginTop: 9, fontSize: 11, color: "#6a6a82", textAlign: "center" }}>{lang === "es" ? `${activeJobs.length}/${jobLimit} generando · puedes seguir creando` : `${activeJobs.length}/${jobLimit} generating · keep creating`}</div>}
               {genError && <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 7, background: "rgba(255,77,106,.08)", border: "1px solid rgba(255,77,106,.15)", fontSize: 11, color: "#ff4d6a", textAlign: "center" }}>

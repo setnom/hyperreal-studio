@@ -4,10 +4,10 @@ const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
 const PLAN_CREDITS = {
-  test:    { images: 20,  videos: 2  },
-  basic:   { images: 40,  videos: 8  },
-  pro:     { images: 90,  videos: 18 },
-  creator: { images: 200, videos: 30 },
+  test:    { images: 20,  videos: 2,  credits: 275  },
+  basic:   { images: 40,  videos: 8,  credits: 800  },
+  pro:     { images: 90,  videos: 18, credits: 1800 },
+  creator: { images: 200, videos: 30, credits: 3400 },
 };
 
 const PRICE_TO_PLAN = {
@@ -106,11 +106,11 @@ export default async function handler(req, res) {
 
   // ── Idempotency: if user already has this plan active, skip credit assignment ──
   const currentProfileRes = await fetch(
-    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,subscription_status,images_remaining`,
+    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,subscription_status,credits`,
     { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
   );
   const currentProfile = (await currentProfileRes.json())?.[0];
-  if (currentProfile?.plan === confirmedPlan && currentProfile?.subscription_status === "active" && (currentProfile?.images_remaining ?? 0) > 0) {
+  if (currentProfile?.plan === confirmedPlan && currentProfile?.subscription_status === "active" && (currentProfile?.credits ?? 0) > 0) {
     console.log(`activate: user already has active plan=${confirmedPlan} — skipping credit assignment`);
     return res.status(200).json({ success: true, plan: confirmedPlan, skipped: true });
   }
@@ -128,6 +128,7 @@ export default async function handler(req, res) {
       plan: confirmedPlan,
       images_remaining: credits.images,
       videos_remaining: credits.videos,
+      credits: credits.credits,
       subscription_status: "active",
       subscription_start: new Date().toISOString(),
       subscription_end: subscriptionEnd || null,
@@ -155,6 +156,7 @@ export default async function handler(req, res) {
         plan: confirmedPlan,
         images_remaining: credits.images,
         videos_remaining: credits.videos,
+      credits: credits.credits,
         subscription_status: "active",
         subscription_start: new Date().toISOString(),
       subscription_end: subscriptionEnd || null,
@@ -179,6 +181,7 @@ export default async function handler(req, res) {
           plan: confirmedPlan,
           images_remaining: credits.images,
           videos_remaining: credits.videos,
+      credits: credits.credits,
           subscription_status: "active",
           subscription_start: new Date().toISOString(),
       subscription_end: subscriptionEnd || null,

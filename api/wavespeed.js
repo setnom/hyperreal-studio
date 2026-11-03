@@ -1,4 +1,5 @@
 // Wavespeed AI — unified: Seedream 4.5 Edit + WAN 2.6 I2V Pro + polling
+import { COSTS, deductCredits, addCredits, insufficientMsg, IMG_UNIT, VID_UNIT } from "./_credits.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 const WS_BASE = "https://api.wavespeed.ai/api/v3";
@@ -43,15 +44,18 @@ function sbH(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" };
 }
 
-async function refundCredits(userId, type, serviceKey, creditsToRefund = 1) {
+// Idempotent refund: only refunds if the generation is still "processing" (marks it failed atomically).
+// Amount comes from credits_cost stored in DB — never from the client.
+async function refundGeneration(userId, genId, type, serviceKey) {
   try {
-    const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,videos_remaining`, { headers: sbH(serviceKey) });
-    const prof = (await profRes.json())?.[0];
-    if (!prof) return;
-    const patch = type === "image"
-      ? { images_remaining: (prof.images_remaining || 0) + 1 }
-      : { videos_remaining: (prof.videos_remaining || 0) + creditsToRefund };
-    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(serviceKey), body: JSON.stringify(patch) });
+    if (!genId) return;
+    const r = await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}&user_id=eq.${userId}&status=eq.processing`, {
+      method: "PATCH", headers: sbH(serviceKey), body: JSON.stringify({ status: "failed" }),
+    });
+    const rows = r.ok ? await r.json() : [];
+    if (!Array.isArray(rows) || rows.length === 0) return; // already refunded / not ours
+    const amount = rows[0].credits_cost ?? (rows[0].type === "image" || type === "image" ? IMG_UNIT : VID_UNIT);
+    await addCredits(userId, amount, serviceKey);
   } catch(e) { console.error("WS refund error:", e.message); }
 }
 
@@ -83,20 +87,19 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
 
   const imgSize = safeImgSize(size);
 
-  const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
+  const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=credits,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
   const prof = (await profRes.json())?.[0];
   if (!prof?.plan || prof.plan === "none") return res.status(403).json({ error: "No active plan" });
   if (prof.subscription_status === "payment_failed") return res.status(403).json({ error: "Payment issue" });
-  if ((prof.images_remaining ?? 0) <= 0) return res.status(402).json({ error: "No image credits" });
+  const creditsNeeded = COSTS.legacyImage(1); // 8
+  if ((prof.credits ?? 0) < creditsNeeded) return res.status(402).json({ error: insufficientMsg(creditsNeeded, prof.credits ?? 0) });
 
-  const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&images_remaining=gt.0`, {
-    method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ images_remaining: prof.images_remaining - 1 })
-  });
-  if (!deductRes.ok) return res.status(409).json({ error: "Credit deduction failed" });
+  const deduct = await deductCredits(userId, creditsNeeded, SERVICE_KEY);
+  if (!deduct.ok) return res.status(deduct.reason === "insufficient" ? 402 : 409).json({ error: deduct.reason === "insufficient" ? insufficientMsg(creditsNeeded, deduct.before ?? 0) : "Credit deduction failed" });
 
   const genRes = await fetch(`${SB_URL}/rest/v1/generations`, {
     method: "POST", headers: sbH(SERVICE_KEY),
-    body: JSON.stringify({ user_id: userId, type: "image", status: "processing", prompt: prompt.trim().slice(0, 3500), result_url: `pending|ws-img` })
+    body: JSON.stringify({ user_id: userId, type: "image", status: "processing", prompt: prompt.trim().slice(0, 3500), result_url: `pending|ws-img`, credits_cost: creditsNeeded })
   });
   const gen = (await genRes.json())?.[0];
   const genId = gen?.id;
@@ -120,8 +123,7 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
 
     if (!wsRes.ok || !wsData?.data?.id) {
       // Refund on submission failure
-      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ images_remaining: prof.images_remaining }) });
-      if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) });
+      if (genId) await refundGeneration(userId, genId, null, SERVICE_KEY); else await addCredits(userId, creditsNeeded, SERVICE_KEY);
       return res.status(500).json({ error: wsData?.message || wsData?.error || `Wavespeed error ${wsRes.status}` });
     }
 
@@ -130,8 +132,7 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
     return res.status(200).json({ request_id: requestId, endpoint: "ws-img", gen_id: genId });
   } catch(e) {
     console.error("generateImg error:", e.message);
-    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ images_remaining: prof.images_remaining }) }).catch(() => {});
-    if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
+    try { if (genId) await refundGeneration(userId, genId, null, SERVICE_KEY); else await addCredits(userId, creditsNeeded, SERVICE_KEY); } catch {}
     return res.status(500).json({ error: e.message });
   }
 }
@@ -154,25 +155,23 @@ async function generateVidEdit(body, userId, WS_KEY, SERVICE_KEY, res) {
     "1080p":[[15,12],[20,18],[25,24],[30,30]],
   };
   const buckets = creditTable[safeRes];
-  const creditsNeeded = (buckets.find(([,max]) => safeDuration <= max) || buckets[buckets.length-1])[0];
+  const creditsNeeded = COSTS.legacyVideo((buckets.find(([,max]) => safeDuration <= max) || buckets[buckets.length-1])[0]);
 
-  const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
+  const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=credits,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
   const prof = (await profRes.json())?.[0];
   if (!prof?.plan || prof.plan === "none") return res.status(403).json({ error: "No active plan" });
   if (prof.subscription_status === "payment_failed") return res.status(403).json({ error: "Payment issue" });
-  if ((prof.videos_remaining ?? 0) < creditsNeeded) return res.status(402).json({ error: `Need ${creditsNeeded} video credits. Have ${prof.videos_remaining ?? 0}.` });
+  if ((prof.credits ?? 0) < creditsNeeded) return res.status(402).json({ error: insufficientMsg(creditsNeeded, prof.credits ?? 0) });
 
-  const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&videos_remaining=gte.${creditsNeeded}`, {
-    method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining - creditsNeeded })
-  });
-  if (!deductRes.ok) return res.status(409).json({ error: "Credit deduction failed" });
+  const deduct = await deductCredits(userId, creditsNeeded, SERVICE_KEY);
+  if (!deduct.ok) return res.status(deduct.reason === "insufficient" ? 402 : 409).json({ error: deduct.reason === "insufficient" ? insufficientMsg(creditsNeeded, deduct.before ?? 0) : "Credit deduction failed" });
 
   const effectivePrompt = prompt?.trim() ||
     "Replace the main character in the video with the person in the reference image(s), preserving the original body shape, movements, and lip sync exactly.";
 
   const genRes = await fetch(`${SB_URL}/rest/v1/generations`, {
     method: "POST", headers: sbH(SERVICE_KEY),
-    body: JSON.stringify({ user_id: userId, type: "video", status: "processing", prompt: effectivePrompt.slice(0, 3500), result_url: "pending|ws-vid-edit" })
+    body: JSON.stringify({ user_id: userId, type: "video", status: "processing", prompt: effectivePrompt.slice(0, 3500), result_url: "pending|ws-vid-edit", credits_cost: creditsNeeded })
   });
   const gen = (await genRes.json())?.[0];
   const genId = gen?.id;
@@ -197,8 +196,7 @@ async function generateVidEdit(body, userId, WS_KEY, SERVICE_KEY, res) {
     console.log(`WS vid-edit response status=${wsRes.status} data=${JSON.stringify(wsData).slice(0, 200)}`);
 
     if (!wsRes.ok || !wsData?.data?.id) {
-      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining }) });
-      if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) });
+      if (genId) await refundGeneration(userId, genId, null, SERVICE_KEY); else await addCredits(userId, creditsNeeded, SERVICE_KEY);
       return res.status(500).json({ error: wsData?.message || wsData?.error || `Wavespeed error ${wsRes.status}` });
     }
 
@@ -207,8 +205,7 @@ async function generateVidEdit(body, userId, WS_KEY, SERVICE_KEY, res) {
     return res.status(200).json({ request_id: requestId, endpoint: "ws-vid-edit", gen_id: genId, credits_used: creditsNeeded });
   } catch(e) {
     console.error("generateVidEdit error:", e.message);
-    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining }) }).catch(() => {});
-    if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
+    try { if (genId) await refundGeneration(userId, genId, null, SERVICE_KEY); else await addCredits(userId, creditsNeeded, SERVICE_KEY); } catch {}
     return res.status(500).json({ error: e.message });
   }
 }
@@ -221,22 +218,20 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
   const safeDuration = [5, 10, 15].includes(Number(duration)) ? Number(duration) : 5;
   const safeResolution = ["1080p", "2k", "4k"].includes(resolution) ? resolution : "1080p";
   const creditTable = { 5: {"1080p":2,"2k":3,"4k":3}, 10: {"1080p":3,"2k":4,"4k":4}, 15: {"1080p":3,"2k":4,"4k":5} };
-  const creditsNeeded = (creditTable[safeDuration] || creditTable[5])[safeResolution] ?? 2;
+  const creditsNeeded = COSTS.legacyVideo((creditTable[safeDuration] || creditTable[5])[safeResolution] ?? 2);
 
-  const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=videos_remaining,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
+  const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=credits,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
   const prof = (await profRes.json())?.[0];
   if (!prof?.plan || prof.plan === "none") return res.status(403).json({ error: "No active plan" });
   if (prof.subscription_status === "payment_failed") return res.status(403).json({ error: "Payment issue" });
-  if ((prof.videos_remaining ?? 0) < creditsNeeded) return res.status(402).json({ error: `Need ${creditsNeeded} video credits. Have ${prof.videos_remaining ?? 0}.` });
+  if ((prof.credits ?? 0) < creditsNeeded) return res.status(402).json({ error: insufficientMsg(creditsNeeded, prof.credits ?? 0) });
 
-  const deductRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&videos_remaining=gte.${creditsNeeded}`, {
-    method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining - creditsNeeded })
-  });
-  if (!deductRes.ok) return res.status(409).json({ error: "Credit deduction failed" });
+  const deduct = await deductCredits(userId, creditsNeeded, SERVICE_KEY);
+  if (!deduct.ok) return res.status(deduct.reason === "insufficient" ? 402 : 409).json({ error: deduct.reason === "insufficient" ? insufficientMsg(creditsNeeded, deduct.before ?? 0) : "Credit deduction failed" });
 
   const genRes = await fetch(`${SB_URL}/rest/v1/generations`, {
     method: "POST", headers: sbH(SERVICE_KEY),
-    body: JSON.stringify({ user_id: userId, type: "video", status: "processing", prompt: prompt.trim().slice(0, 3500), result_url: `pending|ws-vid` })
+    body: JSON.stringify({ user_id: userId, type: "video", status: "processing", prompt: prompt.trim().slice(0, 3500), result_url: `pending|ws-vid`, credits_cost: creditsNeeded })
   });
   const gen = (await genRes.json())?.[0];
   const genId = gen?.id;
@@ -253,8 +248,7 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
     console.log(`WS vid response status=${wsRes.status} data=${JSON.stringify(wsData).slice(0, 200)}`);
 
     if (!wsRes.ok || !wsData?.data?.id) {
-      await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining }) });
-      if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) });
+      if (genId) await refundGeneration(userId, genId, null, SERVICE_KEY); else await addCredits(userId, creditsNeeded, SERVICE_KEY);
       return res.status(500).json({ error: wsData?.message || wsData?.error || `Wavespeed error ${wsRes.status}` });
     }
 
@@ -263,8 +257,7 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
     return res.status(200).json({ request_id: requestId, endpoint: "ws-vid", gen_id: genId, credits_used: creditsNeeded });
   } catch(e) {
     console.error("generateVid error:", e.message);
-    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ videos_remaining: prof.videos_remaining }) }).catch(() => {});
-    if (genId) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
+    try { if (genId) await refundGeneration(userId, genId, null, SERVICE_KEY); else await addCredits(userId, creditsNeeded, SERVICE_KEY); } catch {}
     return res.status(500).json({ error: e.message });
   }
 }
@@ -272,7 +265,6 @@ async function generateVid(body, userId, WS_KEY, SERVICE_KEY, res) {
 // ── action: status ───────────────────────────────────────────────────────────
 async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
   const { request_id, type, gen_id, credits_used } = body;
-  const creditsToRefund = typeof credits_used === "number" && credits_used > 0 ? credits_used : (type === "video" ? 2 : 1);
   if (!request_id) return res.status(400).json({ error: "Missing request_id" });
 
   try {
@@ -285,8 +277,7 @@ async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
     if (!pollRes.ok) {
       const errBody = await pollRes.json().catch(() => ({}));
       const errMsg = humanizeError(errBody?.message || errBody?.error || "Generation failed");
-      await refundCredits(userId, type, SERVICE_KEY, creditsToRefund);
-      if (gen_id) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${gen_id}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
+      await refundGeneration(userId, gen_id, type, SERVICE_KEY);
       return res.status(200).json({ status: "FAILED", error: errMsg });
     }
 
@@ -297,7 +288,7 @@ async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
 
     if (status === "COMPLETED" || url) {
       if (!url) {
-        await refundCredits(userId, type, SERVICE_KEY, creditsToRefund);
+        await refundGeneration(userId, gen_id, type, SERVICE_KEY);
         return res.status(200).json({ status: "FAILED", error: "No output URL" });
       }
       if (gen_id) {
@@ -310,8 +301,7 @@ async function pollStatus(body, userId, WS_KEY, SERVICE_KEY, res) {
 
     if (status === "FAILED" || data?.data?.error) {
       const errMsg = humanizeError(data?.data?.error || "Generation failed");
-      await refundCredits(userId, type, SERVICE_KEY, creditsToRefund);
-      if (gen_id) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${gen_id}`, { method: "PATCH", headers: sbH(SERVICE_KEY), body: JSON.stringify({ status: "failed" }) }).catch(() => {});
+      await refundGeneration(userId, gen_id, type, SERVICE_KEY);
       return res.status(200).json({ status: "FAILED", error: errMsg });
     }
 

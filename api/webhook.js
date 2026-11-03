@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { addCredits, IMG_UNIT, VID_UNIT } from './_credits.js';
 
 async function getRawBody(req) {
   const chunks = [];
@@ -11,10 +12,11 @@ async function getRawBody(req) {
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 
 const PLAN_CREDITS = {
-  test:    { images: 20,  videos: 2  },
-  basic:   { images: 40,  videos: 8  },
-  pro:     { images: 90,  videos: 18 },
-  creator: { images: 200, videos: 30 },
+  // credits = unified balance (v15). images/videos kept only as legacy columns.
+  test:    { images: 20,  videos: 2,  credits: 275  },
+  basic:   { images: 40,  videos: 8,  credits: 800  },
+  pro:     { images: 90,  videos: 18, credits: 1800 },
+  creator: { images: 200, videos: 30, credits: 3400 },
 };
 
 const PLAN_ORDER = ["none", "test", "basic", "pro", "creator"];
@@ -66,7 +68,7 @@ async function markEventProcessed(eventId, eventType, serviceKey) {
 
 async function getProfile(userId, serviceKey) {
   const res = await fetch(
-    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=id,plan,images_remaining,videos_remaining,pending_plan,email&limit=1`,
+    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=id,plan,credits,images_remaining,videos_remaining,pending_plan,email&limit=1`,
     { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
   );
   const data = await res.json();
@@ -77,7 +79,7 @@ async function findUserByEmail(email, serviceKey) {
   if (!email) return null;
   const clean = email.toLowerCase().trim();
   const res = await fetch(
-    `${SB_URL}/rest/v1/profiles?email=ilike.${encodeURIComponent(clean)}&select=id,plan,images_remaining,videos_remaining,pending_plan&limit=1`,
+    `${SB_URL}/rest/v1/profiles?email=ilike.${encodeURIComponent(clean)}&select=id,plan,credits,images_remaining,videos_remaining,pending_plan&limit=1`,
     { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
   );
   const data = await res.json();
@@ -88,7 +90,7 @@ async function findUserByEmail(email, serviceKey) {
   );
   const authData = await authRes.json();
   const authUser = authData?.users?.[0];
-  if (authUser?.id) return { id: authUser.id, plan: null, images_remaining: 0, videos_remaining: 0, pending_plan: null };
+  if (authUser?.id) return { id: authUser.id, plan: null, credits: 0, images_remaining: 0, videos_remaining: 0, pending_plan: null };
   return null;
 }
 
@@ -109,6 +111,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
   const currentPlan = profile?.plan || "none";
   const currentImages = profile?.images_remaining ?? 0;
   const currentVideos = profile?.videos_remaining ?? 0;
+  const currentCredits = profile?.credits ?? 0;
   const isFirstTime = currentPlan === "none" || currentPlan === null;
   const isUpgrade = planRank(newPlan) > planRank(currentPlan);
   const isDowngrade = planRank(newPlan) < planRank(currentPlan);
@@ -125,7 +128,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
       const pendingCredits = PLAN_CREDITS[pendingPlan];
       await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
         method: "PATCH", headers: sbHeaders(serviceKey),
-        body: JSON.stringify({ plan: pendingPlan, images_remaining: pendingCredits.images, videos_remaining: pendingCredits.videos, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
+        body: JSON.stringify({ plan: pendingPlan, images_remaining: pendingCredits.images, videos_remaining: pendingCredits.videos, credits: pendingCredits.credits, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
       });
       await logTransaction(userId, { type: "plan_renewal", description: `Renovación + downgrade: ${pendingPlan}`, plan: pendingPlan, images_delta: pendingCredits.images, videos_delta: pendingCredits.videos, images_after: pendingCredits.images, videos_after: pendingCredits.videos }, serviceKey);
       console.log(`✓ Downgrade on renewal: ${pendingPlan} for ${email}`);
@@ -133,7 +136,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
       // Renovación normal — RESETEAR créditos al plan (no sumar, no acumular)
       await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
         method: "PATCH", headers: sbHeaders(serviceKey),
-        body: JSON.stringify({ plan: effectivePlan, images_remaining: effectiveCredits.images, videos_remaining: effectiveCredits.videos, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
+        body: JSON.stringify({ plan: effectivePlan, images_remaining: effectiveCredits.images, videos_remaining: effectiveCredits.videos, credits: effectiveCredits.credits, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
       });
       await logTransaction(userId, { type: "plan_renewal", description: `Renovación mensual: ${effectivePlan}`, plan: effectivePlan, images_delta: effectiveCredits.images, videos_delta: effectiveCredits.videos, images_after: effectiveCredits.images, videos_after: effectiveCredits.videos }, serviceKey);
       console.log(`✓ Renewal reset: ${effectivePlan} | imgs=${effectiveCredits.images} vids=${effectiveCredits.videos} for ${email}`);
@@ -145,7 +148,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
     await fetch(`${SB_URL}/rest/v1/profiles`, {
       method: "POST",
       headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify({ id: userId, email: email || "", plan: newPlan, images_remaining: credits.images, videos_remaining: credits.videos, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
+      body: JSON.stringify({ id: userId, email: email || "", plan: newPlan, images_remaining: credits.images, videos_remaining: credits.videos, credits: credits.credits, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
     });
     await logTransaction(userId, { type: "plan_activation", description: `Plan activado: ${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: credits.images, videos_after: credits.videos }, serviceKey);
     console.log(`✓ First activation: ${newPlan} for ${email}`);
@@ -155,7 +158,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
   if (isUpgrade) {
     await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
       method: "PATCH", headers: sbHeaders(serviceKey),
-      body: JSON.stringify({ plan: newPlan, images_remaining: currentImages + credits.images, videos_remaining: currentVideos + credits.videos, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
+      body: JSON.stringify({ plan: newPlan, images_remaining: currentImages + credits.images, videos_remaining: currentVideos + credits.videos, credits: currentCredits + credits.credits, subscription_status: "active", subscription_start: new Date().toISOString(), subscription_end: periodEnd || null, pending_plan: null }),
     });
     await logTransaction(userId, { type: "plan_upgrade", description: `Upgrade: ${currentPlan}→${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
     console.log(`✓ Upgrade: ${currentPlan}→${newPlan} for ${email}`);
@@ -165,7 +168,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
   if (isDowngrade) {
     await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
       method: "PATCH", headers: sbHeaders(serviceKey),
-      body: JSON.stringify({ images_remaining: currentImages + credits.images, videos_remaining: currentVideos + credits.videos, pending_plan: newPlan }),
+      body: JSON.stringify({ images_remaining: currentImages + credits.images, videos_remaining: currentVideos + credits.videos, credits: currentCredits + credits.credits, pending_plan: newPlan }),
     });
     await logTransaction(userId, { type: "plan_downgrade_scheduled", description: `Downgrade programado: ${currentPlan}→${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
     console.log(`✓ Downgrade scheduled: ${newPlan} for ${email}`);
@@ -175,7 +178,7 @@ async function activatePlan(userId, newPlan, email, serviceKey, periodEnd = null
   // Mismo plan
   await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
     method: "PATCH", headers: sbHeaders(serviceKey),
-    body: JSON.stringify({ images_remaining: currentImages + credits.images, videos_remaining: currentVideos + credits.videos, subscription_status: "active" }),
+    body: JSON.stringify({ images_remaining: currentImages + credits.images, videos_remaining: currentVideos + credits.videos, credits: currentCredits + credits.credits, subscription_status: "active" }),
   });
   await logTransaction(userId, { type: "plan_renewal", description: `Mismo plan recargado: ${newPlan}`, plan: newPlan, images_delta: credits.images, videos_delta: credits.videos, images_after: currentImages + credits.images, videos_after: currentVideos + credits.videos }, serviceKey);
   console.log(`✓ Same plan repurchase: ${newPlan} for ${email}`);
@@ -227,13 +230,15 @@ export default async function handler(req, res) {
           const url = extractUrl(payload);
           if (url) await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}`, { method: "PATCH", headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" }, body: JSON.stringify({ result_url: url, status: "completed" }) }).catch(() => {});
         } else if (status === "ERROR") {
-          await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}`, { method: "PATCH", headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" }, body: JSON.stringify({ result_url: null, status: "failed" }) }).catch(() => {});
-          const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${genRow.user_id}&select=images_remaining,videos_remaining`, { headers: sbH(SERVICE_KEY) }).catch(() => null);
-          const prof = profRes ? (await profRes.json())?.[0] : null;
-          if (prof) {
-            const patch = genRow.type === "image" ? { images_remaining: (prof.images_remaining || 0) + 1 } : { videos_remaining: (prof.videos_remaining || 0) + 2 };
-            await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${genRow.user_id}`, { method: "PATCH", headers: { ...sbH(SERVICE_KEY), Prefer: "return=minimal" }, body: JSON.stringify(patch) }).catch(() => {});
-          }
+          // Idempotent: only the request that flips processing→failed refunds (status.js may race)
+          try {
+            const failRes = await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genRow.id}&status=eq.processing`, { method: "PATCH", headers: { ...sbH(SERVICE_KEY), Prefer: "return=representation" }, body: JSON.stringify({ result_url: null, status: "failed" }) });
+            const failed = failRes.ok ? await failRes.json() : [];
+            if (Array.isArray(failed) && failed.length > 0) {
+              const amount = failed[0].credits_cost ?? (genRow.type === "image" ? IMG_UNIT : VID_UNIT);
+              await addCredits(genRow.user_id, amount, SERVICE_KEY);
+            }
+          } catch (e) { console.error("fal-webhook refund error:", e.message); }
         }
       }
     }
@@ -350,7 +355,7 @@ export default async function handler(req, res) {
           const profile = await getProfile(user.id, SERVICE_KEY);
           if (profile?.pending_plan && VALID_PLANS.includes(profile.pending_plan)) {
             const pendingCredits = PLAN_CREDITS[profile.pending_plan];
-            await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, { method: "PATCH", headers: sbHeaders(SERVICE_KEY), body: JSON.stringify({ plan: profile.pending_plan, images_remaining: pendingCredits.images, videos_remaining: pendingCredits.videos, subscription_status: "active", pending_plan: null }) });
+            await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, { method: "PATCH", headers: sbHeaders(SERVICE_KEY), body: JSON.stringify({ plan: profile.pending_plan, images_remaining: pendingCredits.images, videos_remaining: pendingCredits.videos, credits: pendingCredits.credits, subscription_status: "active", pending_plan: null }) });
           } else {
             await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${user.id}`, { method: "PATCH", headers: sbHeaders(SERVICE_KEY), body: JSON.stringify({ plan: "none", subscription_status: "cancelled", pending_plan: null }) });
           }

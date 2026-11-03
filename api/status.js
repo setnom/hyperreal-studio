@@ -1,3 +1,4 @@
+import { addCredits, IMG_UNIT, VID_UNIT } from "./_credits.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
 
@@ -71,7 +72,7 @@ async function refundCredits(userId, endpoint, reqId, serviceKey) {
   try {
     const searchKey = encodeURIComponent(reqId + "|" + endpoint);
     const findRes = await fetch(
-      `${SB_URL}/rest/v1/generations?result_url=eq.${searchKey}&select=id,type&limit=1`,
+      `${SB_URL}/rest/v1/generations?result_url=eq.${searchKey}&user_id=eq.${userId}&select=id,type,credits_cost&limit=1`,
       { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
     );
     const found = await findRes.json();
@@ -80,33 +81,20 @@ async function refundCredits(userId, endpoint, reqId, serviceKey) {
     const genType = found[0].type;
     const genId = found[0].id;
 
-    // Mark generation as failed in DB
-    await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}`, {
+    // Mark generation as failed — only if still processing (idempotent: fal webhook may have done it already)
+    const failRes = await fetch(`${SB_URL}/rest/v1/generations?id=eq.${genId}&status=eq.processing`, {
       method: "PATCH",
-      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify({ status: "failed", result_url: null }),
     });
+    const failedRows = failRes.ok ? await failRes.json() : [];
+    if (!Array.isArray(failedRows) || failedRows.length === 0) return; // already handled
 
-    // Get current credits and refund
-    const profRes = await fetch(
-      `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=images_remaining,videos_remaining`,
-      { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
-    );
-    const prof = (await profRes.json())?.[0];
-    if (!prof) return;
+    // Refund exactly what this generation cost (credits_cost saved at submit time)
+    const refund = found[0].credits_cost ?? (genType === "image" ? IMG_UNIT : VID_UNIT);
+    await addCredits(userId, refund, serviceKey);
 
-    // Refund 1 image credit or 2 video credits (minimum)
-    const patch = genType === "image"
-      ? { images_remaining: (prof.images_remaining || 0) + 1 }
-      : { videos_remaining: (prof.videos_remaining || 0) + 2 }; // refund 2 video credits minimum
-
-    await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-      method: "PATCH",
-      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify(patch),
-    });
-
-    console.log(`✓ Refunded credits for user ${userId} gen ${genId} type=${genType}`);
+    console.log(`✓ Refunded ${found[0].credits_cost ?? "default"} credits for user ${userId} gen ${genId} type=${genType}`);
   } catch (e) {
     console.error("Refund error:", e.message);
   }

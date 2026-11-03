@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { IMG_UNIT, VID_UNIT } from './_credits.js';
 
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
@@ -57,7 +58,7 @@ export default async function handler(req, res) {
 
   // 2. Get profile
   const profileRes = await fetch(
-    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,images_remaining,videos_remaining,subscription_status,processed_pack_payments`,
+    `${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=plan,credits,subscription_status,processed_pack_payments`,
     { headers: sbReadHeaders(SERVICE_KEY) }
   );
   const profiles = await profileRes.json();
@@ -156,38 +157,35 @@ export default async function handler(req, res) {
     });
   }
 
-  // 4. Apply credits + record payment ID (idempotency)
-  const field = type === "images" ? "images_remaining" : "videos_remaining";
-  const current = (type === "images" ? profile.images_remaining : profile.videos_remaining) || 0;
-  const newTotal = current + amountNum;
+  // 4. Apply credits + record payment ID (idempotency) — packs convert to unified credits
+  const unit = type === "images" ? IMG_UNIT : VID_UNIT;
+  const creditsAdded = amountNum * unit;
   const updatedPayments = [...processedPayments, confirmedPaymentId];
 
-  console.log(`Applying: ${field} ${current} → ${newTotal} | payment: ${confirmedPaymentId}`);
-
-  const updateRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}`, {
-    method: "PATCH",
-    headers: sbWriteHeaders(SERVICE_KEY),
-    body: JSON.stringify({
-      [field]: newTotal,
-      processed_pack_payments: updatedPayments,
-    }),
-  });
-
-  const updateText = await updateRes.text();
-  console.log(`PATCH: ${updateRes.status} → ${updateText.slice(0, 150)}`);
-
-  if (!updateRes.ok) {
-    return res.status(500).json({ error: `DB update failed (${updateRes.status})` });
-  }
-
   let updatedRows = [];
-  try { updatedRows = JSON.parse(updateText); } catch {}
-  if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
-    return res.status(500).json({ error: "No rows updated — profile not found" });
+  for (let attempt = 0; attempt < 4 && updatedRows.length === 0; attempt++) {
+    const cur = attempt === 0 ? profile : (await (await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=credits,processed_pack_payments`, { headers: sbReadHeaders(SERVICE_KEY) })).json())?.[0];
+    if (!cur) break;
+    if ((cur.processed_pack_payments || []).includes(confirmedPaymentId)) {
+      return res.status(200).json({ ok: true, already_applied: true, credits: cur.credits });
+    }
+    const current = cur.credits || 0;
+    console.log(`Applying: credits ${current} → ${current + creditsAdded} | payment: ${confirmedPaymentId}`);
+    const updateRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&credits=eq.${current}`, {
+      method: "PATCH",
+      headers: sbWriteHeaders(SERVICE_KEY),
+      body: JSON.stringify({ credits: current + creditsAdded, processed_pack_payments: [...(cur.processed_pack_payments || []), confirmedPaymentId] }),
+    });
+    if (!updateRes.ok) return res.status(500).json({ error: `DB update failed (${updateRes.status})` });
+    try { updatedRows = await updateRes.json(); } catch { updatedRows = []; }
+    if (!Array.isArray(updatedRows)) updatedRows = [];
+  }
+  if (updatedRows.length === 0) {
+    return res.status(500).json({ error: "Could not apply credits — please contact support." });
   }
 
   const updated = updatedRows[0];
-  console.log(`✓ Pack applied: +${amountNum} ${type} for ${userEmail}`);
+  console.log(`✓ Pack applied: +${creditsAdded} credits for ${userEmail}`);
 
   // Log transaction for audit trail
   try {
@@ -197,19 +195,18 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         user_id: userId,
         type: "pack_purchase",
-        description: `Pack de créditos: +${amountNum} ${type === "images" ? "imágenes" : "videos"}`,
-        images_delta: type === "images" ? amountNum : 0,
-        videos_delta: type === "videos" ? amountNum : 0,
-        images_after: updated.images_remaining,
-        videos_after: updated.videos_remaining,
+        description: `Pack de créditos: +${creditsAdded} créditos`,
+        images_delta: 0,
+        videos_delta: 0,
+        credits_delta: creditsAdded,
+        credits_after: updated.credits,
         stripe_ref: session_id,
       }),
     });
   } catch(e) { console.error("logTransaction error:", e.message); }
 
   return res.status(200).json({
-    ok: true, type, amount: amountNum, added: amountNum,
-    images_remaining: updated.images_remaining,
-    videos_remaining: updated.videos_remaining,
+    ok: true, type, amount: amountNum, added: creditsAdded,
+    credits: updated.credits,
   });
 }
