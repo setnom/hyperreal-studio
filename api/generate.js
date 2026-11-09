@@ -361,15 +361,17 @@ export default async function handler(req, res) {
           body = { ...base, aspect_ratio: safeRatio };
         }
       } else if (m.kind === "jutsu") {
-        endpoint = ep.ref;
-        const userExtra = sanitizePrompt(rawUserPrompt);
+        // NanoJutsu → Wavespeed Seedance 2.5 Motion Control directly (no hidden prompt). Same inputs: video + images + optional prompt.
+        endpoint = "ws:" + ep.ws;
+        const userText = sanitizePrompt(rawUserPrompt);
         body = {
-          prompt: JUTSU_PROMPTS[vMode] + (userExtra ? ` Additional instructions: ${userExtra}` : ""),
-          duration: String(Math.min(30, Math.max(4, inputSec || 5))),
-          resolution: vRes, generate_audio: true, enable_safety_checker: true, end_user_id: userId,
-          video_urls: [vSource],
+          video: vSource,
+          duration: Math.min(30, Math.max(4, Math.ceil(inputSec || 5))),
+          resolution: vRes,
+          seed: -1,
         };
-        if (vImgs.length) body.image_urls = vImgs;
+        if (vImgs.length) body.images = vImgs;
+        if (userText && userText !== "jutsu") body.prompt = userText;
       } else if (m.kind === "seedance") {
         const base = { duration: dur, resolution: vRes, aspect_ratio: safeRatio, generate_audio: true, enable_safety_checker: true, end_user_id: userId };
         if (m.draft) base.draft = true;
@@ -445,16 +447,35 @@ export default async function handler(req, res) {
     }
     console.log(`generate: model=${isVid ? `${vModel.id} ${vRes} ${vMode} ${vDur}s in=${inputSec}s img=${vImgs.length} vid=${vVids.length} aud=${vAuds.length}` : iModel.id} endpoint=${endpoint} credits=${creditCost} user=${userId}`);
 
-    const WEBHOOK_URL = "https://nanobanano.studio/api/webhook?source=fal";
-    const falRes = await fetch(`https://queue.fal.run/${endpoint}?fal_webhook=${encodeURIComponent(WEBHOOK_URL)}`, {
-      method: "POST",
-      headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await falRes.json().catch(() => ({}));
-    if (!falRes.ok && !data.request_id) {
-      console.error("fal submit error:", falRes.status, JSON.stringify(data).slice(0, 300));
-      throw new Error(data?.detail?.[0]?.msg || data?.detail || data?.error || `fal error ${falRes.status}`);
+    let data;
+    if (endpoint.startsWith("ws:")) {
+      // ── Wavespeed submit (NanoJutsu) ──
+      const WS_KEY = process.env.WAVESPEED_API_KEY;
+      if (!WS_KEY) throw new Error("Server misconfiguration (WAVESPEED_API_KEY)");
+      const wsRes = await fetch(`https://api.wavespeed.ai/api/v3/${endpoint.slice(3)}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${WS_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const wsData = await wsRes.json().catch(() => ({}));
+      const wsId = wsData?.data?.id;
+      if (!wsRes.ok || !wsId) {
+        console.error("wavespeed submit error:", wsRes.status, JSON.stringify(wsData).slice(0, 300));
+        throw new Error(wsData?.message || wsData?.data?.error || wsData?.error || `wavespeed error ${wsRes.status}`);
+      }
+      data = { request_id: wsId };
+    } else {
+      const WEBHOOK_URL = "https://nanobanano.studio/api/webhook?source=fal";
+      const falRes = await fetch(`https://queue.fal.run/${endpoint}?fal_webhook=${encodeURIComponent(WEBHOOK_URL)}`, {
+        method: "POST",
+        headers: { Authorization: `Key ${FAL_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      data = await falRes.json().catch(() => ({}));
+      if (!falRes.ok && !data.request_id) {
+        console.error("fal submit error:", falRes.status, JSON.stringify(data).slice(0, 300));
+        throw new Error(data?.detail?.[0]?.msg || data?.detail || data?.error || `fal error ${falRes.status}`);
+      }
     }
 
     if (data.request_id) {

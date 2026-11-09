@@ -3300,12 +3300,12 @@ export default function App() {
               <button key={k} onClick={() => { setJutsuRes(k); setVidPop(null); }} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 10px", borderRadius: 8, border: "none", background: jutsuResNow === k ? "rgba(255,255,255,.06)" : "transparent", color: "#e8e8f0", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
                 <span>{k}</span>
                 <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <span style={{ fontSize: 10, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>{jutsuSecs ? `⚡${videoCredits(jutsuModel, 0, k, jutsuSecs, jutsuMd.id)} · ${Math.ceil(jutsuSecs)}s` : `⚡${r.vin * 2}/s`}</span>
+                  <span style={{ fontSize: 10, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>{jutsuSecs ? `⚡${videoCredits(jutsuModel, 0, k, jutsuSecs, jutsuMd.id)} · ${Math.ceil(jutsuSecs)}s` : `⚡${r.mc ?? r.perSec}/s`}</span>
                   {jutsuResNow === k && <span>✓</span>}
                 </span>
               </button>
             ))}
-            <p style={{ fontSize: 10, color: "#5a5a78", margin: "6px 10px 4px" }}>{lang === "es" ? "Se cobra por segundo del video que subes (entrada + salida). Un clip corto en 480p es lo más barato; 1080p cuesta ~5× más." : "Charged per second of your uploaded video (input + output). A short 480p clip is cheapest; 1080p costs ~5× more."}</p>
+            <p style={{ fontSize: 10, color: "#5a5a78", margin: "6px 10px 4px" }}>{lang === "es" ? "Se cobra por segundo del video que subes. Un clip corto en 480p es lo más barato; 1080p cuesta ~5× más." : "Charged per second of your uploaded video. A short 480p clip is cheapest; 1080p costs ~5× more."}</p>
           </div>
         )}
       </div>

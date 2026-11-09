@@ -142,6 +142,49 @@ export default async function handler(req, res) {
     } catch {}
   }
 
+  // ── Wavespeed jobs (NanoJutsu · Seedance 2.5 Motion Control) ──
+  if (typeof endpoint === "string" && endpoint.startsWith("ws:")) {
+    if (!/^[A-Za-z0-9_-]{6,100}$/.test(request_id)) return res.status(400).json({ error: "Invalid request_id" });
+    const WS_KEY = process.env.WAVESPEED_API_KEY;
+    if (!WS_KEY) return res.status(500).json({ error: "Server misconfiguration" });
+    try {
+      const pr = await fetch(`https://api.wavespeed.ai/api/v3/predictions/${request_id}/result`, { headers: { Authorization: `Bearer ${WS_KEY}` } });
+      if (pr.status === 404) return res.status(200).json({ status: "IN_QUEUE" });
+      const pd = await pr.json().catch(() => ({}));
+      if (!pr.ok) {
+        if (pr.status >= 500) return res.status(200).json({ status: "IN_PROGRESS" });
+        const errMsg = humanizeError(pd?.message || pd?.error || "Generation failed");
+        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY, errMsg);
+        return res.status(200).json({ status: "FAILED", error: errMsg });
+      }
+      const st = String(pd?.data?.status || "").toLowerCase();
+      const url = (pd?.data?.outputs || [])[0] || null;
+      if ((st === "completed" || st === "succeeded") && url) {
+        if (SERVICE_KEY) {
+          try {
+            const searchKey = encodeURIComponent(request_id + "|" + endpoint);
+            await fetch(`${SB_URL}/rest/v1/generations?result_url=eq.${searchKey}`, {
+              method: "PATCH",
+              headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+              body: JSON.stringify({ result_url: url, status: "completed" }),
+            });
+          } catch (e) { console.error("DB update error:", e.message); }
+        }
+        return res.status(200).json({ status: "COMPLETED", url, type });
+      }
+      if (st === "failed" || (st === "completed" && !url) || pd?.data?.error) {
+        const errMsg = humanizeError(pd?.data?.error || "Generation failed");
+        console.error(`Wavespeed FAILED: ${errMsg} endpoint=${endpoint}`);
+        if (SERVICE_KEY) await refundCredits(userId, endpoint, request_id, SERVICE_KEY, errMsg);
+        return res.status(200).json({ status: "FAILED", error: errMsg });
+      }
+      return res.status(200).json({ status: st === "created" || st === "pending" ? "IN_QUEUE" : "IN_PROGRESS" });
+    } catch (e) {
+      console.error("Wavespeed status error:", e.message);
+      return res.status(200).json({ status: "IN_PROGRESS" });
+    }
+  }
+
   const safeStatusUrl = isSafeUrl(status_url)
     ? status_url
     : (endpoint ? `https://queue.fal.run/${endpoint}/requests/${request_id}/status` : null);

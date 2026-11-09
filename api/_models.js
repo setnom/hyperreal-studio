@@ -120,14 +120,16 @@ export const VIDEO_MODELS = [
 // Output length follows the source video (4–30 s). fal bills input + output seconds (×0.6 rate) → credits = vin × (in + out).
 VIDEO_MODELS.push({
   id: "nanojutsu", family: "NanoJutsu", name: "NanoJutsu", badge: "Nuevo", kind: "jutsu", category: "jutsu",
-  res: { "480p":  { perSec: 15, fal: 0.2205, vin: 9,  falVin: 0.1323 },
-         "720p":  { perSec: 32, fal: 0.473,  vin: 19, falVin: 0.2838 },
-         "1080p": { perSec: 78, fal: 1.164,  vin: 47, falVin: 0.6984 } }, defRes: "480p",
+  // Wavespeed · bytedance/seedance-2.5/motion-control — billed only per second of the uploaded video.
+  // Juan's cost (30 s): 480p $7 · 720p $14 · 1080p $35 → credits/s = cost/s ÷ (0.6 × $0.025) → ≥40% margin (monthly basis)
+  res: { "480p":  { perSec: 16, mc: 16, ws: 7 / 30 },
+         "720p":  { perSec: 32, mc: 32, ws: 14 / 30 },
+         "1080p": { perSec: 78, mc: 78, ws: 35 / 30 } }, defRes: "480p",
   modes: [
     { id: "motion", source: true, sourceSec: 30, minSourceSec: 4, images: 12, outFromSource: true },
     { id: "swap",   source: true, sourceSec: 30, minSourceSec: 4, images: 12, outFromSource: true },
   ],
-  ep: { ref: "bytedance/seedance-2.5/reference-to-video" },
+  ep: { ws: "bytedance/seedance-2.5/motion-control" }, // Wavespeed (not fal)
 });
 
 export const findVideoModel = (id) => VIDEO_MODELS.find(m => m.id === id) || VIDEO_MODELS[0];
@@ -149,7 +151,7 @@ export function videoCredits(model, durationSec, res, inputSec = 0, mode = "fram
   // NanoJutsu: output = source length; billed input + output
   if (md.outFromSource) {
     const src = Math.min(30, Math.max(4, inSec || md.sourceSec));
-    return Math.ceil(r.vin * (src + src));
+    return Math.ceil((r.mc ?? r.perSec) * src);
   }
   // Edit modes: output length = source length
   if (md.id === "edit") {
