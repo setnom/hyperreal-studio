@@ -371,7 +371,10 @@ export default async function handler(req, res) {
           seed: -1,
         };
         if (vImgs.length) body.images = vImgs;
-        if (userText && userText !== "jutsu") body.prompt = userText;
+        const hasUserText = userText && userText !== "jutsu";
+        if (hasUserText) body.prompt = userText;
+        // Object Swap only: minimal instruction when the user wrote nothing (Motion stays prompt-free)
+        else if (vMode === "swap") body.prompt = "Replace only the object in @Video1 that matches @Image1 (same function, category or placement) with the object shown in @Image1. Keep everything else in @Video1 identical: people, motion, camera, framing, lighting, background and timing.";
       } else if (m.kind === "seedance") {
         const base = { duration: dur, resolution: vRes, aspect_ratio: safeRatio, generate_audio: true, enable_safety_checker: true, end_user_id: userId };
         if (m.draft) base.draft = true;
