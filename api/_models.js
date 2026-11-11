@@ -224,3 +224,9 @@ export const WS_VID_DUR = [5, 30]; // seconds (slider)
 export const wsVidRes = (r) => (WS_VID_RATES[r] ? r : "720p");
 export const wsVidDur = (d) => Math.max(WS_VID_DUR[0], Math.min(WS_VID_DUR[1], Math.round(Number(d) || 5)));
 export const wsVidCredits = (dur, res) => WS_VID_RATES[wsVidRes(res)].perSec * wsVidDur(dur);
+
+// ─── Img Pro (Wavespeed · Seedream 5.5) — no image → bytedance/seedream-v5.5 · ≥1 image → bytedance/seedream-v5.5/edit ───
+// Juan's cost per image: 1K $0.03 · 2K $0.05
+export const IMG_PRO_RES = { "1k": { credits: 18, cost: 0.03 }, "2k": { credits: 32, cost: 0.05 } };
+export const IMG_PRO_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "4:5", "5:4", "21:9", "9:21", "2:1", "1:2"];
+export const imgProCredits = (res) => (IMG_PRO_RES[res] || IMG_PRO_RES["1k"]).credits;

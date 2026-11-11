@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Component } from "react";
-import { WS_VID_RATES, WS_VID_DUR, wsVidCredits as wsVidCreditsFor } from "../api/_models.js";
+import { WS_VID_RATES, WS_VID_DUR, wsVidCredits as wsVidCreditsFor, IMG_PRO_RES, imgProCredits } from "../api/_models.js";
 import { VIDEO_MODELS, IMAGE_MODELS, MODE_LABELS, findVideoModel, findImageModel, videoCredits, imageCredits, clampDuration, pickRes, pickMode, draftCompleteCredits } from "../api/_models.js";
 
 // ─── ERROR BOUNDARY — prevents blank screen on any crash ───
@@ -753,7 +753,8 @@ export default function App() {
   // Wavespeed Img (Seedream 4.5 Edit)
   const [wsImgPrompt, setWsImgPrompt] = useState("");
   const [wsImgImages, setWsImgImages] = useState([]);
-  const [wsImgSize, setWsImgSize] = useState("2048*2048");
+  const [wsImgSize, setWsImgSize] = useState("auto"); // Img Pro aspect ratio (auto = model decides)
+  const [wsImgRes, setWsImgRes] = useState("1k");      // Img Pro 1k | 2k
   const [wsImgUploading, setWsImgUploading] = useState(false);
   const [wsImgError, setWsImgError] = useState(null);
 
@@ -4204,9 +4205,10 @@ export default function App() {
           })()}
 
 
-          {/* ── Wavespeed Img Pro (Seedream 4.5 Edit) ── */}
+          {/* ── Wavespeed Img Pro (Seedream 5.5 · text-to-image or edit) ── */}
           {tab === T.WS_IMG && (() => {
-            const canGen = !genning && !wsImgUploading && wsImgImages.length > 0 && wsImgPrompt.trim() && (profile?.credits ?? 0) >= 18;
+            const wsImgCost = imgProCredits(wsImgRes);
+            const canGen = !genning && !wsImgUploading && wsImgPrompt.trim() && (profile?.credits ?? 0) >= wsImgCost;
 
             const uploadWsImg = async (file) => {
               if (!file) return;
@@ -4242,7 +4244,7 @@ export default function App() {
               try {
                 const r = await fetch("/api/wavespeed", {
                   method: "POST", headers: {"Content-Type":"application/json"},
-                  body: JSON.stringify({ action: "generate_img", prompt: wsImgPrompt.trim(), image_urls: wsImgImages.map(i => i.url), size: wsImgSize, user_token: session?.access_token }),
+                  body: JSON.stringify({ action: "generate_img", prompt: wsImgPrompt.trim(), image_urls: wsImgImages.map(i => i.url).filter(Boolean), aspect_ratio: wsImgSize, resolution: wsImgRes, user_token: session?.access_token }),
                 });
                 const data = await r.json();
                 if (data.error) { setGenError(data.error); setGenning(false); return; }
@@ -4265,21 +4267,20 @@ export default function App() {
               } catch(e) { setGenError(e.message); setGenning(false); }
             };
 
-            const wsSizes = [["auto", "Auto"], ["2048*2048", "1:1"], ["2688*1536", "16:9"], ["1536*2688", "9:16"], ["2048*1536", "4:3"], ["1536*2048", "3:4"]];
+            const wsSizes = [["auto", "Auto"], ["1:1", "1:1"], ["16:9", "16:9"], ["9:16", "9:16"], ["4:3", "4:3"], ["3:4", "3:4"]];
             const wsSizeLabel = (wsSizes.find(([v]) => v === wsImgSize) || ["", wsImgSize])[1];
-            const wsImgTopUp = (profile?.credits ?? 0) < 18 && !genning;
+            const wsImgTopUp = (profile?.credits ?? 0) < wsImgCost && !genning;
             const wsImgLabel = genning ? LL("Generando...", "Generating...")
               : wsImgUploading ? LL("⏳ Subiendo...", "⏳ Uploading...")
-              : wsImgImages.length === 0 ? LL("Sube una imagen primero", "Upload an image first")
               : !wsImgPrompt.trim() ? LL("Escribí una descripción", "Write a description")
               : LL("✨ Generar", "✨ Generate");
             return (
               <div style={{ animation: "fadeUp .4s ease" }}>
                 {imageSubTabs("pro")}
-                {uiHero({ video: "imgpro.mp4", title: LL("Imagen Pro", "Image Pro"), name: LL("Edición avanzada · tipografía nítida · alta resolución", "Advanced editing · crisp typography · high resolution"), color: "#ffb800", chip: "⚡ 18" })}
+                {uiHero({ video: "imgpro.mp4", title: LL("Imagen Pro", "Image Pro"), name: LL("Edición avanzada · tipografía nítida · alta resolución", "Advanced editing · crisp typography · high resolution"), color: "#ffb800", chip: `⚡ ${wsImgCost}` })}
 
                 {uiDrop({
-                  title: LL("Imágenes a editar", "Images to edit"),
+                  title: LL("Imágenes de referencia (opcional)", "Reference images (optional)"),
                   sub: LL("Hasta 10 · jpg, png, webp", "Up to 10 · jpg, png, webp"),
                   icons: ["🧍", "🏞️", "📦"],
                   accept: "image/jpeg,image/png,image/webp",
@@ -4298,21 +4299,22 @@ export default function App() {
 
                 {/* Prompt card */}
                 <div style={{ ...uiCard, padding: "12px 14px", marginBottom: 10 }}>
-                  {uiLabel(LL("Qué quieres cambiar", "What to change"), `${wsImgPrompt.length}/3500`)}
+                  {uiLabel(wsImgImages.length ? LL("Qué quieres cambiar", "What to change") : "Prompt", `${wsImgPrompt.length}/3500`)}
                   <textarea value={wsImgPrompt} onChange={e => setWsImgPrompt(e.target.value)} rows={4} maxLength={3500} style={uiTextarea}
-                    placeholder={LL("Describe qué editar. Ej: Cambia el fondo a una ciudad de noche con neón, mantén el personaje...", "Describe what to edit. E.g. Change background to a neon night city, keep the character...")} />
+                    placeholder={wsImgImages.length ? LL("Describe qué editar. Ej: Cambia el fondo a una ciudad de noche con neón, mantén el personaje...", "Describe what to edit. E.g. Change background to a neon night city, keep the character...") : LL("Describe la imagen que quieres crear (o sube referencias para editarlas)...", "Describe the image to create (or upload references to edit them)...")} />
                 </div>
 
                 {/* Settings */}
                 <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                   {uiSetting(LL("Relación de aspecto", "Aspect ratio"), wsSizeLabel, "wsImgSize")}
-                  {uiSetting(LL("Costo", "Cost"), "⚡ 18", "wsImgCost", { static: true })}
+                  {uiSetting(LL("Resolución", "Resolution"), <>{wsImgRes.toUpperCase()} <span style={{ fontSize: 11, color: "#e8c23a", fontFamily: "'JetBrains Mono',monospace" }}>⚡ {wsImgCost}</span></>, "wsImgRes")}
                 </div>
+                {uiPopList("wsImgRes", Object.keys(IMG_PRO_RES).map(r => ({ id: r, label: r.toUpperCase(), sub: r === "1k" ? LL("Rápida · ~1 MP", "Fast · ~1 MP") : LL("Más detalle · ~4 MP", "More detail · ~4 MP"), right: `⚡ ${IMG_PRO_RES[r].credits}` })), wsImgRes, setWsImgRes)}
                 {uiPopList("wsImgSize", wsSizes.map(([v, r]) => ({ id: v, label: r, icon: <RatioShape r={v === "auto" ? "auto" : r} active={wsImgSize === v} color="#e8c23a" /> })), wsImgSize, setWsImgSize)}
 
                 {uiGenerating(T.WS_IMG, 0)}
                 {tab === T.WS_IMG && uiResult(false, LL("Imagen Pro", "Image Pro"), "nanobanano-img-pro")}
-                {uiGenBar({ onClick: handleWsImgGen, disabled: !canGen, needTopUp: wsImgTopUp, label: wsImgLabel, cost: 18 })}
+                {uiGenBar({ onClick: handleWsImgGen, disabled: !canGen, needTopUp: wsImgTopUp, label: wsImgLabel, cost: wsImgCost })}
               </div>
             );
           })()}

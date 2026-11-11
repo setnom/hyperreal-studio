@@ -1,5 +1,5 @@
 // Wavespeed AI — unified: Seedream 4.5 Edit + WAN 2.6 I2V Pro + polling
-import { wsVidCredits, wsVidRes, wsVidDur } from "./_models.js";
+import { wsVidCredits, wsVidRes, wsVidDur, IMG_PRO_RES, IMG_PRO_ASPECTS, imgProCredits } from "./_models.js";
 import { COSTS, deductCredits, addCredits, insufficientMsg, IMG_UNIT, VID_UNIT, classifyFailure, tagFailure } from "./_credits.js";
 const SB_URL = "https://pygcsyqahhdtmwmqklnl.supabase.co";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "https://nanobanano.studio";
@@ -81,19 +81,19 @@ function safeImgSize(size) {
 
 // ── action: generate_img ─────────────────────────────────────────────────────
 async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
-  const { prompt, image_urls, size } = body;
+  const { prompt, image_urls, aspect_ratio, resolution } = body;
   if (!prompt?.trim()) return res.status(400).json({ error: "Prompt required" });
-  const images = Array.isArray(image_urls) ? image_urls.filter(Boolean) : [];
-  if (images.length === 0) return res.status(400).json({ error: "At least one image required" });
+  const images = Array.isArray(image_urls) ? image_urls.filter(Boolean).slice(0, 10) : []; // 0 images → text-to-image
   for (const u of images) { if (!isSafeUrl(u)) return res.status(400).json({ error: `Invalid image URL: ${u}` }); }
-
-  const imgSize = safeImgSize(size);
+  const imgRes = IMG_PRO_RES[resolution] ? resolution : "1k";
+  const imgAspect = IMG_PRO_ASPECTS.includes(aspect_ratio) ? aspect_ratio : null; // null = Auto (model decides)
+  const imgEndpoint = images.length ? "bytedance/seedream-v5.5/edit" : "bytedance/seedream-v5.5";
 
   const profRes = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${userId}&select=credits,plan,subscription_status`, { headers: sbH(SERVICE_KEY) });
   const prof = (await profRes.json())?.[0];
   if (!prof?.plan || prof.plan === "none") return res.status(403).json({ error: "No active plan" });
   if (prof.subscription_status === "payment_failed") return res.status(403).json({ error: "Payment issue" });
-  const creditsNeeded = 18; // Img Pro (Seedream 4.5 edit) — fixed 18 credits per image
+  const creditsNeeded = imgProCredits(imgRes); // Img Pro (Seedream 5.5) — 1K 18 · 2K 32
   if ((prof.credits ?? 0) < creditsNeeded) return res.status(402).json({ error: insufficientMsg(creditsNeeded, prof.credits ?? 0) });
 
   const deduct = await deductCredits(userId, creditsNeeded, SERVICE_KEY);
@@ -109,14 +109,16 @@ async function generateImg(body, userId, WS_KEY, SERVICE_KEY, res) {
   try {
     const wsBody = {
       prompt: prompt.trim().slice(0, 3500),
-      images,
+      resolution: imgRes,
+      output_format: "png",
       enable_sync_mode: false,
       enable_base64_output: false,
-      ...(imgSize ? { size: imgSize } : {}),
+      ...(images.length ? { images } : {}),
+      ...(imgAspect ? { aspect_ratio: imgAspect } : {}),
     };
-    console.log(`WS generate_img: size=${imgSize} images=${images.length} endpoint=bytedance/seedream-v4.5/edit`);
+    console.log(`WS generate_img: res=${imgRes} aspect=${imgAspect || "auto"} images=${images.length} endpoint=${imgEndpoint}`);
 
-    const wsRes = await fetch(`${WS_BASE}/bytedance/seedream-v4.5/edit`, {
+    const wsRes = await fetch(`${WS_BASE}/${imgEndpoint}`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${WS_KEY}` },
       body: JSON.stringify(wsBody)
     });
